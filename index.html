@@ -1492,6 +1492,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div class="hint" id="opticalRefreshMsg"></div>
   </div>
 
+  <div class="panel">
+    <h2>Debug: Count tab shift columns</h2>
+    <p class="hint">Shows exactly what this app reads from the "Count" tab's header row and the first several rows underneath it \u2014 use this instead of a spreadsheet screenshot next time something doesn't look right, so it's clear what the app itself sees rather than guessing from the sheet directly.</p>
+    <div class="btnrow">
+      <button class="secondary" id="btnDebugCountShift">Show what the app reads</button>
+    </div>
+    <div id="debugCountShiftOutput" style="font-family:monospace; font-size:11px; white-space:pre-wrap; margin-top:10px; background:#f7f7f7; border:1px solid var(--line); border-radius:6px; padding:10px; max-height:400px; overflow-y:auto;"></div>
+  </div>
+
 </div><!-- /view-settings -->
 
 </main>
@@ -2161,6 +2170,38 @@ function updateOpticalGenerateWarning(){
   }
 }
 document.getElementById('btnOpticalRefresh').addEventListener('click', refreshOpticalHistory);
+document.getElementById('btnDebugCountShift').addEventListener('click', async () => {
+  const out = document.getElementById('debugCountShiftOutput');
+  out.textContent = 'Reading the Count tab\u2026';
+  try{
+    const rows = await loadCountSheetRaw(true);
+    if(!rows.length){ out.textContent = 'The Count tab appears to be empty, or could not be read.'; return; }
+    const headers = rows[0].map(h => String(h == null ? '' : h));
+    let report = 'HEADER ROW (' + headers.length + ' columns):\n';
+    headers.forEach((h, i) => { report += '  [' + i + '] ' + (h || '(blank)') + '\n'; });
+
+    const findCol = (name) => headers.findIndex(h => String(h).trim() === name);
+    const dateIdx = findCol('Date');
+    const totalIdx = findCol('Total Finished');
+    const shift1Idx = findCol('Shift 1 Total');
+    const shift2Idx = findCol('Shift 2 Total');
+    report += '\nCOLUMN MATCH (exact text match against the header row above):\n';
+    report += '  "Date"            -> ' + (dateIdx === -1 ? 'NOT FOUND' : 'column ' + dateIdx) + '\n';
+    report += '  "Total Finished"  -> ' + (totalIdx === -1 ? 'NOT FOUND' : 'column ' + totalIdx) + '\n';
+    report += '  "Shift 1 Total"   -> ' + (shift1Idx === -1 ? 'NOT FOUND' : 'column ' + shift1Idx) + '\n';
+    report += '  "Shift 2 Total"   -> ' + (shift2Idx === -1 ? 'NOT FOUND' : 'column ' + shift2Idx) + '\n';
+
+    report += '\nRAW VALUES for the first 10 data rows (exactly as read from the sheet, before any parsing):\n';
+    const dataRows = rows.slice(1, 11);
+    dataRows.forEach((r, i) => {
+      const get = (idx) => idx === -1 ? '(column not found)' : JSON.stringify(r[idx]);
+      report += '  Row ' + (i + 2) + ':  Date=' + get(dateIdx) + '  Total=' + get(totalIdx) + '  Shift1=' + get(shift1Idx) + '  Shift2=' + get(shift2Idx) + '\n';
+    });
+    out.textContent = report;
+  }catch(e){
+    out.textContent = 'Could not read the Count tab: ' + e.message;
+  }
+});
 
 const OPTICAL_COLUMNS = ['uniqId','person','productCode','opticalSN','qr','marked','linkedHeadsetSN','yywwsn','buttonPressed','dateTime'];
 function rowsForOptical(list){
@@ -2205,9 +2246,11 @@ document.getElementById('btnOpticalGenerate').addEventListener('click', async ()
   const pushMsg = document.getElementById('opticalPushMsg');
   if(cfg.url && cfg.token){
     try{
-      await sheetPost({action: 'appendOpticalModules', rows: rowsForOptical(newRows)});
+      const result = await sheetPost({action: 'appendOpticalModules', rows: rowsForOptical(newRows)});
       newRows.forEach(r => { r.pushedToSheet = true; });
-      pushMsg.textContent = 'Pushed ' + newRows.length + ' row(s) to the OpticalModelSN sheet just now.';
+      pushMsg.textContent = (result.skippedDuplicates > 0)
+        ? 'Pushed ' + result.appended + ' row(s) \u2014 ' + result.skippedDuplicates + ' were already on the sheet and skipped, so nothing got duplicated.'
+        : 'Pushed ' + newRows.length + ' row(s) to the OpticalModelSN sheet just now.';
     }catch(e){
       pushMsg.textContent = 'Could not push to the sheet (' + e.message + '). The batch is still safe in the table below — use "Push batch to Google Sheet" to retry.';
     }
@@ -2279,9 +2322,11 @@ document.getElementById('btnOpticalPush').addEventListener('click', async () => 
   }
   msg.textContent = 'Pushing ' + unpushed.length + ' row(s) to the sheet…';
   try{
-    await sheetPost({action: 'appendOpticalModules', rows: rowsForOptical(unpushed)});
+    const result = await sheetPost({action: 'appendOpticalModules', rows: rowsForOptical(unpushed)});
     unpushed.forEach(r => { r.pushedToSheet = true; });
-    msg.textContent = 'Pushed ' + unpushed.length + ' row(s) to the sheet just now.';
+    msg.textContent = (result.skippedDuplicates > 0)
+      ? 'Pushed ' + result.appended + ' row(s) \u2014 ' + result.skippedDuplicates + ' were already on the sheet and skipped, so nothing got duplicated.'
+      : 'Pushed ' + unpushed.length + ' row(s) to the sheet just now.';
   }catch(e){
     msg.textContent = 'Push failed: ' + e.message + ' — check the connection in Settings.';
   }
@@ -2947,10 +2992,12 @@ document.getElementById('btnSheetPull').addEventListener('click', refreshHeadset
 async function pushRowsToSheet(list){
   if(!list.length) return;
   try{
-    await sheetPost({action: 'appendSerials', rows: rowsForSheet(list)});
+    const result = await sheetPost({action: 'appendSerials', rows: rowsForSheet(list)});
     list.forEach(r => { r.pushedToSheet = true; });
     setSheetBadge('ok', 'Connected');
-    document.getElementById('sheetMsg').textContent = 'Pushed ' + list.length + ' row(s) to the sheet just now.';
+    document.getElementById('sheetMsg').textContent = (result.skippedDuplicates > 0)
+      ? 'Pushed ' + result.appended + ' row(s) to the sheet \u2014 ' + result.skippedDuplicates + ' were already there and skipped, so nothing got duplicated.'
+      : 'Pushed ' + list.length + ' row(s) to the sheet just now.';
   }catch(e){
     setSheetBadge('err', 'Push failed');
     document.getElementById('sheetMsg').textContent =
@@ -2967,9 +3014,11 @@ document.getElementById('btnSheetPush').addEventListener('click', async () => {
   }
   msg.textContent = 'Pushing ' + unpushed.length + ' row(s) to the sheet…';
   try{
-    await sheetPost({action: 'appendSerials', rows: rowsForSheet(unpushed)});
+    const result = await sheetPost({action: 'appendSerials', rows: rowsForSheet(unpushed)});
     unpushed.forEach(r => { r.pushedToSheet = true; });
-    msg.textContent = 'Pushed ' + unpushed.length + ' row(s) to the sheet just now.';
+    msg.textContent = (result.skippedDuplicates > 0)
+      ? 'Pushed ' + result.appended + ' row(s) \u2014 ' + result.skippedDuplicates + ' were already on the sheet and skipped, so nothing got duplicated.'
+      : 'Pushed ' + unpushed.length + ' row(s) to the sheet just now.';
   }catch(e){
     msg.textContent = 'Push failed: ' + e.message + ' — check the connection in Settings.';
   }
@@ -4426,6 +4475,49 @@ async function loadStuckAtStations(force){
   stuckAtCache = result;
   return result;
 }
+// ---- Real headset shift totals, straight from the Count tab's own daily-finished columns —
+// this is the actual Station-6-checkout-based breakdown (Shift 1 ends 3pm / Shift 2 starts
+// 3:30pm), not something this app tries to re-derive itself. Matched by header NAME, not fixed
+// column position, so it keeps working if columns get reordered or new ones get added. ----
+async function loadHeadsetShiftBreakdown(force){
+  const rows = await loadCountSheetRaw(force);
+  const byDate = {}; // 'M/D/YYYY' string as given -> {total, shift1, shift2, byStyle:{...}}
+  if(!rows.length) return byDate;
+  const headers = rows[0].map(h => String(h || '').trim());
+  const idx = {
+    date: headers.indexOf('Date'),
+    total: headers.indexOf('Total Finished'),
+    shift1: headers.indexOf('Shift 1 Total'),
+    shift2: headers.indexOf('Shift 2 Total')
+  };
+  if(idx.date === -1 || idx.total === -1) return byDate; // this sheet doesn't have this section
+  const knownCols = new Set([idx.date, idx.total, idx.shift1, idx.shift2]);
+  const yieldIdx = headers.indexOf('Yield %');
+  const styleCols = [];
+  headers.forEach((h, i) => {
+    if(knownCols.has(i) || i === yieldIdx || !h) return;
+    if(yieldIdx > -1 && i > yieldIdx) return; // stop at Yield % — anything after is a different section
+    styleCols.push({name: h, idx: i});
+  });
+  rows.slice(1).forEach(r => {
+    const dateVal = r[idx.date];
+    if(!dateVal) return;
+    const byStyle = {};
+    styleCols.forEach(c => { if(r[c.idx] !== '' && r[c.idx] != null) byStyle[c.name] = Number(r[c.idx]) || 0; });
+    // null means "unknown for this specific day" (e.g. Shift 2 hasn't happened yet today), NOT
+    // just "this sheet has no such column" — a blank cell must fall back to the Looker feed's
+    // unsplit total rather than be silently treated as zero.
+    const hasShift1 = idx.shift1 > -1 && r[idx.shift1] !== '' && r[idx.shift1] != null;
+    const hasShift2 = idx.shift2 > -1 && r[idx.shift2] !== '' && r[idx.shift2] != null;
+    byDate[String(dateVal)] = {
+      total: Number(r[idx.total]) || 0,
+      shift1: hasShift1 ? (Number(r[idx.shift1]) || 0) : null,
+      shift2: hasShift2 ? (Number(r[idx.shift2]) || 0) : null,
+      byStyle: byStyle
+    };
+  });
+  return byDate;
+}
 // ---- Live Feed: recent MoveIn/MoveOut events straight from the Log tab ----
 const LOG_SHEET_NAME = 'Log';
 let logFeedCache = null;
@@ -5123,6 +5215,32 @@ async function renderUnitsPerShiftPanel(feed){
     byDay[dayKey].rows.push(r);
   });
 
+  // Overlay REAL headset shift totals from the Count tab (based on actual Station 6 checkout
+  // times) — this replaces the Looker feed's unsplit "All Shifts" headset bucket with the real
+  // Shift 1 / Shift 2 split, for any date where the Count tab's numbers actually add up. If
+  // they don't add up to that row's own Total Finished, the overlay is skipped for that one
+  // date only, so a data hiccup on one day can never make the total silently show as zero.
+  try{
+    const headsetShiftData = await loadHeadsetShiftBreakdown();
+    Object.keys(headsetShiftData).forEach(dateStr => {
+      const dayKey = periodKeyFor(dateStr, 'day');
+      if(!dayKey) return;
+      const info = headsetShiftData[dateStr];
+      if(info.shift1 === null || info.shift2 === null) return;
+      const shiftSum = (info.shift1 || 0) + (info.shift2 || 0);
+      if(shiftSum <= 0) return;
+      if(info.total > 0 && Math.abs(shiftSum - info.total) > 0.5) return;
+      if(!byDay[dayKey]) byDay[dayKey] = {label: periodLabelFor(dayKey, 'day'), byShift: {}, byGroup: {}, rows: []};
+      const newHeadsetShifts = {};
+      if(info.shift1 > 0) newHeadsetShifts['Shift 1'] = info.shift1;
+      if(info.shift2 > 0) newHeadsetShifts['Shift 2'] = info.shift2;
+      byDay[dayKey].byGroup['Headsets'] = newHeadsetShifts;
+    });
+  }catch(e){
+    // If the Count tab can't be read, the panel still works — falls back to the Looker feed's
+    // unsplit "All Shifts" headset bucket.
+  }
+
   const dayKeys = Object.keys(byDay).sort().reverse(); // most recent first
   const totalUnits = dayKeys.reduce((sum, dayKey) => {
     const day = byDay[dayKey];
@@ -5135,7 +5253,7 @@ async function renderUnitsPerShiftPanel(feed){
     Object.values(byDay[dayKey].byGroup).forEach(shifts => Object.keys(shifts).forEach(s => shiftNamesSeen.add(s)));
   });
   document.getElementById('unitsPerShiftHint').textContent =
-    'Day total is headset units (your real production count) \u2014 optical modules are shown underneath, split by real shift, for extra context since they\u2019re a different part, not additional headsets. Click a day for the full style breakdown.';
+    'Day total is headset units, split by real shift where the Count tab has it \u2014 optical modules shown underneath for extra context, since they\u2019re a different part. Click a day for the full style breakdown (styles aren\u2019t split by shift individually, only the day-level total is).';
 
   const sortedShiftNames = Array.from(shiftNamesSeen).sort((a, b) => shiftSortKey(a) - shiftSortKey(b));
   const legendHtml = sortedShiftNames.map(name =>
