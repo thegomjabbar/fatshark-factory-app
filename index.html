@@ -2488,10 +2488,27 @@ document.getElementById('btnRecoverSerial').addEventListener('click', async () =
     msg.textContent = '"' + serial + '" doesn\u2019t look like a valid headset serial (should start with H2B, H2C, H2D, H2E, or H2F). Double-check the scan.';
     return;
   }
-  // Don't silently re-add something that's already known — if it's already in this browser's
-  // library, it was never actually missing, so re-adding it isn't what's needed here.
-  if(librarySet.has(serial)){
-    msg.textContent = '"' + serial + '" is already in this browser\u2019s library \u2014 it isn\u2019t actually missing, so there\u2019s nothing to recover.';
+  // Check the REAL sheet, not this browser's local cache — the cache can easily be stale for
+  // exactly this scenario (a serial that was generated once, then later deleted from the
+  // sheet, but this browser still remembers it from before the deletion). Only the sheet
+  // itself can correctly say whether this serial is actually still missing.
+  const cfgCheck = sheetConfig();
+  if(cfgCheck.url && cfgCheck.token){
+    msg.textContent = 'Checking the sheet for "' + serial + '"\u2026';
+    try{
+      const check = await sheetPost({action: 'checkSerialExists', serial: serial});
+      if(check.exists){
+        msg.textContent = '"' + serial + '" is already a real row in the SerialNumbers sheet \u2014 it isn\u2019t actually missing, so there\u2019s nothing to recover.';
+        return;
+      }
+    }catch(e){
+      msg.textContent = 'Could not check the sheet (' + e.message + ') \u2014 stopping here rather than risk creating a duplicate. Try again once the connection is working.';
+      return;
+    }
+  }else if(librarySet.has(serial)){
+    // No sheet connection to check against — fall back to the local cache as a rough guess,
+    // but this can be wrong in exactly the scenario this tool exists for, so say so plainly.
+    msg.textContent = '"' + serial + '" is in this browser\u2019s local cache, but there\u2019s no sheet connection to confirm whether it\u2019s actually still there. Connect the sheet in Settings for an accurate check.';
     return;
   }
 
