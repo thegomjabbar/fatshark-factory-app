@@ -889,32 +889,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div class="note">New serials are added to this browser's library the instant they're generated. If more than one person generates labels, make sure everyone is working from the same up-to-date backup file (see the Library panel in Settings) so nobody's dedupe check is out of date.</div>
   </div>
 
-  <div class="panel">
-    <h2>Recover an existing serial</h2>
-    <p class="hint">For a unit that's physically real, has a real serial printed on its QR code / traveler, but somehow isn't in this browser's library or the sheet (e.g. it was deleted by mistake). This scans in the <b>exact serial you already have</b>, instead of generating a new random one \u2014 it goes into the sheet the same way Generate does, just without the randomization step.</p>
-    <div class="row3">
-      <label class="field">
-        <span>Existing serial (scan the QR code / traveler)</span>
-        <input type="text" id="recoverSerial" placeholder="Scan or type the exact serial…">
-      </label>
-      <label class="field">
-        <span>Work order</span>
-        <input type="text" id="recoverWorkOrder" placeholder="WO-00000">
-      </label>
-      <label class="field">
-        <span>Person</span>
-        <input type="text" id="recoverPerson" value="tm">
-      </label>
-    </div>
-    <label class="field">
-      <span>Date generated (use the ORIGINAL date if you know it, not today, so records stay accurate)</span>
-      <input type="date" id="recoverDateGen">
-    </label>
-    <div class="btnrow">
-      <button class="accent" id="btnRecoverSerial">Add this serial to the sheet</button>
-    </div>
-    <div class="hint" id="recoverMsg"></div>
-  </div>
 
   <div class="panel">
     <h2>Print &amp; export</h2>
@@ -1419,6 +1393,31 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <button class="accent" id="btnPrintReprintLabels">Print these labels</button>
       </div>
     </div>
+  </div>
+
+  <h3 style="margin:24px 0 10px; padding:0 4px; color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.04em;">Serial number maintenance</h3>
+
+  <div class="panel">
+    <h2>Recover existing serials</h2>
+    <p class="hint">For units that are physically real, have real serials printed on their QR codes / travelers, but somehow aren't in the sheet (e.g. they were deleted by mistake). This adds in the <b>exact serials you already have</b>, instead of generating new random ones \u2014 they go into the sheet the same way Generate does, just without the randomization step. Checks the real sheet directly before adding anything, so it won't be fooled by this browser's own local cache.</p>
+    <div class="row2">
+      <label class="field">
+        <span>Existing serials (one per line, or comma/space separated)</span>
+        <textarea id="recoverSerial" placeholder="H2C2607W83CNA&#10;H2C26077VC3CH&#10;..."></textarea>
+      </label>
+      <label class="field">
+        <span>Work order (applied to all of these)</span>
+        <input type="text" id="recoverWorkOrder" placeholder="WO-00000">
+        <span style="margin-top:10px; display:block;">Person</span>
+        <input type="text" id="recoverPerson" value="tm">
+        <span style="margin-top:10px; display:block;">Date generated (use the ORIGINAL date if known, not today, so records stay accurate)</span>
+        <input type="date" id="recoverDateGen">
+      </label>
+    </div>
+    <div class="btnrow">
+      <button class="accent" id="btnRecoverSerial">Add these serials to the sheet</button>
+    </div>
+    <div class="hint" id="recoverMsg"></div>
   </div>
 
   <h3 style="margin:24px 0 10px; padding:0 4px; color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.04em;">Ship to Warehouse maintenance tools</h3>
@@ -2475,58 +2474,71 @@ document.getElementById('btnClearBatch').addEventListener('click', () => {
 
 document.getElementById('btnRecoverSerial').addEventListener('click', async () => {
   const msg = document.getElementById('recoverMsg');
-  const serial = document.getElementById('recoverSerial').value.trim().toUpperCase();
+  const rawList = Array.from(new Set(parseSerialList(document.getElementById('recoverSerial').value)));
   const wo = document.getElementById('recoverWorkOrder').value.trim();
   const person = document.getElementById('recoverPerson').value.trim();
   const dateGenInput = document.getElementById('recoverDateGen').value;
 
-  if(!serial){ msg.textContent = 'Scan or type the serial number first.'; return; }
+  if(!rawList.length){ msg.textContent = 'Paste or type at least one serial number first.'; return; }
 
-  // Same format rule as everywhere else — this has to actually be a real headset serial,
-  // not just any text that got typed or mis-scanned in.
-  if(classifySerialType(serial) !== 'headset'){
-    msg.textContent = '"' + serial + '" doesn\u2019t look like a valid headset serial (should start with H2B, H2C, H2D, H2E, or H2F). Double-check the scan.';
+  // Same format rule as everywhere else — each one has to actually be a real headset serial,
+  // not just any text that got typed or mis-scanned in. Invalid ones are dropped, not silently
+  // ignored — the summary at the end says exactly which ones and why.
+  const invalidFormat = rawList.filter(s => classifySerialType(s) !== 'headset');
+  const formatValid = rawList.filter(s => classifySerialType(s) === 'headset');
+  if(!formatValid.length){
+    msg.textContent = 'None of these look like valid headset serials (should start with H2B, H2C, H2D, H2E, or H2F): ' + invalidFormat.join(', ');
     return;
   }
+
   // Check the REAL sheet, not this browser's local cache — the cache can easily be stale for
   // exactly this scenario (a serial that was generated once, then later deleted from the
   // sheet, but this browser still remembers it from before the deletion). Only the sheet
-  // itself can correctly say whether this serial is actually still missing.
+  // itself can correctly say whether each of these is actually still missing.
+  let toRecover = formatValid;
+  let alreadyOnSheet = [];
   const cfgCheck = sheetConfig();
   if(cfgCheck.url && cfgCheck.token){
-    msg.textContent = 'Checking the sheet for "' + serial + '"\u2026';
+    msg.textContent = 'Checking the sheet for ' + formatValid.length + ' serial(s)\u2026';
     try{
-      const check = await sheetPost({action: 'checkSerialExists', serial: serial});
-      if(check.exists){
-        msg.textContent = '"' + serial + '" is already a real row in the SerialNumbers sheet \u2014 it isn\u2019t actually missing, so there\u2019s nothing to recover.';
-        return;
-      }
+      const check = await sheetPost({action: 'checkSerialsExist', serials: formatValid});
+      alreadyOnSheet = check.existing || [];
+      const alreadySet = new Set(alreadyOnSheet);
+      toRecover = formatValid.filter(s => !alreadySet.has(s));
     }catch(e){
-      msg.textContent = 'Could not check the sheet (' + e.message + ') \u2014 stopping here rather than risk creating a duplicate. Try again once the connection is working.';
+      msg.textContent = 'Could not check the sheet (' + e.message + ') \u2014 stopping here rather than risk creating duplicates. Try again once the connection is working.';
       return;
     }
-  }else if(librarySet.has(serial)){
+  }else{
     // No sheet connection to check against — fall back to the local cache as a rough guess,
-    // but this can be wrong in exactly the scenario this tool exists for, so say so plainly.
-    msg.textContent = '"' + serial + '" is in this browser\u2019s local cache, but there\u2019s no sheet connection to confirm whether it\u2019s actually still there. Connect the sheet in Settings for an accurate check.';
+    // but this can be wrong in exactly the scenario this tool exists for.
+    const staleKnown = formatValid.filter(s => librarySet.has(s));
+    if(staleKnown.length){
+      msg.textContent = staleKnown.length + ' of these are in this browser\u2019s local cache, but there\u2019s no sheet connection to confirm whether they\u2019re actually still there. Connect the sheet in Settings for an accurate check.';
+      return;
+    }
+  }
+
+  if(!toRecover.length){
+    msg.textContent = 'All ' + formatValid.length + ' of these are already real rows in the SerialNumbers sheet \u2014 nothing to recover.' +
+      (invalidFormat.length ? ' (' + invalidFormat.length + ' also had an invalid format and were skipped: ' + invalidFormat.join(', ') + ')' : '');
     return;
   }
 
   const dateGen = dateGenInput ? new Date(dateGenInput + 'T00:00:00') : new Date();
   const dateGenDisplay = (dateGen.getMonth() + 1) + '/' + dateGen.getDate() + '/' + dateGen.getFullYear();
   const now = new Date();
-  // The serial itself already encodes its own YY/WW from when it was originally generated —
-  // pulled straight from the serial string, not from today's date, so the sheet's YYWWSN
-  // column stays accurate to when the unit was actually made, not when it was recovered.
-  const yywwsn = serial.slice(3);
 
-  const row = {
+  const newRows = toRecover.map(serial => ({
     uniqId: genUniqID(),
     productCode: serial.slice(0, 3),
     workOrder: wo,
     quantity: 1,
     person: person,
-    yywwsn: yywwsn,
+    // The serial itself already encodes its own YY/WW from when it was originally generated —
+    // pulled straight from the serial string, not from today's date, so the sheet's YYWWSN
+    // column stays accurate to when the unit was actually made, not when it was recovered.
+    yywwsn: serial.slice(3),
     serial: serial,
     qr: 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(serial),
     dateGenerated: dateGenDisplay,
@@ -2534,30 +2546,33 @@ document.getElementById('btnRecoverSerial').addEventListener('click', async () =
     status: 'Released',
     linkedOmSn: '',
     pushedToSheet: false
-  };
+  }));
 
-  currentBatch.push(row);
-  lastGeneratedHeadsetRows = [row];
-  librarySet.add(serial);
+  newRows.forEach(r => currentBatch.push(r));
+  lastGeneratedHeadsetRows = newRows;
+  newRows.forEach(r => librarySet.add(r.serial));
   await saveLibrary();
   refreshLibCount();
   renderBatch();
   updateUndoButtonState();
 
   const cfg = sheetConfig();
+  const noteBits = [];
+  if(alreadyOnSheet.length) noteBits.push(alreadyOnSheet.length + ' already on the sheet (skipped)');
+  if(invalidFormat.length) noteBits.push(invalidFormat.length + ' had an invalid format (skipped): ' + invalidFormat.join(', '));
+  const noteSuffix = noteBits.length ? ' (' + noteBits.join('; ') + ')' : '';
+
   if(cfg.url && cfg.token){
-    msg.textContent = 'Pushing to the sheet\u2026';
+    msg.textContent = 'Pushing ' + newRows.length + ' row(s) to the sheet\u2026';
     try{
-      const result = await sheetPost({action: 'appendSerials', rows: rowsForSheet([row])});
-      row.pushedToSheet = true;
-      msg.textContent = (result.skippedDuplicates > 0)
-        ? '"' + serial + '" was already on the sheet \u2014 nothing was duplicated.'
-        : '"' + serial + '" added back to the sheet and to this browser\u2019s library.';
+      const result = await sheetPost({action: 'appendSerials', rows: rowsForSheet(newRows)});
+      newRows.forEach(r => { r.pushedToSheet = true; });
+      msg.textContent = 'Recovered ' + result.appended + ' serial(s) back to the sheet and this browser\u2019s library' + noteSuffix + '.';
     }catch(e){
-      msg.textContent = 'Added to this browser\u2019s library, but could not push to the sheet (' + e.message + '). It\u2019s in the batch table below \u2014 use "Push this batch to Google Sheet" to retry.';
+      msg.textContent = 'Added ' + newRows.length + ' to this browser\u2019s library, but could not push to the sheet (' + e.message + '). They\u2019re in the batch table below \u2014 use "Push this batch to Google Sheet" to retry.';
     }
   }else{
-    msg.textContent = '"' + serial + '" added to this browser\u2019s library. Connect the Google Sheet in Settings to push it there too.';
+    msg.textContent = 'Added ' + newRows.length + ' serial(s) to this browser\u2019s library' + noteSuffix + '. Connect the Google Sheet in Settings to push them there too.';
   }
 
   document.getElementById('recoverSerial').value = '';
