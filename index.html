@@ -890,6 +890,33 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   </div>
 
   <div class="panel">
+    <h2>Recover an existing serial</h2>
+    <p class="hint">For a unit that's physically real, has a real serial printed on its QR code / traveler, but somehow isn't in this browser's library or the sheet (e.g. it was deleted by mistake). This scans in the <b>exact serial you already have</b>, instead of generating a new random one \u2014 it goes into the sheet the same way Generate does, just without the randomization step.</p>
+    <div class="row3">
+      <label class="field">
+        <span>Existing serial (scan the QR code / traveler)</span>
+        <input type="text" id="recoverSerial" placeholder="Scan or type the exact serial…">
+      </label>
+      <label class="field">
+        <span>Work order</span>
+        <input type="text" id="recoverWorkOrder" placeholder="WO-00000">
+      </label>
+      <label class="field">
+        <span>Person</span>
+        <input type="text" id="recoverPerson" value="tm">
+      </label>
+    </div>
+    <label class="field">
+      <span>Date generated (use the ORIGINAL date if you know it, not today, so records stay accurate)</span>
+      <input type="date" id="recoverDateGen">
+    </label>
+    <div class="btnrow">
+      <button class="accent" id="btnRecoverSerial">Add this serial to the sheet</button>
+    </div>
+    <div class="hint" id="recoverMsg"></div>
+  </div>
+
+  <div class="panel">
     <h2>Print &amp; export</h2>
     <p class="hint">Stickers print at a fixed 4in &times; 3in. QR size, fiducials, and other print options live in Settings (click the shark icon, top-left).</p>
     <div class="btnrow">
@@ -2444,6 +2471,79 @@ document.getElementById('btnClearBatch').addEventListener('click', () => {
   // reach back and delete sheet rows the user didn't ask to delete.
   lastGeneratedHeadsetRows = [];
   renderBatch();
+});
+
+document.getElementById('btnRecoverSerial').addEventListener('click', async () => {
+  const msg = document.getElementById('recoverMsg');
+  const serial = document.getElementById('recoverSerial').value.trim().toUpperCase();
+  const wo = document.getElementById('recoverWorkOrder').value.trim();
+  const person = document.getElementById('recoverPerson').value.trim();
+  const dateGenInput = document.getElementById('recoverDateGen').value;
+
+  if(!serial){ msg.textContent = 'Scan or type the serial number first.'; return; }
+
+  // Same format rule as everywhere else — this has to actually be a real headset serial,
+  // not just any text that got typed or mis-scanned in.
+  if(classifySerialType(serial) !== 'headset'){
+    msg.textContent = '"' + serial + '" doesn\u2019t look like a valid headset serial (should start with H2B, H2C, H2D, H2E, or H2F). Double-check the scan.';
+    return;
+  }
+  // Don't silently re-add something that's already known — if it's already in this browser's
+  // library, it was never actually missing, so re-adding it isn't what's needed here.
+  if(librarySet.has(serial)){
+    msg.textContent = '"' + serial + '" is already in this browser\u2019s library \u2014 it isn\u2019t actually missing, so there\u2019s nothing to recover.';
+    return;
+  }
+
+  const dateGen = dateGenInput ? new Date(dateGenInput + 'T00:00:00') : new Date();
+  const dateGenDisplay = (dateGen.getMonth() + 1) + '/' + dateGen.getDate() + '/' + dateGen.getFullYear();
+  const now = new Date();
+  // The serial itself already encodes its own YY/WW from when it was originally generated —
+  // pulled straight from the serial string, not from today's date, so the sheet's YYWWSN
+  // column stays accurate to when the unit was actually made, not when it was recovered.
+  const yywwsn = serial.slice(3);
+
+  const row = {
+    uniqId: genUniqID(),
+    productCode: serial.slice(0, 3),
+    workOrder: wo,
+    quantity: 1,
+    person: person,
+    yywwsn: yywwsn,
+    serial: serial,
+    qr: 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(serial),
+    dateGenerated: dateGenDisplay,
+    dateTime: now.toLocaleString(),
+    status: 'Released',
+    linkedOmSn: '',
+    pushedToSheet: false
+  };
+
+  currentBatch.push(row);
+  lastGeneratedHeadsetRows = [row];
+  librarySet.add(serial);
+  await saveLibrary();
+  refreshLibCount();
+  renderBatch();
+  updateUndoButtonState();
+
+  const cfg = sheetConfig();
+  if(cfg.url && cfg.token){
+    msg.textContent = 'Pushing to the sheet\u2026';
+    try{
+      const result = await sheetPost({action: 'appendSerials', rows: rowsForSheet([row])});
+      row.pushedToSheet = true;
+      msg.textContent = (result.skippedDuplicates > 0)
+        ? '"' + serial + '" was already on the sheet \u2014 nothing was duplicated.'
+        : '"' + serial + '" added back to the sheet and to this browser\u2019s library.';
+    }catch(e){
+      msg.textContent = 'Added to this browser\u2019s library, but could not push to the sheet (' + e.message + '). It\u2019s in the batch table below \u2014 use "Push this batch to Google Sheet" to retry.';
+    }
+  }else{
+    msg.textContent = '"' + serial + '" added to this browser\u2019s library. Connect the Google Sheet in Settings to push it there too.';
+  }
+
+  document.getElementById('recoverSerial').value = '';
 });
 
 function statusClass(s){ return 'status-' + s.replace(/\s+/g,'').toUpperCase(); }
