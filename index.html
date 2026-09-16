@@ -3036,7 +3036,7 @@ function setSheetBadge(state, text){
   badge.innerHTML = '<span class="dot"></span>' + text;
 }
 
-async function sheetGet(params){
+async function sheetGetOnce(params){
   const cfg = sheetConfig();
   if(!cfg.url || !cfg.token) throw new Error('Set the Web App URL and token first.');
   const u = new URL(cfg.url);
@@ -3048,7 +3048,29 @@ async function sheetGet(params){
   if(json.error) throw new Error(json.error);
   return json;
 }
-async function sheetPost(body){
+async function sheetGet(params){
+  // Same retry treatment as sheetPost, for the same reason — a read is always safe to repeat,
+  // so a transient network hiccup here shouldn't have to surface as a hard error to whoever
+  // hit it, especially with multiple people using this at once.
+  const maxRetries = 2;
+  let lastError;
+  for(let attempt = 0; attempt <= maxRetries; attempt++){
+    try{
+      return await sheetGetOnce(params);
+    }catch(e){
+      const msg = (e.message || '').toLowerCase();
+      const isRetryable = msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network') || msg.includes('busy');
+      if(isRetryable && attempt < maxRetries){
+        lastError = e;
+        await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastError;
+}
+async function sheetPostOnce(body){
   const cfg = sheetConfig();
   if(!cfg.url || !cfg.token) throw new Error('Set the Web App URL and token first.');
   // IMPORTANT: text/plain (not application/json) avoids a CORS preflight that Apps Script
@@ -3062,6 +3084,39 @@ async function sheetPost(body){
   const json = parseSheetResponse(raw, res.status);
   if(json.error) throw new Error(json.error);
   return json;
+}
+async function sheetPost(body){
+  // Retries a couple of times, but ONLY for genuinely transient failures — a network hiccup,
+  // or the server explicitly saying it's momentarily busy under a lock (multiple people using
+  // this at once). Never retries an actual, explained error (bad token, invalid format, etc.)
+  // since retrying that just wastes time without fixing anything.
+  // This is safe specifically because the write actions this hits (station scans, serial
+  // generation/recovery) are all idempotent now — if a first attempt actually succeeded
+  // server-side but its response got lost to a network issue, retrying it is a safe no-op,
+  // not a duplicate write.
+  const maxRetries = 2;
+  let lastError;
+  for(let attempt = 0; attempt <= maxRetries; attempt++){
+    try{
+      const result = await sheetPostOnce(body);
+      if(result && result.status === 'busy'){
+        lastError = new Error(result.message || 'System busy \u2014 try again in a moment.');
+        if(attempt < maxRetries){ await new Promise(r => setTimeout(r, 1200 * (attempt + 1))); continue; }
+        throw lastError;
+      }
+      return result;
+    }catch(e){
+      const msg = (e.message || '').toLowerCase();
+      const isRetryable = msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network') || msg.includes('busy');
+      if(isRetryable && attempt < maxRetries){
+        lastError = e;
+        await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastError;
 }
 function parseSheetResponse(raw, httpStatus){
   // If the Apps Script deployment itself failed (wrong/incomplete URL, deployment not
