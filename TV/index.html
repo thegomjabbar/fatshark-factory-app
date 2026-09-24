@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fat Shark Ops — Floor Display</title>
+<style>
+  :root{
+    --bg: oklch(0.09 0.02 292);
+    --bg2: oklch(0.13 0.03 292);
+    --line: oklch(1 0 0 / .08);
+    --ink: oklch(0.95 0.02 295);
+    --muted: oklch(0.62 0.05 295);
+    --purple: oklch(0.72 0.2 300);
+    --purple-dim: oklch(0.5 0.15 300);
+    --cyan: oklch(0.75 0.17 220);
+    --pink: oklch(0.72 0.2 340);
+    --green: oklch(0.72 0.18 155);
+    --amber: oklch(0.74 0.17 70);
+    --red: oklch(0.62 0.18 25);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; padding:0; overflow:hidden; background:var(--bg); }
+  body{
+    font-family:'Space Grotesk','Inter',system-ui,sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{ font-family:'JetBrains Mono','Courier New',monospace; }
+
+  /* ---------- full-screen animated wave background — same motif as the main app,
+     kept moving constantly so the TV never reads as a static, dead screen ---------- */
+  #waveField{ position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
+  #waveField .wave-track{ position:absolute; left:0; width:200%; height:34vh; display:flex; }
+  #waveField .wave-track svg{ width:50%; height:100%; flex:none; }
+  #waveField .wave-track.w1{ bottom:0; animation:waveDrift 26s linear infinite; }
+  #waveField .wave-track.w2{ bottom:2vh; animation:waveDrift 34s linear infinite reverse; }
+  #waveField .wave-track.w3{ bottom:6vh; animation:waveDrift 44s linear infinite; }
+  @keyframes waveDrift{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
+  .bgGrid{ position:fixed; inset:0; z-index:0; background-image:
+    linear-gradient(oklch(1 0 0 / .025) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(1 0 0 / .025) 1px, transparent 1px);
+    background-size:64px 64px; pointer-events:none; }
+
+  /* ---------- top status bar ---------- */
+  #topBar{
+    position:fixed; top:0; left:0; right:0; z-index:5;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:2.2vh 3vw 1.4vh; font-size:1.15vw;
+  }
+  #topBar .brand{ display:flex; align-items:center; gap:1vw; font-weight:700; letter-spacing:.03em; color:var(--muted); }
+  #topBar .brand b{ color:var(--ink); font-size:1.3vw; }
+  #topBar .right{ display:flex; align-items:center; gap:2.4vw; color:var(--muted); }
+  #topBar .live{ display:flex; align-items:center; gap:.5vw; color:var(--green); font-weight:700; }
+  #topBar .live i{ width:.7vw; height:.7vw; border-radius:50%; background:currentColor; box-shadow:0 0 12px currentColor; animation:pulseDot 1.6s ease-in-out infinite; }
+  @keyframes pulseDot{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+
+  /* ---------- slide stage: exactly one full-screen slide visible at a time, no scroll ---------- */
+  #stage{ position:fixed; inset:0; z-index:2; padding:9vh 3vw 6vh; display:flex; flex-direction:column; }
+  .slide{ position:absolute; inset:9vh 3vw 6vh; opacity:0; transform:translateY(1.5vh); transition:opacity .5s ease, transform .5s ease; pointer-events:none; display:flex; flex-direction:column; }
+  .slide.active{ opacity:1; transform:translateY(0); pointer-events:auto; }
+  .slide-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:2vh; }
+  .slide-title{ font-size:2.6vw; font-weight:800; letter-spacing:-.01em; }
+  .slide-sub{ font-size:1.05vw; color:var(--muted); }
+
+  /* ---------- bracket-corner panel treatment, matching the main app ---------- */
+  .panel{ position:relative; background:oklch(1 0 0 / .03); border:1px solid var(--line); border-radius:14px; padding:2.2vh 2vw; }
+  .panel::before, .panel::after{ content:''; position:absolute; width:1.6vw; height:1.6vw; pointer-events:none; }
+  .panel::before{ top:-1px; left:-1px; border-top:2px solid var(--purple); border-left:2px solid var(--purple); border-top-left-radius:6px; }
+  .panel::after{ bottom:-1px; right:-1px; border-bottom:2px solid var(--purple); border-right:2px solid var(--purple); border-bottom-right-radius:6px; }
+  .panel-lab{ font-size:.95vw; letter-spacing:.05em; color:var(--muted); margin-bottom:1.4vh; font-weight:600; }
+
+  /* ---------- headline number cards (slide 1) ---------- */
+  .kgrid{ display:grid; grid-template-columns:repeat(3, 1fr); grid-template-rows:repeat(2, 1fr); gap:1.6vw; flex:1; }
+  .kcard{ display:flex; flex-direction:column; justify-content:space-between; overflow:hidden; padding:2.6vh 2vw; }
+  .kcard .khead{ display:flex; align-items:center; gap:1vw; position:relative; }
+  .kicon{ width:4.4vw; height:4.4vw; flex:none; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    background:oklch(1 0 0 / .05); background:color-mix(in oklch, var(--c) 15%, transparent);
+    border:1px solid oklch(1 0 0 / .1); border-color:color-mix(in oklch, var(--c) 40%, transparent);
+    box-shadow:inset 0 0 1.6vw color-mix(in oklch, var(--c) 22%, transparent); }
+  .kicon svg{ width:2.5vw; height:2.5vw; color:var(--c); filter:drop-shadow(0 0 6px var(--c)); }
+  .kwater{ position:absolute; right:-1.2vw; bottom:-3vh; width:14vw; height:14vw; color:var(--c); opacity:.07; pointer-events:none; }
+  .kcard .val{ font-size:5.4vw; font-weight:800; line-height:1; position:relative; }
+  .kcard .lab{ font-size:1.35vw; font-weight:700; color:var(--ink); }
+  .kcard .ksub{ margin-top:1vh; font-size:1.05vw; color:var(--muted); position:relative; }
+  .kcard .delta{ margin-top:.8vh; font-size:1vw; font-weight:600; }
+  .delta.up{ color:var(--green); } .delta.down{ color:var(--red); }
+
+  /* ---------- output volume slide ---------- */
+  .out-wrap{ flex:1; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:1.6vh; }
+  .week-cal{ display:grid; grid-template-columns:repeat(7,1fr); gap:.9vw; }
+  .day-cell{ padding:1.5vh 1vw; display:flex; flex-direction:column; gap:.9vh; }
+  .day-cell.today{ border-color:oklch(0.72 0.2 300 / .6); box-shadow:0 0 2vw oklch(0.64 0.23 294 / .22); }
+  .day-cell .dw{ display:flex; justify-content:space-between; align-items:baseline; font-size:1.05vw; font-weight:700; }
+  .day-cell .dw small{ font-size:.85vw; color:var(--muted); font-weight:600; }
+  .day-cell.today .dw{ color:var(--purple); }
+  .day-cell .dt{ font-size:2.9vw; font-weight:800; line-height:1; }
+  .day-cell .dt.none{ color:oklch(1 0 0 / .2); }
+  .day-bar{ display:flex; height:.9vh; border-radius:99px; overflow:hidden; background:oklch(1 0 0 / .06); }
+  .day-shifts{ display:flex; flex-direction:column; gap:.35vh; font-size:.85vw; min-height:6vh; }
+  .day-shifts div{ display:flex; align-items:center; justify-content:space-between; gap:.4vw; color:var(--muted); }
+  .day-shifts div span{ display:flex; align-items:center; gap:.4vw; }
+  .day-shifts i{ width:.7vw; height:.7vw; border-radius:2px; display:inline-block; }
+  .day-shifts b{ color:var(--ink); }
+  .out-bottom{ display:grid; grid-template-columns:2.4fr 1fr; gap:1.6vw; min-height:0; }
+  /* totals page: full-range daily trend, stat boxes, by-style and by-month lists */
+  .tot-wrap{ flex:1; min-height:0; display:grid; grid-template-rows:minmax(0,1.05fr) minmax(0,1fr); gap:1.6vh; }
+  .tot-top{ display:grid; grid-template-columns:3fr 1.2fr; gap:1.6vw; min-height:0; }
+  .trend-panel{ display:flex; flex-direction:column; min-height:0; }
+  .trend-head{ display:flex; justify-content:space-between; align-items:baseline; }
+  .trend-key{ display:flex; gap:1.4vw; font-size:.85vw; color:var(--muted); }
+  .trend-key i{ display:inline-block; width:1.4vw; height:3px; border-radius:2px; vertical-align:middle; margin-right:.4vw; }
+  #trendChart{ flex:1; min-height:0; position:relative; }
+  #trendChart svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .tot-stats{ display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:1.1vw; min-height:0; }
+  .tot-stat{ padding:1.6vh 1.2vw; display:flex; flex-direction:column; justify-content:center; min-width:0; }
+  .tot-stat .l{ font-size:.85vw; color:var(--muted); font-weight:600; }
+  .tot-stat .v{ font-size:2.5vw; font-weight:800; line-height:1.1; margin-top:.6vh; white-space:nowrap; }
+  .tot-stat .s{ font-size:.8vw; color:var(--muted); margin-top:.4vh; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tot-bottom{ display:grid; grid-template-columns:1fr 1fr; gap:1.6vw; min-height:0; }
+  .list-panel{ display:flex; flex-direction:column; min-height:0; }
+  .tl-rows{ flex:1; display:flex; flex-direction:column; justify-content:space-evenly; min-height:0; }
+  .tl-row{ display:grid; grid-template-columns:12vw minmax(0,1fr) 10vw; gap:1.2vw; align-items:center; font-size:1.1vw; padding:.35vh 0; border-bottom:1px solid var(--line); }
+  .tl-row:last-child{ border-bottom:none; }
+  .tl-row .nm{ font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tl-row .nm small{ color:var(--muted); font-weight:500; font-size:.75vw; margin-left:.4vw; }
+  .tl-track{ height:.9vh; border-radius:99px; background:oklch(1 0 0 / .06); overflow:hidden; }
+  .tl-fill{ height:100%; border-radius:99px; }
+  .tl-row .vl{ text-align:right; font-weight:800; white-space:nowrap; }
+  .tl-row .vl small{ font-size:.8vw; font-weight:700; margin-left:.5vw; }
+  .tl-row .vl small.up{ color:var(--green); } .tl-row .vl small.down{ color:var(--red); } .tl-row .vl small.mut{ color:var(--muted); }
+  /* shift page */
+  .shift-wrap{ flex:1; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:1.6vh; }
+  .shift-wrap .week-cal .day-cell{ justify-content:space-between; }
+  .shift-wrap .day-cell .dt{ font-size:3.4vw; }
+  .shift-wrap .day-shifts{ font-size:1vw; gap:.6vh; }
+  .shift-sum{ display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:1.2vw; }
+  .ss-card{ padding:1.9vh 1.6vw; }
+  .ss-card .l{ display:flex; align-items:center; gap:.6vw; font-size:1.1vw; font-weight:700; }
+  .ss-card .l i{ width:.9vw; height:.9vw; border-radius:3px; }
+  .ss-card .v{ font-size:4.2vw; font-weight:800; line-height:1.05; margin-top:.8vh; }
+  .ss-card .v small{ font-size:1vw; color:var(--muted); font-weight:600; margin-left:.6vw; }
+  .ss-card .m{ display:flex; gap:1.6vw; font-size:1vw; color:var(--muted); margin-top:.9vh; flex-wrap:wrap; }
+  .ss-card .m b{ color:var(--ink); }
+  .ss-share{ height:.8vh; border-radius:99px; background:oklch(1 0 0 / .06); overflow:hidden; margin-top:1.3vh; }
+  .ss-share div{ height:100%; border-radius:99px; }
+  .day-style{ font-size:.85vw; color:var(--muted); }
+  .day-style b{ font-weight:700; }
+  #diagPanel{ display:none; position:fixed; inset:8vh 6vw; z-index:30; background:oklch(0.12 0.03 292 / .97); border:1px solid var(--purple);
+    border-radius:14px; padding:3vh 2.4vw; overflow:auto; font-size:1vw; }
+  #diagPanel h3{ margin:0 0 1.6vh; font-size:1.5vw; }
+  #diagPanel table{ width:100%; border-collapse:collapse; }
+  #diagPanel td, #diagPanel th{ text-align:left; padding:.8vh .8vw; border-bottom:1px solid var(--line); }
+  #diagPanel th{ color:var(--muted); font-weight:700; }
+  .week-lab{ font-size:.95vw; color:var(--muted); font-weight:600; letter-spacing:.05em; margin-bottom:1vh; }
+  .month-panel{ display:flex; flex-direction:column; min-height:0; }
+  #monthChart{ flex:1; min-height:0; position:relative; }
+  #monthChart svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .side-stats{ display:flex; flex-direction:column; gap:1.2vh; min-height:0; }
+  .side-stat{ flex:1; display:flex; flex-direction:column; justify-content:center; }
+  .side-stat .d{ font-size:.85vw; font-weight:700; margin-top:.3vh; }
+  .side-stat .d.up{ color:var(--green); } .side-stat .d.down{ color:var(--red); } .side-stat .d.flat{ color:var(--muted); }
+  .side-stat{ padding:1.6vh 1.4vw; }
+  .side-stat .v{ font-size:2.4vw; font-weight:800; }
+  .side-stat .l{ font-size:.9vw; color:var(--muted); margin-top:.4vh; }
+
+  /* ---------- station WIP slide: bars + live sign in/out feed ---------- */
+  .sw-layout{ display:grid; grid-template-columns:1.55fr 1fr; gap:1.6vw; flex:1; min-height:0; }
+  .sw-main{ display:flex; flex-direction:column; min-height:0; }
+  .sw-rows{ display:flex; flex-direction:column; justify-content:space-evenly; flex:1; }
+  .sw-row{ display:grid; grid-template-columns:12vw minmax(0,1fr) 9.5vw; align-items:center; gap:1.4vw; padding:1.1vh .8vw; border-bottom:1px solid var(--line); border-radius:8px; }
+  .sw-row:last-child{ border-bottom:none; }
+  .sw-row .sn{ font-size:1.45vw; font-weight:800; }
+  .sw-row .sl{ font-size:.85vw; color:var(--muted); margin-top:.2vh; }
+  .sw-track{ height:1.3vh; border-radius:99px; background:oklch(1 0 0 / .06); overflow:hidden; }
+  .sw-fill{ height:100%; width:0; border-radius:99px; background:linear-gradient(90deg, oklch(0.52 0.2 290), oklch(0.8 0.16 305)); box-shadow:0 0 12px oklch(0.7 0.2 300 / .55); transition:width 1s cubic-bezier(.2,.8,.2,1); }
+  .sw-mix{ margin-top:.8vh; font-size:.8vw; color:var(--muted); display:flex; gap:1.2vw; min-height:1.2em; }
+  .sw-mix b{ font-weight:700; }
+  .sw-val{ text-align:right; white-space:nowrap; }
+  .sw-val b{ font-size:2.3vw; font-weight:800; }
+  .sw-val span{ font-size:1vw; color:var(--muted); margin-left:.4vw; }
+  .sw-row.ping{ animation:rowPing 1.6s ease-out; }
+  @keyframes rowPing{ 0%{ background:oklch(0.72 0.2 300 / .3); } 100%{ background:transparent; } }
+  .sw-foot{ display:flex; justify-content:space-between; font-size:1.05vw; color:var(--muted); padding-top:1.2vh; border-top:1px solid var(--line); }
+  .sw-foot b{ color:var(--ink); }
+  .feed-panel{ display:flex; flex-direction:column; min-height:0; }
+  .feed-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:1vh; }
+  .feed-head .panel-lab{ margin:0; }
+  .feed-live{ display:flex; align-items:center; gap:.5vw; color:var(--green); font-weight:700; font-size:.9vw; }
+  .feed-live i{ width:.6vw; height:.6vw; border-radius:50%; background:currentColor; box-shadow:0 0 10px currentColor; animation:pulseDot 1.6s ease-in-out infinite; }
+  .feed-count{ font-size:.9vw; color:var(--muted); margin-bottom:.8vh; }
+  .feed-count b{ color:var(--ink); }
+  .feed-list{ flex:1; min-height:0; overflow:hidden; -webkit-mask-image:linear-gradient(#000 70%, transparent); mask-image:linear-gradient(#000 70%, transparent); }
+  .feed-item{ padding:1.05vh .6vw; border-bottom:1px solid var(--line); border-radius:6px; }
+  .feed-item .r1{ display:flex; align-items:center; gap:.7vw; }
+  .feed-item .ft{ font-size:.85vw; color:var(--muted); }
+  .feed-item .fs{ font-size:1.05vw; font-weight:700; }
+  .feed-item .r2{ font-size:.85vw; color:var(--muted); margin-top:.35vh; }
+  .feed-item .r2 b{ color:var(--ink); font-weight:600; }
+  .feed-item.new{ animation:feedIn .8s cubic-bezier(.2,.8,.2,1); }
+  @keyframes feedIn{ from{ opacity:0; transform:translateY(-2vh); background:oklch(0.72 0.2 300 / .28); } to{ opacity:1; transform:none; background:transparent; } }
+  .badge{ font-family:'JetBrains Mono','Courier New',monospace; font-size:.75vw; font-weight:800; padding:.25vh .5vw; border-radius:4px; }
+  .badge.in{ color:var(--green); background:oklch(0.72 0.18 155 / .14); }
+  .badge.out{ color:var(--amber); background:oklch(0.74 0.17 70 / .14); }
+
+  /* ---------- station WIP slide ---------- */
+  .station-bars{ display:flex; flex-direction:column; gap:1.6vh; flex:1; justify-content:center; }
+  .station-row{ display:flex; align-items:center; gap:1.4vw; }
+  .station-num{ width:3vw; font-size:1.8vw; font-weight:800; text-align:center; flex:none; }
+  .station-track{ flex:1; height:3.6vh; border-radius:8px; background:oklch(1 0 0 / .06); overflow:hidden; }
+  .station-fill{ height:100%; border-radius:8px; transition:width 1s ease; }
+  .station-count{ width:5vw; font-size:1.6vw; font-weight:700; text-align:right; flex:none; }
+
+  /* ---------- sales/orders slide ---------- */
+  .sales-layout{ display:grid; grid-template-columns:1fr 1fr; gap:1.6vw; flex:1; min-height:0; }
+  .cust-row{ padding:1.2vh 0; border-bottom:1px solid var(--line); }
+  .cust-row:last-child, .order-row:last-child{ border-bottom:none; }
+  .cust-top, .order-top{ display:flex; justify-content:space-between; align-items:baseline; font-size:1.3vw; }
+  .cust-top .amt{ font-weight:800; color:var(--cyan); }
+  .cust-top .amt small, .order-top small{ font-size:.85vw; color:var(--muted); font-weight:600; margin-left:.3vw; }
+  .mini-track{ height:.8vh; border-radius:99px; background:oklch(1 0 0 / .06); overflow:hidden; margin-top:.8vh; }
+  .mini-fill{ height:100%; border-radius:99px; }
+  .order-row{ padding:1.2vh 0; border-bottom:1px solid var(--line); }
+  .order-pct{ font-weight:800; }
+
+  /* ---------- shift slide ---------- */
+  .shift-groups{ display:flex; flex-direction:column; gap:1.8vh; flex:1; justify-content:center; }
+  .shift-group-lab{ font-size:1.3vw; font-weight:700; color:var(--muted); margin-bottom:1vh; letter-spacing:.02em; }
+  .shift-bar{ display:flex; height:4.4vh; border-radius:10px; overflow:hidden; background:oklch(1 0 0 / .06); }
+  .shift-seg{ height:100%; }
+  .shift-chips{ display:flex; gap:1vw; margin-top:1vh; font-size:1.05vw; }
+  .shift-chip{ display:flex; align-items:center; gap:.5vw; }
+  .shift-chip i{ width:.9vw; height:.9vw; border-radius:3px; }
+  .shift-total{ font-size:2.2vw; font-weight:800; }
+
+  /* ---------- progress dots: doubles as a subtle "still alive" motion cue ---------- */
+  #dots{ position:fixed; bottom:2.6vh; left:0; right:0; z-index:5; display:flex; justify-content:center; gap:.8vw; }
+  #advanceProgress{ position:fixed; bottom:0; left:0; height:3px; width:0%; background:var(--purple); z-index:6; box-shadow:0 0 8px var(--purple); }
+  #dots .dot{
+    width:.9vw; height:.9vw; border-radius:50%; background:oklch(1 0 0 / .18);
+    transition:background .3s ease, transform .3s ease; border:none; padding:0; cursor:pointer;
+    /* invisible larger hit area around the small visible dot, easier to click/tap precisely */
+    position:relative;
+  }
+  #dots .dot::before{ content:''; position:absolute; inset:-1vh; }
+  #dots .dot.active{ background:var(--purple); transform:scale(1.25); }
+  #dots .dot:hover{ background:oklch(1 0 0 / .4); }
+  #dots .dot:focus-visible{ outline:2px solid var(--purple); outline-offset:4px; }
+
+  /* ---------- connection / setup screen — full hero treatment matching the main app's entry
+     screen, with the SAME waves visible behind it (not hidden behind an opaque background) ---------- */
+  #setupScreen{ position:fixed; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:4vh 4vw; }
+  #setupScreen.hidden{ display:none; }
+  .setup-logo-row{ display:flex; align-items:center; justify-content:center; gap:2vw; margin-bottom:2.4vh; }
+  .setup-logo-slot{ width:9vw; display:flex; align-items:center; justify-content:center; }
+  .setup-fin{ width:5.2vw; height:5.2vw; filter:drop-shadow(0 0 2.4vw oklch(0.64 0.23 294 / .5)); animation:setupFloat 6s ease-in-out infinite; }
+  @keyframes setupFloat{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-1vh); } }
+  .setup-logo-fallback{ font-weight:700; font-size:.95vw; letter-spacing:.06em; color:oklch(0.6 0.05 295); line-height:1.4; }
+  .setup-title{ font-size:3.6vw; font-weight:800; letter-spacing:-.01em; line-height:1.05; margin-bottom:2.2vh; }
+  .setup-tagline{ max-width:46vw; color:var(--muted); font-size:1.1vw; line-height:1.6; margin-bottom:4vh; }
+  .setup-form{ width:min(90vw, 640px); }
+  .setup-form label{ display:block; font-size:.95vw; color:var(--muted); margin-bottom:.6vh; margin-top:2vh; text-align:left; }
+  .setup-form input{
+    width:100%; padding:1.4vh 1.2vw; font-size:1.1vw; border-radius:8px; border:1px solid var(--line);
+    background:oklch(1 0 0 / .04); color:var(--ink); font-family:inherit;
+  }
+  .setup-form input:focus{ outline:2px solid var(--purple); outline-offset:2px; }
+  .setup-form button{
+    margin-top:3.2vh; width:100%; padding:1.6vh; font-size:1.15vw; font-weight:700; border:none; border-radius:9999px;
+    background:var(--purple); color:oklch(0.99 0 0); cursor:pointer; box-shadow:0 0 2vw oklch(0.64 0.23 294 / .35);
+  }
+  .setup-msg{ margin-top:1.6vh; font-size:1vw; color:var(--amber); min-height:1.4em; }
+  .setup-facts{ display:flex; gap:.8vw; margin-top:4vh; width:100%; max-width:56vw; }
+  .setup-fact{ flex:1; padding:1.3vh 1vw; }
+  .setup-fact .v{ font-weight:800; font-size:1.3vw; color:var(--purple); white-space:nowrap; }
+  .setup-fact .l{ font-size:.7vw; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-top:.3vh; white-space:nowrap; }
+
+  /* ---------- line status + cycle times slide (modeled on the Looker floor dashboard) ---------- */
+  .ls-wrap{ flex:1; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:1.4vh; }
+  .ls-kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:1.2vw; }
+  .ls-kpi{ padding:1.3vh 1.4vw; display:flex; align-items:center; justify-content:space-between; gap:1vw; }
+  .ls-kpi .v{ font-size:3.6vw; font-weight:800; line-height:1; white-space:nowrap; }
+  .ls-kpi .v.txt{ font-size:3vw; }
+  .ls-kpi .l{ font-size:1vw; color:var(--muted); font-weight:600; text-align:right; line-height:1.3; }
+  .ls-mid{ display:grid; grid-template-columns:1fr 1.5fr 1.35fr; gap:1.2vw; min-height:0; }
+  .ls-mid .panel{ display:flex; flex-direction:column; min-height:0; padding:1.6vh 1.4vw; }
+  .ls-mid .panel-lab{ margin-bottom:.8vh; }
+
+  .style-grid{ flex:1; display:grid; grid-template-columns:auto 1fr 1fr; align-content:space-evenly; align-items:center; row-gap:.4vh; column-gap:1vw; }
+  .style-grid .h{ font-size:.85vw; color:var(--muted); font-weight:700; text-align:center; }
+  .style-grid .s{ font-size:1.6vw; font-weight:800; }
+  .style-grid .n{ font-size:2.6vw; font-weight:800; text-align:center; line-height:1.05; }
+  .style-grid .n.zero{ opacity:.35; }
+
+  .gauge-grid{ flex:1; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:1vh 1.2vw; min-height:0; }
+  .gauge{ display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:0; min-width:0; }
+  .gauge .gl{ font-size:.9vw; font-weight:700; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  .gauge svg{ width:100%; flex:1; min-height:0; max-height:16vh; display:block; }
+  .gauge .gs{ font-size:.75vw; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+
+  .cyc-rows{ flex:1; display:flex; flex-direction:column; justify-content:space-evenly; }
+  .cyc-row{ display:grid; grid-template-columns:1.8vw 9.4vw minmax(0,1fr) 5.6vw; align-items:center; gap:.8vw; }
+  .cyc-row .cn{ font-size:1.5vw; font-weight:800; text-align:center; }
+  .cyc-row .cl{ font-size:.95vw; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cyc-row .ct{ height:2.6vh; border-radius:7px; background:oklch(1 0 0 / .06); overflow:hidden; }
+  .cyc-row .cf{ height:100%; border-radius:7px; width:0; transition:width 1.2s cubic-bezier(.2,.8,.2,1); }
+  .cyc-row .cv{ text-align:right; line-height:1.1; }
+  .cyc-row .cv b{ display:block; font-size:1.35vw; }
+  .cyc-row .cv small{ font-size:.7vw; color:var(--muted); }
+  .cyc-row.bottleneck .cl, .cyc-row.bottleneck .cv small{ color:var(--amber); font-weight:700; }
+
+  .daily-table{ width:100%; border-collapse:collapse; font-size:1.1vw; }
+  .daily-table th{ font-size:.85vw; color:var(--muted); font-weight:700; text-align:right; padding:.5vh 1vw; border-bottom:1px solid var(--line); }
+  .daily-table th:first-child, .daily-table td:first-child{ text-align:left; }
+  .daily-table td{ text-align:right; padding:.75vh 1vw; border-bottom:1px solid var(--line); font-weight:600; }
+  .daily-table tr:last-child td{ border-bottom:none; }
+  .daily-table td.zero{ color:oklch(1 0 0 / .25); }
+  .daily-table td.tot{ color:var(--purple); font-weight:800; }
+  .daily-table tr.today td:first-child{ box-shadow:inset 3px 0 0 var(--purple); color:var(--ink); }
+  .daily-table td:first-child{ color:var(--muted); }
+
+  /* ---------- shark school that swims across the screen right before each slide change ---------- */
+  #sharkLayer{ position:fixed; inset:0; z-index:8; pointer-events:none; overflow:hidden; }
+  .shark-veil{ position:absolute; inset:0; opacity:0; animation:veil 2.6s ease-in-out forwards;
+    background:radial-gradient(ellipse at 50% 55%, oklch(0.35 0.14 295 / .55), oklch(0.09 0.02 292 / .35) 70%); }
+  @keyframes veil{ 0%{opacity:0;} 45%{opacity:1;} 100%{opacity:0;} }
+  .shark{ position:absolute; left:0; transform:translateX(-32vw); will-change:transform;
+    animation:sharkSwim var(--dur) cubic-bezier(.42,.08,.58,.92) var(--delay) forwards; }
+  @keyframes sharkSwim{ from{ transform:translateX(-32vw); } to{ transform:translateX(132vw); } }
+  .shark .bob{ animation:sharkBob 1.2s ease-in-out infinite; }
+  @keyframes sharkBob{ 0%,100%{ transform:translateY(0) rotate(-1.5deg); } 50%{ transform:translateY(1.4vh) rotate(1.5deg); } }
+  .shark svg{ width:var(--w); height:auto; display:block; filter:drop-shadow(0 0 1.4vw oklch(0.64 0.23 294 / .55)); }
+  .shark .tail{ transform-box:view-box; transform-origin:52px 45px; animation:tailWag .42s ease-in-out infinite alternate; }
+  @keyframes tailWag{ from{ transform:rotate(-15deg); } to{ transform:rotate(15deg); } }
+  .bubble{ position:absolute; border-radius:50%; border:1.5px solid oklch(0.85 0.1 290 / .55); opacity:0;
+    animation:bubbleUp 1.8s ease-out forwards; }
+  @keyframes bubbleUp{ 0%{ opacity:0; transform:translateY(0) scale(.6); } 15%{ opacity:1; } 100%{ opacity:0; transform:translateY(-7vh) scale(1.2); } }
+
+  .dash-msg{ color:var(--muted); font-size:1.2vw; text-align:center; margin-top:6vh; }
+  #errorBanner{
+    display:none; position:fixed; top:9vh; left:3vw; right:3vw; z-index:10;
+    background:oklch(0.25 0.1 25 / .95); border:1px solid var(--red); border-radius:10px;
+    padding:1.4vh 1.6vw; font-size:1.05vw; color:oklch(0.95 0.05 25);
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    #waveField .wave-track{ animation:none !important; }
+    #sharkLayer{ display:none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bgGrid"></div>
+<div id="waveField">
+  <div class="wave-track w1">
+    <svg viewBox="0 0 1440 260" preserveAspectRatio="none"><path d="M0,90 C 240,140 480,40 720,90 C 960,140 1200,40 1440,90 L1440,260 L0,260 Z" fill="oklch(0.3 0.09 293 / .55)"/></svg>
+    <svg viewBox="0 0 1440 260" preserveAspectRatio="none"><path d="M0,90 C 240,140 480,40 720,90 C 960,140 1200,40 1440,90 L1440,260 L0,260 Z" fill="oklch(0.3 0.09 293 / .55)"/></svg>
+  </div>
+  <div class="wave-track w2">
+    <svg viewBox="0 0 1440 260" preserveAspectRatio="none"><path d="M0,120 C 240,70 480,160 720,120 C 960,80 1200,150 1440,120 L1440,260 L0,260 Z" fill="oklch(0.24 0.07 293 / .7)"/></svg>
+    <svg viewBox="0 0 1440 260" preserveAspectRatio="none"><path d="M0,120 C 240,70 480,160 720,120 C 960,80 1200,150 1440,120 L1440,260 L0,260 Z" fill="oklch(0.24 0.07 293 / .7)"/></svg>
+  </div>
+  <div class="wave-track w3">
+    <svg viewBox="0 0 1440 260" preserveAspectRatio="none"><path d="M0,150 C 240,110 480,180 720,150 C 960,120 1200,170 1440,150 L1440,260 L0,260 Z" fill="oklch(0.18 0.045 292 / .9)"/></svg>
+    <svg viewBox="0 0 1440 260" preserveAspectRatio="none"><path d="M0,150 C 240,110 480,180 720,150 C 960,120 1200,170 1440,150 L1440,260 L0,260 Z" fill="oklch(0.18 0.045 292 / .9)"/></svg>
+  </div>
+</div>
+
+<div id="topBar">
+  <div class="brand"><b>FAT SHARK</b> &nbsp;OPS FLOOR DISPLAY</div>
+  <div class="right">
+    <span id="lastUpdated" class="mono" style="color:var(--muted); font-size:.85vw;"></span>
+    <span id="clockDisplay" class="mono"></span>
+    <span class="live"><i></i>LIVE</span>
+  </div>
+</div>
+
+<div id="stage">
+
+  <div class="slide" data-slide="overview">
+    <div class="slide-head">
+      <div class="slide-title">Floor Overview</div>
+      <div class="slide-sub" id="overviewSub"></div>
+    </div>
+    <div class="kgrid" id="kgrid"></div>
+  </div>
+
+  <div class="slide" data-slide="output">
+    <div class="slide-head">
+      <div class="slide-title">Output &amp; Totals</div>
+      <div class="slide-sub" id="totSub"></div>
+    </div>
+    <div class="tot-wrap">
+      <div class="tot-top">
+        <div class="panel trend-panel">
+          <div class="trend-head"><div class="panel-lab">Units built per day</div>
+            <div class="trend-key"><span><i style="background:oklch(0.78 0.2 300);"></i>Daily</span><span><i style="background:var(--cyan);"></i>7-day average</span></div></div>
+          <div id="trendChart"></div>
+        </div>
+        <div class="tot-stats" id="totStats"></div>
+      </div>
+      <div class="tot-bottom">
+        <div class="panel list-panel"><div class="panel-lab">By style, all-time</div><div class="tl-rows" id="totStyles"></div></div>
+        <div class="panel list-panel"><div class="panel-lab">By month</div><div class="tl-rows" id="totMonths"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="station">
+    <div class="slide-head">
+      <div class="slide-title">Station WIP</div>
+      <div class="slide-sub">Units signed in at each station right now</div>
+    </div>
+    <div class="sw-layout">
+      <div class="panel sw-main">
+        <div class="sw-rows" id="swRows"></div>
+        <div class="sw-foot" id="swFoot"></div>
+      </div>
+      <div class="panel feed-panel">
+        <div class="feed-head"><div class="panel-lab">Sign in / out feed</div><div class="feed-live"><i></i>LIVE</div></div>
+        <div class="feed-count" id="feedCount"></div>
+        <div class="feed-list" id="feedList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="cycle">
+    <div class="slide-head">
+      <div class="slide-title">Line Status &amp; Cycle Times</div>
+      <div class="slide-sub" id="lsSub"></div>
+    </div>
+    <div class="ls-wrap">
+      <div class="ls-kpis" id="lsKpis"></div>
+      <div class="ls-mid">
+        <div class="panel"><div class="panel-lab">WIP by style</div><div class="style-grid" id="lsStyles"></div></div>
+        <div class="panel"><div class="panel-lab">Targets</div><div class="gauge-grid" id="lsGauges"></div></div>
+        <div class="panel"><div class="panel-lab">Median time at station</div><div class="cyc-rows" id="lsCycle"></div></div>
+      </div>
+      <div class="panel" style="padding:1.2vh 1.4vw;">
+        <div class="panel-lab" style="margin-bottom:.4vh;">Units completed daily</div>
+        <div id="lsDaily"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="shift">
+    <div class="slide-head">
+      <div class="slide-title">Production by Shift</div>
+      <div class="slide-sub" id="shiftDateSub"></div>
+    </div>
+    <div class="shift-wrap">
+      <div class="shift-sum" id="shiftSum"></div>
+      <div style="display:flex; flex-direction:column; min-height:0;">
+        <div class="week-lab">Headsets finished per day, by shift</div>
+        <div class="week-cal" id="weekCal" style="flex:1;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="sales">
+    <div class="slide-head">
+      <div class="slide-title">Sales &amp; Orders</div>
+      <div class="slide-sub" id="salesSub"></div>
+    </div>
+    <div class="sales-layout">
+      <div class="panel">
+        <div class="panel-lab">Units built per customer</div>
+        <div id="custList"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-lab">Open orders</div>
+        <div id="orderList"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="dots"></div>
+<div id="advanceProgress"></div>
+<div id="errorBanner"></div>
+<div id="sharkLayer" aria-hidden="true"></div>
+<div id="diagPanel"></div>
+
+<div id="setupScreen">
+  <div class="setup-logo-row">
+    <div class="setup-logo-slot"><span class="setup-logo-fallback">UNUSUAL<br>MACHINES</span></div>
+    <svg viewBox="0 0 64 64" class="setup-fin" fill="none">
+      <defs>
+        <linearGradient id="fs-fin-setup" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stop-color="#6d4aff"/>
+          <stop offset="1" stop-color="#d946ef"/>
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="15" fill="#120a26"/>
+      <rect width="64" height="64" rx="15" fill="url(#fs-fin-setup)" opacity="0.12"/>
+      <path d="M12 48 C 10 34 19 19 45 9 C 51 27 54 41 57 48 C 44 52 26 52 12 48 Z" fill="url(#fs-fin-setup)"/>
+      <path d="M12 48 C 10 34 19 19 45 9 C 51 27 54 41 57 48 C 44 52 26 52 12 48 Z" fill="none" stroke="#b9a6ff" stroke-opacity="0.45" stroke-width="1"/>
+    </svg>
+    <div class="setup-logo-slot"><span class="setup-logo-fallback">FAT<br>SHARK</span></div>
+  </div>
+  <div class="setup-title">
+    <span style="color:var(--purple);">HEADSET FACTORY</span><br>
+    <span style="color:#fff;">CONTROL CENTER.</span>
+  </div>
+  <p class="setup-tagline">Live floor display &mdash; connect this device once using the same Google Sheet Web App URL and shared secret token as the main factory app.</p>
+  <div class="setup-form">
+    <label>Web App URL</label>
+    <input type="text" id="setupUrl" placeholder="https://script.google.com/macros/s/.../exec">
+    <label>Shared secret token</label>
+    <input type="text" id="setupToken" placeholder="">
+    <button id="btnSetupConnect">Connect &amp; start display</button>
+    <div class="setup-msg" id="setupMsg"></div>
+  </div>
+  <div class="setup-facts">
+    <div class="panel setup-fact"><div class="v">100%</div><div class="l">NDAA-Compliant</div></div>
+    <div class="panel setup-fact"><div class="v">4</div><div class="l">Product Lines</div></div>
+    <div class="panel setup-fact"><div class="v">US</div><div class="l">Assembly</div></div>
+    <div class="panel setup-fact"><div class="v">Blue UAS</div><div class="l">Eligible</div></div>
+  </div>
+</div>
+
+<script>
+const SETUP_URL_KEY = 'tv-sheet-url-v1';
+const SETUP_TOKEN_KEY = 'tv-sheet-token-v1';
+
+// ---- Hardcoded connection defaults ----
+// This is a read-only floor display with no way to edit data through it, so the team has
+// decided a manual connect step / password isn't worth the friction for this specific screen.
+// Fill in DEFAULT_TOKEN below with the real shared secret before deploying this file (leave
+// the quotes, put the token between them), and it will connect automatically with no setup
+// screen at all, on any device that opens it.
+//
+// Trade-off worth knowing: since this file has to live on a PUBLIC GitHub repo for free GitHub
+// Pages hosting, anyone who found that repo could view this token in the page's source code —
+// this is not the same as it being kept truly private. Reasonable for an internal, read-only
+// display; just worth knowing before relying on it.
+const DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbzWTvTgAh9Yp4c-r-mKTZs2XI3KU-rfhovBPC4tBm8H6lLoacCmoz_WXevHHxqY5aOh/exec';
+const DEFAULT_TOKEN = '';
+
+function sheetConfig(){
+  return {
+    url: localStorage.getItem(SETUP_URL_KEY) || DEFAULT_URL,
+    token: localStorage.getItem(SETUP_TOKEN_KEY) || DEFAULT_TOKEN
+  };
+}
+function hasRealCredentials(cfg){
+  // Deliberately just a plain truthiness check, not a comparison against some placeholder
+  // string — a magic string that appears in two places is exactly the kind of thing a find-
+  // and-replace edit can silently break by matching both occurrences at once.
+  return !!(cfg.url && cfg.token);
+}
+
+async function sheetPostOnce(body){
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token) throw new Error('Not connected yet.');
+  const res = await fetch(cfg.url, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify(Object.assign({token: cfg.token}, body))
+  });
+  const raw = await res.text();
+  let json;
+  try{ json = JSON.parse(raw); }
+  catch(e){ throw new Error('Web App returned something unexpected (HTTP ' + res.status + ').'); }
+  if(json.error) throw new Error(json.error);
+  return json;
+}
+async function sheetPost(body){
+  // Retries transient failures a couple of times before giving up — a floor display running
+  // unattended for hours shouldn't go dark over one momentary network hiccup.
+  const maxRetries = 2;
+  let lastError;
+  for(let attempt = 0; attempt <= maxRetries; attempt++){
+    try{
+      const result = await sheetPostOnce(body);
+      if(result && result.status === 'busy'){
+        lastError = new Error(result.message || 'Busy');
+        if(attempt < maxRetries){ await new Promise(r => setTimeout(r, 1200 * (attempt + 1))); continue; }
+        throw lastError;
+      }
+      return result;
+    }catch(e){
+      const msg = (e.message || '').toLowerCase();
+      const isRetryable = msg.includes('failed to fetch') || msg.includes('network') || msg.includes('busy') || msg.includes('unexpected');
+      if(isRetryable && attempt < maxRetries){
+        lastError = e;
+        await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastError;
+}
+
+// ==================== Setup screen ====================
+function initSetup(){
+  const cfg = sheetConfig();
+  if(hasRealCredentials(cfg)){
+    document.getElementById('setupScreen').classList.add('hidden');
+    startDisplay();
+    return;
+  }
+  document.getElementById('setupUrl').value = cfg.url;
+  document.getElementById('setupToken').value = cfg.token;
+}
+document.getElementById('btnSetupConnect').addEventListener('click', async () => {
+  const url = document.getElementById('setupUrl').value.trim();
+  const token = document.getElementById('setupToken').value.trim();
+  const msg = document.getElementById('setupMsg');
+  if(!url || !token){ msg.textContent = 'Enter both the URL and the token.'; return; }
+  msg.textContent = 'Testing connection\u2026';
+  localStorage.setItem(SETUP_URL_KEY, url);
+  localStorage.setItem(SETUP_TOKEN_KEY, token);
+  try{
+    await sheetPost({action: 'getFullSheet', sheet: 'Looker_TV_Feed'});
+    document.getElementById('setupScreen').classList.add('hidden');
+    startDisplay();
+  }catch(e){
+    msg.textContent = 'Could not connect: ' + e.message;
+  }
+});
+
+// ==================== Data loading (mirrors the main app's logic) ====================
+const LOOKER_SHEET_NAME = 'Looker_TV_Feed';
+const COUNT_SHEET_NAME = 'Count';
+const SALES_SHEET_NAME = 'Sales';
+
+async function loadLookerFeed(){
+  const json = await sheetPost({action: 'getFullSheet', sheet: LOOKER_SHEET_NAME});
+  const rows = json.rows || [];
+  if(!rows.length) return [];
+  const headers = rows[0].map(h => String(h).trim());
+  const idx = {
+    category: headers.indexOf('Data Category'),
+    timestamp: headers.indexOf('Timestamp'),
+    value: headers.indexOf('Value'),
+    shift: headers.indexOf('Shift'),
+    metric: headers.indexOf('Style/Metric Name')
+  };
+  return rows.slice(1).filter(r => r[idx.category]).map(r => ({
+    category: String(r[idx.category] || '').trim(),
+    timestamp: r[idx.timestamp],
+    value: Number(r[idx.value]),
+    shift: idx.shift > -1 ? String(r[idx.shift] || '').trim() : '',
+    metric: String(r[idx.metric] || '').trim()
+  }));
+}
+async function loadCountSheet(){
+  const json = await sheetPost({action: 'getFullSheet', sheet: COUNT_SHEET_NAME});
+  return json.rows || [];
+}
+async function loadSalesFeed(){
+  const json = await sheetPost({action: 'getFullSheet', sheet: SALES_SHEET_NAME});
+  const rows = json.rows || [];
+  if(rows.length < 2) return [];
+  const headers = rows[0].map(h => String(h).trim());
+  const idx = {
+    total: headers.indexOf('SALES-Extended Total'),
+    company: headers.indexOf('SALES-Company Name'),
+    qty: headers.findIndex(h => /qty|quantity|units/i.test(h)),
+    status: headers.findIndex(h => /dropdown/i.test(h))
+  };
+  return rows.slice(1).filter(r => r[idx.company]).map(r => ({
+    total: Number(r[idx.total]) || 0,
+    company: String(r[idx.company] || '').trim(),
+    qty: idx.qty > -1 ? (Number(r[idx.qty]) || 0) : 0,
+    status: idx.status > -1 ? String(r[idx.status] || '').trim() : ''
+  }));
+}
+async function loadCustomerOrders(feed){
+  const goals = feed.filter(r => r.category === 'Scorecard: Goal');
+  const shipped = feed.filter(r => r.category === 'Scorecard: Goal Shipped');
+  const byCustomer = {};
+  goals.forEach(r => { byCustomer[r.metric] = byCustomer[r.metric] || {goal:0, shipped:0}; byCustomer[r.metric].goal += r.value || 0; });
+  shipped.forEach(r => { byCustomer[r.metric] = byCustomer[r.metric] || {goal:0, shipped:0}; byCustomer[r.metric].shipped += r.value || 0; });
+  return Object.entries(byCustomer).map(([name, v]) => ({name, goal:v.goal, shipped:v.shipped, pct: v.goal ? Math.min(100, Math.round(v.shipped/v.goal*100)) : 0}))
+    .filter(o => o.goal > 0);
+}
+
+// ---- Station Log: one bounded read of recent MoveIn/MoveOut events feeds cycle times and the
+// sign in/out feed. Station WIP counts come from the Count tab, the same source as the main
+// tracker, and are re-read whenever the feed sees new moves so the bars stay live. ----
+const LOG_WINDOW_ROWS = 20000;   // how far back the full refresh reads (recent events)
+const FEED_POLL_MS = 12000;      // how often the live feed checks for new sign ins/outs
+async function loadLogEvents(maxRows){
+  const json = await sheetPost({action: 'getRecentLogRows', maxRows: maxRows});
+  // columns: 0 UniqID, 1 HeadsetSN, 2 Event, 3 Person, 4 StationID, 5 DateTime, 6 Comment
+  return (json.rows || []).map(r => {
+    const station = String(r[4] || '').trim();
+    const m = station.match(/(\d+)/);
+    const ev = String(r[2] || '').trim().toLowerCase();
+    return {
+      id: String(r[0] || '').trim(),
+      serial: String(r[1] || '').trim(),
+      event: ev === 'movein' ? 'MoveIn' : ev === 'moveout' ? 'MoveOut' : String(r[2] || '').trim(),
+      person: String(r[3] || '').trim(),
+      stationNum: m ? m[1] : '',
+      t: Date.parse(r[5])
+    };
+  }).filter(e => e.serial && e.stationNum && !isNaN(e.t)).sort((a,b) => a.t - b.t);
+}
+function computeCycleTimes(events){
+  const bySerialStation = {};
+  events.forEach(e => {
+    const key = e.serial + '|' + e.stationNum;
+    if(!bySerialStation[key]) bySerialStation[key] = {};
+    if(e.event === 'MoveIn') bySerialStation[key].moveIn = e.t;
+    else if(e.event === 'MoveOut') bySerialStation[key].moveOut = e.t;
+  });
+  const byStation = {};
+  Object.keys(bySerialStation).forEach(key => {
+    const t = bySerialStation[key];
+    if(t.moveIn && t.moveOut && t.moveOut > t.moveIn){
+      const num = key.split('|')[1];
+      (byStation[num] = byStation[num] || []).push(t.moveOut - t.moveIn);
+    }
+  });
+  const result = {};
+  Object.keys(byStation).forEach(num => {
+    // Median, not mean — one unit left overnight would otherwise skew the typical time badly.
+    const sorted = byStation[num].slice().sort((a,b) => a - b);
+    result[num] = {medianMs: sorted[Math.floor(sorted.length / 2)], count: sorted.length};
+  });
+  return result;
+}
+// Latest event per serial. A serial whose latest event is a MoveIn is sitting at that station.
+let wipState = {};
+function applyLogEvent(e){
+  const cur = wipState[e.serial];
+  if(cur && cur.t > e.t) return;
+  wipState[e.serial] = {event: e.event, stationNum: e.stationNum, t: e.t};
+}
+function rebuildWipState(events){ wipState = {}; events.forEach(applyLogEvent); }
+function wipFromState(){
+  const out = {'1':[],'2':[],'3':[],'4':[],'5':[],'6':[]};
+  Object.keys(wipState).forEach(serial => {
+    const v = wipState[serial];
+    if(v.event === 'MoveIn') (out[v.stationNum] = out[v.stationNum] || []).push(serial);
+  });
+  return out;
+}
+// ==================== Production history (all-time, monthly, by style) ====================
+// The Looker feed only carries recent rows, so all-time and monthly totals are rebuilt from the
+// tabs that hold one row per unit. Headset style is read from the serial prefix (H2F2639... =
+// H2F). If these numbers don't match the main tracker, press D on the TV to see what each tab
+// contributed, then adjust the list below.
+const HISTORY_SOURCES = [
+  {sheet: 'SerialNumbers'},                              // headsets
+  {sheet: 'OpticalModelSN', style: 'Optical Module'}     // optical modules
+];
+const HISTORY_REFRESH_MS = 10 * 60000;   // history changes slowly; re-read every 10 minutes
+
+function parseDateCell(v){
+  if(v === null || v === undefined || v === '') return null;
+  if(typeof v === 'number'){
+    // Google Sheets serial day number
+    if(v > 30000 && v < 80000){ const d = new Date(Math.round((v - 25569) * 86400000)); return new Date(d.getTime() + d.getTimezoneOffset() * 60000); }
+    return null;
+  }
+  const str = String(v).trim();
+  if(!/\d{1,4}[\/\-]\d{1,2}/.test(str)) return null;
+  const t = Date.parse(str);
+  return isNaN(t) ? null : new Date(t);
+}
+function pickColumn(headers, body, headerRe, cellTest){
+  let idx = headers.findIndex(h => headerRe.test(h));
+  if(idx > -1) return idx;
+  let best = -1, bestHits = 0;
+  const sample = body.slice(0, 300);
+  for(let c = 0; c < headers.length; c++){
+    const hits = sample.filter(r => cellTest(r[c])).length;
+    if(hits > bestHits){ bestHits = hits; best = c; }
+  }
+  return bestHits >= Math.max(3, sample.length * 0.3) ? best : -1;
+}
+function parseLedger(rows, src){
+  const info = {sheet: src.sheet, rows: Math.max(0, rows.length - 1), units: [], first: null, last: null};
+  if(rows.length < 2){ info.error = 'empty'; return info; }
+  const headers = rows[0].map(h => String(h || '').trim());
+  const body = rows.slice(1);
+  const serialCol = pickColumn(headers, body, /serial|^s\/?n$|^sn\b/i, looksLikeSerial);
+  const dateCol = pickColumn(headers, body, /date|time|created|stamp|printed/i, v => !!parseDateCell(v));
+  const styleCol = headers.findIndex(h => /^(style|model|sku|product)$/i.test(h));
+  info.serialCol = serialCol > -1 ? headers[serialCol] || ('col ' + (serialCol + 1)) : '(none)';
+  info.dateCol = dateCol > -1 ? headers[dateCol] || ('col ' + (dateCol + 1)) : '(none)';
+  if(dateCol < 0){ info.error = 'no date column found'; return info; }
+  const seen = new Set();
+  let dupes = 0;
+  body.forEach(r => {
+    const d = parseDateCell(r[dateCol]);
+    if(!d) return;
+    const serial = serialCol > -1 ? String(r[serialCol] || '').trim() : '';
+    if(serialCol > -1 && !serial) return;
+    if(serial){ if(seen.has(serial)){ dupes++; return; } seen.add(serial); }
+    let style = src.style;
+    if(!style){
+      const sc = styleCol > -1 ? String(r[styleCol] || '').trim().toUpperCase() : '';
+      style = /^H2[A-F]$/.test(sc) ? sc : styleFromSerial(serial);
+    }
+    const day = localDayKey(d);
+    info.units.push({day: day, style: style});
+    if(!info.first || day < info.first) info.first = day;
+    if(!info.last || day > info.last) info.last = day;
+  });
+  info.dupes = dupes;
+  return info;
+}
+let historyCache = null, historyLoadedAt = 0;
+async function getHistory(){
+  if(historyCache && Date.now() - historyLoadedAt < HISTORY_REFRESH_MS) return historyCache;
+  const results = await Promise.all(HISTORY_SOURCES.map(async src => {
+    try{ return parseLedger((await sheetPost({action: 'getFullSheet', sheet: src.sheet})).rows || [], src); }
+    catch(e){ return {sheet: src.sheet, rows: 0, units: [], error: e.message}; }
+  }));
+  historyCache = {units: results.flatMap(r => r.units), diag: results};
+  historyLoadedAt = Date.now();
+  return historyCache;
+}
+// day -> {total, styles:{}} from the history tabs; falls back to the Looker feed if they gave nothing
+function totalsDaily(feed, hist){
+  const out = {};
+  if(hist && hist.units.length){
+    hist.units.forEach(u => {
+      const o = out[u.day] = out[u.day] || {total: 0, styles: {}};
+      o.total++; o.styles[u.style] = (o.styles[u.style] || 0) + 1;
+    });
+  }else{
+    feed.forEach(r => {
+      if(r.category !== 'Daily Production' || !r.metric) return;
+      const d = new Date(r.timestamp); if(isNaN(d)) return;
+      const v = isNaN(r.value) ? 0 : r.value;
+      const o = out[localDayKey(d)] = out[localDayKey(d)] || {total: 0, styles: {}};
+      o.total += v; o.styles[r.metric] = (o.styles[r.metric] || 0) + v;
+    });
+  }
+  return out;
+}
+
+// ==================== Count tab daily table: finished headsets per day, by shift ====================
+// Top-left block of the Count tab: Date | Total Finished | Shift 1 Total | Shift 2 Total | H2C ... | Other | Yield % | Reworks Completed
+function loadCountDaily(rows){
+  if(!rows || rows.length < 2) return [];
+  const h = rows[0].map(x => String(x || '').trim());
+  const dateCol = h.indexOf('Date');
+  const totalCol = h.findIndex(x => /^total finished$/i.test(x));
+  if(dateCol < 0 || totalCol < 0) return [];
+  const yieldCol = h.findIndex(x => /^yield/i.test(x));
+  const endCol = yieldCol > -1 ? yieldCol : h.length;
+  const shiftCols = [];
+  h.forEach((x, i) => { const m = x.match(/^(shift\s*\d+)\s*total$/i); if(m && i < endCol) shiftCols.push({i: i, name: m[1].replace(/\s+/, ' ').replace(/^s/, 'S')}); });
+  const styleCols = [];
+  h.forEach((x, i) => { if(i < endCol && i > totalCol && (/^H2[A-F]$/i.test(x) || /^other$/i.test(x))) styleCols.push({i: i, name: x.toUpperCase() === 'OTHER' ? 'Other' : x.toUpperCase()}); });
+  const reworkCol = h.findIndex(x => /^reworks completed$/i.test(x));
+  const out = [];
+  for(let r = 1; r < rows.length; r++){
+    const d = parseDateCell(rows[r][dateCol]);
+    if(!d) break;   // the daily block ends at the first blank date
+    const num = i => Number(rows[r][i]) || 0;
+    const shifts = {}; shiftCols.forEach(c => { shifts[c.name] = num(c.i); });
+    const styles = {}; styleCols.forEach(c => { if(num(c.i)) styles[c.name] = num(c.i); });
+    out.push({day: localDayKey(d), d: d, total: num(totalCol), shifts: shifts, styles: styles, reworks: reworkCol > -1 ? num(reworkCol) : 0});
+  }
+  return out.sort((a,b) => a.day < b.day ? -1 : 1);
+}
+function showDiagnostics(){
+  const el = document.getElementById('diagPanel');
+  if(el.style.display === 'block'){ el.style.display = 'none'; return; }
+  const h = historyCache;
+  const total = h ? h.units.length : 0;
+  el.innerHTML = '<h3>Data source check</h3><p style="color:var(--muted);">What each history tab contributed to the all-time total. Press D again to close.</p>' +
+    '<table><tr><th>Tab</th><th>Rows</th><th>Units counted</th><th>Duplicate serials skipped</th><th>Date column</th><th>Serial column</th><th>First day</th><th>Last day</th><th>Problem</th></tr>' +
+    (h ? h.diag.map(d => '<tr><td>' + d.sheet + '</td><td>' + fmtNum(d.rows) + '</td><td><b>' + fmtNum(d.units.length) + '</b></td><td>' + fmtNum(d.dupes || 0) + '</td><td>' + (d.dateCol || '') + '</td><td>' + (d.serialCol || '') + '</td><td>' + (d.first || '') + '</td><td>' + (d.last || '') + '</td><td style="color:var(--amber);">' + (d.error || '') + '</td></tr>').join('') : '<tr><td colspan="9">Not loaded yet.</td></tr>') +
+    '</table><p style="margin-top:2vh; font-size:1.3vw;">All-time total: <b>' + fmtNum(total) + '</b></p>';
+  el.style.display = 'block';
+}
+
+function formatDuration(ms){
+  const totalMin = Math.round(ms / 60000);
+  if(totalMin < 60) return totalMin + 'm';
+  const h = Math.floor(totalMin / 60), m = totalMin % 60;
+  return h + 'h ' + m + 'm';
+}
+
+function productGroupForMetric(metric){
+  const m = String(metric || '').trim();
+  if(m.toLowerCase() === 'optical module') return 'Optical Modules';
+  if(/^H2[A-F]$/i.test(m)) return 'Headsets';
+  return m || 'Other';
+}
+const SHIFT_COLOR_MAP = {'All Shifts':'oklch(0.5 0.02 295)', 'Shift 1':'oklch(0.7 0.17 220)', 'Shift 2':'oklch(0.72 0.19 300)', 'Shift 3':'oklch(0.74 0.18 60)'};
+function colorForShift(name){ return SHIFT_COLOR_MAP[name] || 'oklch(0.68 0.16 200)'; }
+
+function looksLikeSerial(s){
+  s = String(s || '').trim();
+  return s.length >= 8 && !s.includes('.') && /[A-Za-z]/.test(s) && /[0-9]/.test(s);
+}
+function loadStuckAtStations(rows){
+  const result = {};
+  if(!rows.length) return result;
+  const headers = rows[0];
+  const stationCols = {};
+  headers.forEach((h, i) => { const m = String(h || '').match(/stuck at (\d+)/i); if(m) stationCols[m[1]] = i; });
+  Object.keys(stationCols).forEach(num => {
+    const col = stationCols[num];
+    result[num] = rows.slice(1).map(r => String(r[col] || '').trim()).filter(looksLikeSerial);
+  });
+  return result;
+}
+
+// ==================== Rendering ====================
+function fmtNum(n){ return Math.round(n || 0).toLocaleString(); }
+
+// Animates a number counting up to its target value, ease-out, over a bit under a second —
+// gives the headline numbers real, purposeful motion on load instead of just appearing, and
+// adds to the screen never sitting visually still.
+function animateCountUp(el, targetVal, duration){
+  if(!el) return;
+  duration = duration || 900;
+  const target = Math.round(targetVal || 0);
+  const startTime = performance.now();
+  function tick(now){
+    const progress = Math.min(1, (now - startTime) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.round(target * eased).toLocaleString();
+    if(progress < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// Line icons for the overview cards (24px grid, stroke-drawn)
+const OV_ICONS = {
+  layers: '<path d="M12 3 2.5 8 12 13l9.5-5L12 3Z"/><path d="m2.5 12.5 9.5 5 9.5-5"/><path d="m2.5 17 9.5 5 9.5-5" opacity=".55"/>',
+  pulse: '<path d="M2 12h4.2l2.3-6 4.2 12 2.4-6H22"/>',
+  goggles: '<path d="M3 9.6C3 7.6 4.6 6 6.6 6h10.8C19.4 6 21 7.6 21 9.6v2.9c0 2.2-1.8 4-4 4h-1.4a2.6 2.6 0 0 1-2.3-1.4l-.4-.8a1 1 0 0 0-1.8 0l-.4.8a2.6 2.6 0 0 1-2.3 1.4H7c-2.2 0-4-1.8-4-4V9.6Z"/><circle cx="8" cy="11.2" r="2.1"/><circle cx="16" cy="11.2" r="2.1"/><path d="M3 10.5H1.2M21 10.5h1.8"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M7.5 14h.01M12 14h.01M16.5 14h.01M7.5 17.5h.01M12 17.5h.01"/>',
+  alert: '<path d="M10.3 3.9 2.4 17.6a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9.2v4.4M12 17h.01"/>',
+  wrench: '<path d="M14.6 3.4a5 5 0 0 0-4.3 7L3.7 17a2 2 0 0 0 2.8 2.9l6.7-6.7a5 5 0 0 0 7-4.3l-3.1 1.2-2.2-.9-.9-2.2 1.2-3.1a5 5 0 0 0-.6-.5Z"/>'
+};
+function ovIcon(name, cls){
+  return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + OV_ICONS[name] + '</svg>';
+}
+function deltaText(cur, prev, suffix){
+  if(!prev) return '';
+  const pct = Math.round((cur - prev) / prev * 100);
+  const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
+  return '<span class="delta ' + cls + '" style="margin:0;">' + (pct > 0 ? '+' : '') + pct + '%</span> ' + suffix;
+}
+
+// Headset units by local day, split by shift (optical modules excluded — different product)
+function headsetDaily(feed){
+  const out = {};
+  feed.forEach(r => {
+    if(r.category !== 'Daily Production' || productGroupForMetric(r.metric) !== 'Headsets') return;
+    const d = new Date(r.timestamp);
+    if(isNaN(d)) return;
+    const k = localDayKey(d);
+    const v = isNaN(r.value) ? 0 : r.value;
+    const o = out[k] = out[k] || {total: 0, shifts: {}};
+    o.total += v;
+    const sh = r.shift || 'All Shifts';
+    o.shifts[sh] = (o.shifts[sh] || 0) + v;
+  });
+  return out;
+}
+function dayOffsetKey(offset){ const d = new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate() + offset); return localDayKey(d); }
+function sumDays(daily, fromOffset, toOffset){
+  let s = 0;
+  for(let i = fromOffset; i <= toOffset; i++){ const o = daily[dayOffsetKey(i)]; if(o) s += o.total; }
+  return s;
+}
+
+function renderOverview(feed, stuck, countDaily, allTimeUnits){
+  const daily = headsetDaily(feed);
+  const todayKey = dayOffsetKey(0);
+  const todayRow = countDaily.find(r => r.day === todayKey);
+  const priorRow = countDaily.filter(r => r.day < todayKey).slice(-1)[0];
+  const weekRows = countDaily.filter(r => r.day >= dayOffsetKey(-6));
+  const todayTotal = countDaily.length ? (todayRow ? todayRow.total : 0) : (daily[todayKey] || {total:0}).total;
+  const weekTotal = countDaily.length ? weekRows.reduce((s,r) => s + r.total, 0) : sumDays(daily, -6, 0);
+  const shiftLine = rows => {
+    const t = {}; rows.forEach(r => Object.keys(r.shifts).forEach(k => { t[k] = (t[k] || 0) + r.shifts[k]; }));
+    return Object.keys(t).sort().map(k => k + ': <b style="color:var(--ink);">' + fmtNum(t[k]) + '</b>').join(' &nbsp; ');
+  };
+  const allTime = allTimeUnits;
+  const partFailures = feed.filter(r => r.category === 'Part Failure').reduce((s,r) => s + (isNaN(r.value)?0:r.value), 0);
+  const reworks = feed.filter(r => r.category === 'Rework Completed').reduce((s,r) => s + (isNaN(r.value)?0:r.value), 0);
+
+  const totalWip = Object.values(stuck).reduce((s,arr) => s + arr.length, 0);
+  const activeWip = ['3','4','5','6'].reduce((s,n) => s + (stuck[n]||[]).length, 0);
+
+  const cards = [
+    {val: totalWip, lab: 'Total WIP', icon: 'layers', color: 'var(--purple)', sub: 'Signed in across all 6 stations'},
+    {val: activeWip, lab: 'Active WIP', icon: 'pulse', color: 'var(--cyan)', sub: 'Testing, assembly, QC and packing'},
+    {val: todayTotal, lab: "Today's headsets", icon: 'goggles', color: 'var(--green)', sub: (todayRow ? shiftLine([todayRow]) : 'None finished yet') + (priorRow ? ' &nbsp;\u00b7&nbsp; Last working day: ' + fmtNum(priorRow.total) : '')},
+    {val: weekTotal, lab: 'This week', icon: 'calendar', color: 'var(--amber)', sub: weekRows.length ? shiftLine(weekRows) : 'Rolling 7 days'},
+    {val: partFailures, lab: 'Part failures', icon: 'alert', color: 'var(--red)', sub: 'Logged this week'},
+    {val: reworks, lab: 'Reworks completed', icon: 'wrench', color: 'var(--pink)', sub: 'Units repaired and back in the line'}
+  ];
+  document.getElementById('kgrid').innerHTML = cards.map((c,i) =>
+    '<div class="panel kcard" style="--c:' + c.color + ';">' + ovIcon(c.icon, 'kwater') +
+      '<div class="khead"><div class="kicon">' + ovIcon(c.icon) + '</div><div class="lab">' + c.lab + '</div></div>' +
+      '<div><div class="val" id="kcard-val-' + i + '" style="color:var(--c);">0</div><div class="ksub">' + c.sub + '</div></div>' +
+    '</div>'
+  ).join('');
+  cards.forEach((c,i) => animateCountUp(document.getElementById('kcard-val-' + i), c.val));
+  document.getElementById('overviewSub').textContent = fmtNum(allTime) + ' units built all-time';
+}
+
+// ==================== Rolling 7-day calendar (shift slide) ====================
+function renderWeekCalendar(feed, countDaily){
+  if(countDaily && countDaily.length){ renderCountWeek(countDaily); return; }
+  const daily = headsetDaily(feed);
+  // Last 7 working days, oldest on the left. Weekends are skipped unless something was built.
+  const cells = [];
+  for(let i = 0; cells.length < 7 && i < 30; i++){
+    const d = new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate() - i);
+    const data = daily[localDayKey(d)] || {total:0, shifts:{}};
+    const weekend = d.getDay() === 0 || d.getDay() === 6;
+    if(weekend && !data.total) continue;
+    cells.unshift({d: d, data: data, today: i === 0});
+  }
+  document.getElementById('weekCal').innerHTML = cells.map(c => {
+    const shifts = Object.keys(c.data.shifts).filter(s => c.data.shifts[s] > 0).sort();
+    const tot = c.data.total || 1;
+    const segs = shifts.map(s => '<div style="width:' + (c.data.shifts[s] / tot * 100) + '%; background:' + colorForShift(s) + ';"></div>').join('');
+    const lines = shifts.map(s => '<div><span><i style="background:' + colorForShift(s) + ';"></i>' + s + '</span><b>' + fmtNum(c.data.shifts[s]) + '</b></div>').join('');
+    return '<div class="panel day-cell' + (c.today ? ' today' : '') + '">' +
+      '<div class="dw">' + (c.today ? 'Today' : c.d.toLocaleDateString(undefined, {weekday:'short'})) + '<small>' + c.d.toLocaleDateString(undefined, {month:'short', day:'numeric'}) + '</small></div>' +
+      '<div class="dt' + (c.data.total ? '' : ' none') + '">' + fmtNum(c.data.total) + '</div>' +
+      '<div class="day-bar">' + segs + '</div>' +
+      '<div class="day-shifts">' + (lines || '<div>No production</div>') + '</div></div>';
+  }).join('');
+}
+
+// ==================== Output & Totals slide ====================
+const MONTH_ROWS = 9;   // newest months listed on the by-month card
+function renderTotalsSlide(feed, hist){
+  const daily = totalsDaily(feed, hist);
+  const fromHistory = !!(hist && hist.units.length);
+  const val = r => isNaN(r.value) ? 0 : r.value;
+  const dayKeys = Object.keys(daily).filter(k => daily[k].total > 0).sort();
+  const allTime = dayKeys.reduce((s,k) => s + daily[k].total, 0);
+
+  // ---- Full-range daily trend with a 7-day moving average ----
+  const chartEl = document.getElementById('trendChart');
+  if(dayKeys.length < 2){
+    chartEl.innerHTML = '<div class="dash-msg">Not enough daily data yet.</div>';
+  }else{
+    const W = Math.max(300, chartEl.clientWidth), H = Math.max(140, chartEl.clientHeight);
+    const fs = Math.max(11, window.innerWidth * 0.0078);
+    const padT = fs * 2, padB = fs * 2.2, padL = fs * 3.2, padR = fs;
+    const t0 = new Date(dayKeys[0] + 'T12:00:00').getTime();
+    const t1 = new Date(dayKeys[dayKeys.length - 1] + 'T12:00:00').getTime();
+    const span = Math.max(1, t1 - t0);
+    const vals = dayKeys.map(k => daily[k].total);
+    const maxV = Math.max(...vals, 1);
+    const niceMax = Math.ceil(maxV / 50) * 50;
+    const X = k => padL + (new Date(k + 'T12:00:00').getTime() - t0) / span * (W - padL - padR);
+    const Y = v => padT + (1 - v / niceMax) * (H - padT - padB);
+    const pts = dayKeys.map((k,i) => [X(k), Y(vals[i])]);
+    const line = pts.map((p,i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const area = line + ' L' + pts[pts.length-1][0].toFixed(1) + ',' + Y(0) + ' L' + pts[0][0].toFixed(1) + ',' + Y(0) + ' Z';
+    // 7-day average over production days
+    const avgPts = dayKeys.map((k,i) => { const w = vals.slice(Math.max(0, i - 6), i + 1); return [X(k), Y(w.reduce((a,b) => a + b, 0) / w.length)]; });
+    const avgLine = avgPts.map((p,i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '"><defs><linearGradient id="trGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.64 0.23 294 / .45)"/><stop offset="1" stop-color="oklch(0.64 0.23 294 / 0)"/></linearGradient></defs>';
+    [0, .5, 1].forEach(f => {
+      const y = Y(niceMax * f);
+      svg += '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y + '" y2="' + y + '" stroke="oklch(1 0 0 / ' + (f ? .06 : .12) + ')"/>' +
+        '<text x="' + (padL - fs * 0.6) + '" y="' + (y + fs * 0.35) + '" text-anchor="end" font-size="' + fs + '" fill="oklch(0.55 0.04 295)" font-family="JetBrains Mono,monospace">' + fmtNum(niceMax * f) + '</text>';
+    });
+    // month ticks
+    const first = new Date(dayKeys[0] + 'T12:00:00');
+    const m = new Date(first.getFullYear(), first.getMonth() + 1, 1, 12);
+    while(m.getTime() <= t1){
+      const x = X(localDayKey(m));
+      svg += '<line x1="' + x + '" x2="' + x + '" y1="' + padT + '" y2="' + Y(0) + '" stroke="oklch(1 0 0 / .05)"/>' +
+        '<text x="' + x + '" y="' + (H - fs * 0.5) + '" text-anchor="middle" font-size="' + fs + '" fill="oklch(0.6 0.05 295)" font-family="JetBrains Mono,monospace">' + m.toLocaleDateString(undefined, {month:'short'}) + '</text>';
+      m.setMonth(m.getMonth() + 1);
+    }
+    svg += '<path d="' + area + '" fill="url(#trGrad)"/>' +
+      '<path d="' + line + '" fill="none" stroke="oklch(0.78 0.2 300)" stroke-width="2.2" stroke-linejoin="round"/>' +
+      '<path d="' + avgLine + '" fill="none" stroke="oklch(0.75 0.17 220)" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" style="filter:drop-shadow(0 0 4px oklch(0.75 0.17 220 / .6));"/>';
+    // best day marker and latest point
+    const bi = vals.indexOf(maxV), li = vals.length - 1;
+    svg += '<circle cx="' + pts[bi][0] + '" cy="' + pts[bi][1] + '" r="' + fs * 0.4 + '" fill="oklch(0.9 0.12 300)"/>' +
+      '<text x="' + Math.min(pts[bi][0], W - padR - fs * 4) + '" y="' + (pts[bi][1] - fs * 0.7) + '" text-anchor="middle" font-size="' + fs + '" font-weight="700" fill="oklch(0.9 0.12 300)">Best ' + fmtNum(maxV) + '</text>' +
+      '<circle cx="' + pts[li][0] + '" cy="' + pts[li][1] + '" r="' + fs * 0.45 + '" fill="oklch(0.75 0.17 220)" stroke="oklch(0.09 0.02 292)" stroke-width="2"/>';
+    svg += '</svg>';
+    chartEl.innerHTML = svg;
+  }
+
+  // ---- By month (headsets), newest first, with growth vs the month before ----
+  const byMonth = {};
+  dayKeys.forEach(k => { const mk = k.slice(0,7); byMonth[mk] = (byMonth[mk] || 0) + daily[k].total; });
+  const allMonths = Object.keys(byMonth).sort();
+  const now = new Date();
+  const curKey = localDayKey(now).slice(0,7);
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const pace = byMonth[curKey] ? Math.round(byMonth[curKey] / now.getDate() * daysInMonth) : 0;
+  const monthName = mk => { const [y, mo] = mk.split('-'); return new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString(undefined, {month:'long', year:'numeric'}); };
+  const shownMonths = allMonths.slice(-MONTH_ROWS).reverse();
+  const maxM = Math.max(1, ...shownMonths.map(mk => byMonth[mk]));
+  document.getElementById('totMonths').innerHTML = shownMonths.map(mk => {
+    const i = allMonths.indexOf(mk);
+    const prev = i > 1 ? allMonths[i - 1] : null;   // first month on record is a partial start, not a baseline
+    const isCur = mk === curKey;
+    let g = '';
+    if(prev && byMonth[prev]){
+      const pct = Math.round(((isCur ? pace : byMonth[mk]) - byMonth[prev]) / byMonth[prev] * 100);
+      g = '<small class="' + (pct >= 0 ? 'up' : 'down') + '">' + (pct >= 0 ? '\u25B2' : '\u25BC') + Math.abs(pct) + '%' + (isCur ? ' pace' : '') + '</small>';
+    }
+    return '<div class="tl-row"><div class="nm"' + (isCur ? ' style="color:var(--purple);"' : '') + '>' + monthName(mk) + '' + '</div>' +
+      '<div class="tl-track"><div class="tl-fill" style="width:' + (byMonth[mk] / maxM * 100) + '%; background:linear-gradient(90deg, oklch(0.52 0.2 290), oklch(0.8 0.16 305));"></div></div>' +
+      '<div class="vl">' + fmtNum(byMonth[mk]) + 'u' + g + '</div></div>';
+  }).join('') || '<div class="dash-msg">No monthly data yet.</div>';
+
+  // ---- By style, all-time (optical modules listed but kept out of the headset totals) ----
+  const byStyle = {};
+  Object.values(daily).forEach(o => Object.keys(o.styles).forEach(k => { byStyle[k] = (byStyle[k] || 0) + o.styles[k]; }));
+  const headsetTotal = Object.keys(byStyle).filter(k => productGroupForMetric(k) === 'Headsets').reduce((a,k) => a + byStyle[k], 0);
+  const styles = Object.keys(byStyle).filter(k => byStyle[k] > 0).sort((a,b) => byStyle[b] - byStyle[a]).slice(0, 8);
+  const maxS = Math.max(1, ...styles.filter(k => productGroupForMetric(k) === 'Headsets').map(k => byStyle[k]));
+  document.getElementById('totStyles').innerHTML = styles.map(k => {
+    const isHs = productGroupForMetric(k) === 'Headsets';
+    const color = STYLE_COLORS[k.toUpperCase()] || 'var(--muted)';
+    return '<div class="tl-row"><div class="nm" style="color:' + color + ';">' + k + '' + '</div>' +
+      '<div class="tl-track"><div class="tl-fill" style="width:' + Math.min(100, byStyle[k] / maxS * 100) + '%; background:' + color + '; opacity:' + (isHs ? 1 : .5) + ';"></div></div>' +
+      '<div class="vl">' + fmtNum(byStyle[k]) + 'u' + (isHs && headsetTotal ? '<small class="mut">' + Math.round(byStyle[k] / headsetTotal * 100) + '%</small>' : '') + '</div></div>';
+  }).join('') || '<div class="dash-msg">No style data yet.</div>';
+
+  // ---- Stat boxes ----
+  const monthAgo = new Date(Date.now() - 30*86400000);
+  const monthAgoKey = localDayKey(monthAgo);
+  const recentStyles = new Set();
+  Object.keys(daily).forEach(k => { if(k >= monthAgoKey) Object.keys(daily[k].styles).forEach(st => { if(productGroupForMetric(st) === 'Headsets' && daily[k].styles[st] > 0) recentStyles.add(st.toUpperCase()); }); });
+  const omTotal = allTime - headsetTotal;
+  let bestDay = dayKeys.reduce((b,k) => !b || daily[k].total > daily[b].total ? k : b, null);
+  const stats = [
+    {l: 'All-time units', v: fmtNum(allTime), s: fmtNum(headsetTotal) + ' headsets' + (omTotal > 0 ? ' + ' + fmtNum(omTotal) + ' OM' : ''), c: 'var(--purple)'},
+    {l: 'Styles in production', v: String(recentStyles.size), s: [...recentStyles].sort().reverse().join(', ') || 'Last 30 days', c: 'var(--cyan)'},
+    {l: monthName(curKey).split(' ')[0] + ' so far', v: fmtNum(byMonth[curKey] || 0), s: 'On pace for ' + fmtNum(pace), c: 'var(--green)'},
+    {l: 'Best day', v: bestDay ? fmtNum(daily[bestDay].total) : '\u2014', s: bestDay ? new Date(bestDay + 'T12:00:00').toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'}) : '', c: 'var(--amber)'}
+  ];
+  document.getElementById('totStats').innerHTML = stats.map(st =>
+    '<div class="panel tot-stat"><div class="l">' + st.l + '</div><div class="v" style="color:' + st.c + ';">' + st.v + '</div><div class="s">' + st.s + '</div></div>'
+  ).join('');
+  document.getElementById('totSub').textContent = allMonths.length + ' months of production' + (fromHistory ? '' : ' (recent feed only)');
+}
+
+// ==================== Station WIP: bars + live sign in/out feed ====================
+function renderStationSlide(stuck, pingStations){
+  const stationNames = ['1','2','3','4','5','6'];
+  const el = document.getElementById('swRows');
+  if(!el.dataset.built){
+    el.innerHTML = stationNames.map(n =>
+      '<div class="sw-row" id="sw-row-' + n + '">' +
+        '<div><div class="sn">Station ' + n + '</div><div class="sl">' + STATION_LABELS[n] + '</div></div>' +
+        '<div><div class="sw-track"><div class="sw-fill" id="sw-fill-' + n + '"></div></div><div class="sw-mix" id="sw-mix-' + n + '"></div></div>' +
+        '<div class="sw-val"><b id="sw-c-' + n + '">0</b><span id="sw-p-' + n + '">(0.0%)</span></div>' +
+      '</div>').join('');
+    el.dataset.built = '1';
+  }
+  const total = stationNames.reduce((s,n) => s + (stuck[n]||[]).length, 0);
+  stationNames.forEach(n => {
+    const list = stuck[n] || [];
+    const pct = total ? list.length / total * 100 : 0;
+    document.getElementById('sw-fill-' + n).style.width = (list.length ? Math.max(1, pct) : 0) + '%';
+    document.getElementById('sw-c-' + n).textContent = fmtNum(list.length);
+    document.getElementById('sw-p-' + n).textContent = '(' + pct.toFixed(1) + '%)';
+    const mix = {};
+    list.forEach(sn => { const k = styleFromSerial(sn); mix[k] = (mix[k] || 0) + 1; });
+    document.getElementById('sw-mix-' + n).innerHTML = Object.keys(mix).sort((a,b) => mix[b] - mix[a]).slice(0, 4)
+      .map(k => '<span><b style="color:' + (STYLE_COLORS[k] || 'var(--muted)') + ';">' + k + '</b> ' + mix[k] + '</span>').join('');
+  });
+  (pingStations || []).forEach(n => {
+    const row = document.getElementById('sw-row-' + n);
+    if(!row) return;
+    row.classList.remove('ping'); void row.offsetWidth; row.classList.add('ping');
+  });
+  document.getElementById('swFoot').innerHTML = '<span><b>' + fmtNum(total) + '</b> units on the floor</span><span>Updates as builders sign units in and out</span>';
+}
+
+let feedEvents = [];
+const feedSeen = new Set();
+let feedPrimed = false;
+function feedKey(e){ return e.id || (e.serial + '|' + e.event + '|' + e.stationNum + '|' + e.t); }
+function renderFeed(){
+  const latest = feedEvents.slice(-16).reverse();
+  document.getElementById('feedList').innerHTML = latest.map(e => {
+    const k = feedKey(e);
+    const isNew = feedPrimed && !feedSeen.has(k);
+    const isIn = e.event === 'MoveIn';
+    const who = e.person ? e.person.split('@')[0] : '';
+    return '<div class="feed-item' + (isNew ? ' new' : '') + '">' +
+      '<div class="r1"><span class="ft mono">' + new Date(e.t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + '</span>' +
+        '<span class="badge ' + (isIn ? 'in' : 'out') + '">' + (isIn ? 'IN' : 'OUT') + '</span>' +
+        '<span class="fs mono">' + e.serial + '</span></div>' +
+      '<div class="r2">Station ' + e.stationNum + ', ' + (STATION_LABELS[e.stationNum] || '') + (who ? ' \u00b7 <b>' + who + '</b>' : '') + '</div></div>';
+  }).join('') || '<div class="dash-msg">No sign ins or outs yet today.</div>';
+  latest.forEach(e => feedSeen.add(feedKey(e)));
+  feedPrimed = true;
+  const todayKey = localDayKey(new Date());
+  const movesToday = feedEvents.length ? feedAllTodayCount : 0;
+  document.getElementById('feedCount').innerHTML = '<b>' + fmtNum(movesToday) + '</b> sign ins and outs today';
+}
+let feedAllTodayCount = 0;
+let currentStuck = {};
+let lastCountFetch = 0;
+function mergeFeedEvents(events){
+  const known = new Set(feedEvents.map(feedKey));
+  const fresh = events.filter(e => !known.has(feedKey(e)));
+  feedEvents = feedEvents.concat(fresh).sort((a,b) => a.t - b.t).slice(-60);
+  return fresh;
+}
+async function pollFeed(){
+  try{
+    const events = await loadLogEvents(40);
+    const fresh = mergeFeedEvents(events);
+    if(!fresh.length) return;
+    const todayKey = localDayKey(new Date());
+    feedAllTodayCount += fresh.filter(e => localDayKey(new Date(e.t)) === todayKey).length;
+    // Re-read the Count tab (at most every 20s) so the bars reflect the new moves
+    if(Date.now() - lastCountFetch > 20000){
+      lastCountFetch = Date.now();
+      currentStuck = loadStuckAtStations(await loadCountSheet());
+    }
+    renderStationSlide(currentStuck, [...new Set(fresh.map(e => e.stationNum))]);
+    renderFeed();
+  }catch(e){ /* the full refresh surfaces connection errors; the feed just waits for the next poll */ }
+}
+
+// ==================== Line Status & Cycle Times slide ====================
+// ---- Targets shown as gauges. Edit these as work orders open and close. ----
+// style: the headset style the WO builds (matches "Style/Metric Name" in Looker_TV_Feed).
+// since: the WO start date (YYYY-MM-DD). Progress = that style's Daily Production since then.
+//        Leave it blank and the gauge counts every unit of that style on record instead.
+const WORK_ORDERS = [
+  {label: 'WO # 530-534', style: 'H2E', target: 2000, since: ''},
+  {label: 'WO # 502-505', style: 'H2C', target: 1000, since: ''}
+];
+const WEEKLY_GOAL = 1000;          // headsets per rolling 7 days
+const ALL_TIME_STEP = 5000;        // all-time gauge fills toward the next multiple of this
+const STATION_LABELS = {'1':'Laser Mark + OM Link','2':'Build','3':'Testing','4':'Final Assembly','5':'QC','6':'Packing'};
+const STYLE_COLORS = {'H2F':'var(--cyan)','H2E':'var(--purple)','H2D':'var(--pink)','H2C':'var(--ink)','H2B':'var(--amber)','H2A':'var(--green)'};
+
+// Style is read straight from the serial (e.g. "...H2E..."). Serials that don't carry a
+// style code are grouped as "Other" rather than guessed at.
+function styleFromSerial(s){
+  const m = String(s || '').toUpperCase().match(/H2[A-F]/);
+  return m ? m[0] : 'Other';
+}
+function localDayKey(d){
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+let gaugeSeq = 0;
+function gaugeHtml(o){
+  const id = 'lsg' + (gaugeSeq++);
+  const frac = o.max ? Math.max(0, Math.min(1, o.value / o.max)) : 0;
+  const pct = o.max ? Math.round(o.value / o.max * 100) : 0;
+  const arc = 'M22,104 A78,78 0 0 1 178,104';
+  return '<div class="gauge"><div class="gl">' + o.label + '</div>' +
+    '<svg viewBox="0 0 200 124" preserveAspectRatio="xMidYMid meet">' +
+      '<defs><linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="' + o.c1 + '"/><stop offset="1" stop-color="' + o.c2 + '"/></linearGradient></defs>' +
+      '<path d="' + arc + '" fill="none" stroke="oklch(1 0 0 / .08)" stroke-width="16" stroke-linecap="round"/>' +
+      '<path class="gfill" data-frac="' + frac + '" d="' + arc + '" fill="none" stroke="url(#' + id + ')" stroke-width="16" stroke-linecap="round"' +
+        ' pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"' + (frac === 0 ? ' stroke-opacity="0"' : '') +
+        ' style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1); filter:drop-shadow(0 0 5px ' + o.c2 + ');"/>' +
+      '<text class="gv" data-val="' + Math.round(o.value) + '" x="100" y="90" text-anchor="middle" font-size="31" font-weight="800" fill="oklch(0.95 0.02 295)" font-family="Space Grotesk,Inter,system-ui,sans-serif">0</text>' +
+      '<text x="100" y="110" text-anchor="middle" font-size="12" font-weight="600" fill="oklch(0.62 0.05 295)" font-family="Space Grotesk,Inter,system-ui,sans-serif">' + pct + '% of ' + fmtNum(o.max) + '</text>' +
+      '<text x="22" y="122" text-anchor="middle" font-size="10" fill="oklch(0.5 0.04 295)" font-family="JetBrains Mono,monospace">0</text>' +
+      '<text x="178" y="122" text-anchor="middle" font-size="10" fill="oklch(0.5 0.04 295)" font-family="JetBrains Mono,monospace">' + fmtNum(o.max) + '</text>' +
+    '</svg><div class="gs">' + o.sub + '</div></div>';
+}
+
+function renderLineStatus(feed, stuck, cycleData, extras){
+  // ---- WIP numbers, same source and definitions as the overview slide ----
+  const totalWip = Object.values(stuck).reduce((s,arr) => s + arr.length, 0);
+  const activeSerials = ['3','4','5','6'].flatMap(n => stuck[n] || []);
+  const shelfSerials = stuck['2'] || [];
+
+  // ---- Cycle times ----
+  const stationNames = ['1','2','3','4','5','6'];
+  const known = stationNames.filter(n => cycleData[n] && cycleData[n].count > 0);
+  const lineMs = known.reduce((s,n) => s + cycleData[n].medianMs, 0);
+
+  const kpis = [
+    {val: totalWip, lab: 'Total<br>WIP', color: 'var(--purple)'},
+    {val: activeSerials.length, lab: 'Active WIP<br>stations 3-6', color: 'var(--green)'},
+    {val: shelfSerials.length, lab: 'Station 2<br>WIP shelf', color: 'var(--amber)'},
+    {text: known.length ? formatDuration(lineMs) : '\u2014', lab: 'Line cycle<br>sum of medians', color: 'var(--cyan)'}
+  ];
+  document.getElementById('lsKpis').innerHTML = kpis.map((k,i) =>
+    '<div class="panel ls-kpi"><div class="v' + (k.text ? ' txt' : '') + '" id="ls-kpi-' + i + '" style="color:' + k.color + ';">' + (k.text || '0') + '</div><div class="l">' + k.lab + '</div></div>'
+  ).join('');
+  kpis.forEach((k,i) => { if(k.text === undefined) animateCountUp(document.getElementById('ls-kpi-' + i), k.val); });
+
+  // ---- WIP / shelf split by headset style ----
+  const byStyle = {};
+  WORK_ORDERS.forEach(w => { byStyle[w.style] = byStyle[w.style] || {wip:0, shelf:0}; });
+  activeSerials.forEach(s => { const k = styleFromSerial(s); (byStyle[k] = byStyle[k] || {wip:0, shelf:0}).wip++; });
+  shelfSerials.forEach(s => { const k = styleFromSerial(s); (byStyle[k] = byStyle[k] || {wip:0, shelf:0}).shelf++; });
+  const styleNames = Object.keys(byStyle).sort((a,b) => a === 'Other' ? 1 : b === 'Other' ? -1 : b.localeCompare(a)).slice(0, 5);
+  document.getElementById('lsStyles').innerHTML =
+    '<div></div><div class="h">WIP</div><div class="h">Shelf</div>' +
+    styleNames.map(st => {
+      const c = STYLE_COLORS[st] || 'var(--muted)';
+      const v = byStyle[st];
+      return '<div class="s" style="color:' + c + ';">' + st + '</div>' +
+        '<div class="n' + (v.wip ? '' : ' zero') + '" style="color:' + c + ';">' + v.wip + '</div>' +
+        '<div class="n' + (v.shelf ? '' : ' zero') + '" style="color:' + c + ';">' + v.shelf + '</div>';
+    }).join('');
+
+  // ---- Gauges: work orders, all-time, weekly ----
+  const headsetRows = feed.filter(r => r.category === 'Daily Production' && productGroupForMetric(r.metric) === 'Headsets');
+  const val = r => isNaN(r.value) ? 0 : r.value;
+  const weekAgo = new Date(Date.now() - 7*86400000);
+  const allTime = extras && extras.allTime ? extras.allTime : headsetRows.reduce((s,r) => s + val(r), 0);
+  const weekTotal = extras && extras.weekTotal !== undefined ? extras.weekTotal : headsetRows.filter(r => new Date(r.timestamp) >= weekAgo).reduce((s,r) => s + val(r), 0);
+
+  const gauges = WORK_ORDERS.slice(0, 2).map((w, i) => {
+    const since = w.since ? new Date(w.since + 'T00:00:00') : null;
+    const done = headsetRows.filter(r => r.metric.toUpperCase() === w.style.toUpperCase() && (!since || new Date(r.timestamp) >= since)).reduce((s,r) => s + val(r), 0);
+    return gaugeHtml({
+      label: w.label + ' \u00b7 ' + w.style, value: Math.min(done, w.target), max: w.target,
+      sub: fmtNum(Math.max(0, w.target - done)) + ' to go' + (since ? ' \u00b7 since ' + since.toLocaleDateString(undefined,{month:'short', day:'numeric'}) : ''),
+      c1: i === 0 ? 'oklch(0.55 0.22 290)' : 'oklch(0.6 0.2 330)', c2: i === 0 ? 'oklch(0.75 0.2 305)' : 'oklch(0.78 0.18 345)'
+    });
+  });
+  const nextMilestone = Math.max(ALL_TIME_STEP, Math.ceil((allTime + 1) / ALL_TIME_STEP) * ALL_TIME_STEP);
+  gauges.push(gaugeHtml({label: 'All time counter', value: allTime, max: nextMilestone,
+    sub: fmtNum(nextMilestone - allTime) + ' to next milestone', c1: 'oklch(0.6 0.15 240)', c2: 'oklch(0.8 0.15 215)'}));
+  gauges.push(gaugeHtml({label: 'Weekly total', value: weekTotal, max: Math.max(WEEKLY_GOAL, weekTotal),
+    sub: 'Rolling 7 days, goal ' + fmtNum(WEEKLY_GOAL), c1: 'oklch(0.6 0.15 170)', c2: 'oklch(0.8 0.17 150)'}));
+  const gaugeEl = document.getElementById('lsGauges');
+  gaugeEl.innerHTML = gauges.join('');
+  gaugeEl.querySelectorAll('.gv').forEach(t => animateCountUp(t, Number(t.dataset.val), 1300));
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    gaugeEl.querySelectorAll('.gfill').forEach(p => { p.style.strokeDashoffset = String(100 - Number(p.dataset.frac) * 100); });
+  }));
+
+  // ---- Cycle time bars, slowest station flagged as the bottleneck ----
+  const cycEl = document.getElementById('lsCycle');
+  if(!known.length){
+    cycEl.innerHTML = '<div class="dash-msg" style="font-size:1vw;">Cycle times appear once units have signed in and out of stations.</div>';
+  }else{
+    const maxMs = Math.max(...known.map(n => cycleData[n].medianMs), 1);
+    const slowest = known.reduce((a,b) => cycleData[b].medianMs > cycleData[a].medianMs ? b : a);
+    cycEl.innerHTML = stationNames.map(n => {
+      const d = cycleData[n];
+      const isSlow = known.length > 1 && n === slowest;
+      const color = isSlow ? 'var(--amber)' : 'var(--cyan)';
+      if(!d || !d.count){
+        return '<div class="cyc-row"><div class="cn" style="color:var(--muted);">' + n + '</div><div class="cl">' + STATION_LABELS[n] + '</div>' +
+          '<div class="ct"></div><div class="cv"><small>no data</small></div></div>';
+      }
+      const pct = Math.max(4, d.medianMs / maxMs * 100);
+      return '<div class="cyc-row' + (isSlow ? ' bottleneck' : '') + '"><div class="cn" style="color:' + color + ';">' + n + '</div>' +
+        '<div class="cl">' + STATION_LABELS[n] + '</div>' +
+        '<div class="ct"><div class="cf" data-pct="' + pct + '" style="background:' + color + ';"></div></div>' +
+        '<div class="cv"><b style="color:' + color + ';">' + formatDuration(d.medianMs) + '</b><small>' + d.count + ' units</small></div></div>';
+    }).join('');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      cycEl.querySelectorAll('.cf').forEach(f => { f.style.width = f.dataset.pct + '%'; });
+    }));
+  }
+
+  // ---- Units completed daily: last 4 days, one column per product ----
+  const prodRows = feed.filter(r => r.category === 'Daily Production' && !isNaN(new Date(r.timestamp)));
+  const days = [...new Set(prodRows.map(r => localDayKey(new Date(r.timestamp))))].sort().reverse().slice(0, 4);
+  const recent = prodRows.filter(r => days.includes(localDayKey(new Date(r.timestamp))));
+  const metrics = [...new Set(recent.map(r => r.metric))].sort((a,b) => {
+    const ao = a.toLowerCase() === 'optical module', bo = b.toLowerCase() === 'optical module';
+    return ao ? -1 : bo ? 1 : b.localeCompare(a);
+  });
+  const dailyEl = document.getElementById('lsDaily');
+  if(!days.length){
+    dailyEl.innerHTML = '<div class="dash-msg" style="margin-top:1vh;">No daily production logged yet.</div>';
+  }else{
+    const cell = {};
+    recent.forEach(r => { const k = localDayKey(new Date(r.timestamp)) + '|' + r.metric; cell[k] = (cell[k] || 0) + val(r); });
+    const todayKey = localDayKey(new Date());
+    dailyEl.innerHTML = '<table class="daily-table"><thead><tr><th>Date</th>' +
+      metrics.map(m => '<th>' + m + '</th>').join('') + '<th>Headsets</th></tr></thead><tbody>' +
+      days.map(day => {
+        const hs = metrics.filter(m => productGroupForMetric(m) === 'Headsets').reduce((s,m) => s + (cell[day + '|' + m] || 0), 0);
+        const label = new Date(day + 'T00:00:00').toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
+        return '<tr' + (day === todayKey ? ' class="today"' : '') + '><td>' + (day === todayKey ? 'Today, ' : '') + label + '</td>' +
+          metrics.map(m => { const v = cell[day + '|' + m] || 0; return '<td' + (v ? '' : ' class="zero"') + '>' + fmtNum(v) + '</td>'; }).join('') +
+          '<td class="tot">' + fmtNum(hs) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  document.getElementById('lsSub').textContent = fmtNum(allTime) + ' units built all-time';
+}
+
+// Shift page: one card per shift plus the total, then a card per working day (from the Count tab)
+function renderCountWeek(countDaily){
+  const days = countDaily.slice(-7);
+  const todayKey = localDayKey(new Date());
+  document.getElementById('weekCal').style.gridTemplateColumns = 'repeat(' + Math.max(1, days.length) + ', 1fr)';
+  document.getElementById('weekCal').innerHTML = days.map(r => {
+    const shifts = Object.keys(r.shifts).sort();
+    const tot = r.total || 1;
+    const segs = shifts.map(sh => '<div style="width:' + (r.shifts[sh] / tot * 100) + '%; background:' + colorForShift(sh) + ';"></div>').join('');
+    const lines = shifts.map(sh => '<div><span><i style="background:' + colorForShift(sh) + ';"></i>' + sh + '</span><b>' + fmtNum(r.shifts[sh]) + '</b></div>').join('');
+    const styles = Object.keys(r.styles).map(st => '<b style="color:' + (STYLE_COLORS[st] || 'var(--muted)') + ';">' + st + '</b> ' + fmtNum(r.styles[st])).join(' &nbsp;');
+    const isToday = r.day === todayKey;
+    return '<div class="panel day-cell' + (isToday ? ' today' : '') + '">' +
+      '<div class="dw">' + (isToday ? 'Today' : r.d.toLocaleDateString(undefined, {weekday:'short'})) + '<small>' + r.d.toLocaleDateString(undefined, {month:'short', day:'numeric'}) + '</small></div>' +
+      '<div class="dt' + (r.total ? '' : ' none') + '">' + fmtNum(r.total) + '</div>' +
+      '<div class="day-bar">' + segs + '</div>' +
+      '<div class="day-shifts">' + (lines || '<div>No production</div>') + '</div>' +
+      '<div class="day-style">' + styles + '</div></div>';
+  }).join('');
+}
+function renderShiftSlide(feed, countDaily){
+  const days = (countDaily || []).slice(-7);
+  const el = document.getElementById('shiftSum');
+  if(!days.length){
+    document.getElementById('shiftDateSub').textContent = '';
+    el.innerHTML = '<div class="panel ss-card"><div class="dash-msg" style="margin:1vh 0;">No daily totals found on the Count tab.</div></div>';
+    return;
+  }
+  document.getElementById('shiftDateSub').textContent = days[0].d.toLocaleDateString(undefined, {month:'short', day:'numeric'}) + ' \u2013 ' + days[days.length-1].d.toLocaleDateString(undefined, {month:'short', day:'numeric'}) + ', ' + days.length + ' working days';
+  const todayKey = localDayKey(new Date());
+  const todayRow = days.find(r => r.day === todayKey);
+  const shiftNames = [...new Set(days.flatMap(r => Object.keys(r.shifts)))].sort();
+  const grand = days.reduce((s,r) => s + r.total, 0);
+  const cards = shiftNames.map(sh => {
+    const vals = days.map(r => r.shifts[sh] || 0);
+    const week = vals.reduce((a,b) => a + b, 0);
+    const worked = vals.filter(v => v > 0).length;
+    return {name: sh, color: colorForShift(sh), week: week, avg: worked ? Math.round(week / worked) : 0, best: Math.max(0, ...vals), today: todayRow ? (todayRow.shifts[sh] || 0) : 0, share: grand ? week / grand : 0};
+  });
+  const worked = days.filter(r => r.total > 0).length;
+  cards.push({name: 'Total', color: 'var(--green)', week: grand, avg: worked ? Math.round(grand / worked) : 0, best: Math.max(0, ...days.map(r => r.total)), today: todayRow ? todayRow.total : 0, share: 1});
+  el.innerHTML = cards.map(c =>
+    '<div class="panel ss-card"><div class="l"><i style="background:' + c.color + ';"></i>' + c.name + '</div>' +
+    '<div class="v" style="color:' + c.color + ';">' + fmtNum(c.week) + '<small>headsets</small></div>' +
+    '<div class="m"><span>Today <b>' + fmtNum(c.today) + '</b></span><span>Avg <b>' + fmtNum(c.avg) + '</b>/day</span><span>Best <b>' + fmtNum(c.best) + '</b></span>' + (c.name !== 'Total' ? '<span><b>' + Math.round(c.share * 100) + '%</b> of output</span>' : '') + '</div>' +
+    '<div class="ss-share"><div style="width:' + (c.share * 100) + '%; background:' + c.color + ';"></div></div></div>'
+  ).join('');
+}
+
+function renderSalesSlide(salesRows, orders){
+  // Revenue is shown only as the overall total; per customer the board shows units, not dollars.
+  const total = salesRows.reduce((s,r) => s + r.total, 0);
+  const useQty = salesRows.some(r => r.qty > 0);
+  const units = {};
+  if(useQty) salesRows.forEach(r => { units[r.company] = (units[r.company] || 0) + r.qty; });
+  else orders.forEach(o => { units[o.name] = (units[o.name] || 0) + o.shipped; });
+  const totalUnits = Object.values(units).reduce((s,v) => s + v, 0);
+  document.getElementById('salesSub').textContent = '$' + fmtNum(total) + ' total revenue \u00b7 ' + fmtNum(totalUnits) + ' units';
+  const top = Object.entries(units).filter(([,v]) => v > 0).sort((a,b) => b[1] - a[1]).slice(0, 6);
+  const maxU = top.length ? top[0][1] : 1;
+  document.getElementById('custList').innerHTML = top.map(([name, u]) =>
+    '<div class="cust-row"><div class="cust-top"><span>' + name + '</span><span class="amt">' + fmtNum(u) + '<small>units</small></span></div>' +
+    '<div class="mini-track"><div class="mini-fill" style="width:' + (u / maxU * 100) + '%; background:var(--cyan);"></div></div></div>'
+  ).join('') || '<div class="dash-msg">No customer units yet.</div>';
+
+  const openOrders = orders.filter(o => o.pct < 100).sort((a,b) => b.pct - a.pct).slice(0, 6);
+  document.getElementById('orderList').innerHTML = openOrders.map(o =>
+    '<div class="order-row"><div class="order-top"><span>' + o.name + '</span><span><span class="order-pct">' + o.pct + '%</span><small>' + fmtNum(o.shipped) + ' / ' + fmtNum(o.goal) + '</small></span></div>' +
+    '<div class="mini-track"><div class="mini-fill" style="width:' + o.pct + '%; background:var(--purple);"></div></div></div>'
+  ).join('') || '<div class="dash-msg">No open orders.</div>';
+}
+
+// ==================== Refresh cycle ====================
+async function refreshAllData(){
+  try{
+    const [feed, countRows, salesRows, logEvents, hist] = await Promise.all([
+      loadLookerFeed(), loadCountSheet(), loadSalesFeed(), loadLogEvents(LOG_WINDOW_ROWS), getHistory()
+    ]);
+    const countDaily = loadCountDaily(countRows);
+    const allTimeUnits = hist.units.length || Object.values(totalsDaily(feed, null)).reduce((a,o) => a + o.total, 0);
+    const weekFinished = countDaily.length ? countDaily.filter(r => r.day >= dayOffsetKey(-6)).reduce((a,r) => a + r.total, 0) : undefined;
+    const orders = await loadCustomerOrders(feed);
+    let stuck = loadStuckAtStations(countRows);
+    currentStuck = stuck;
+    lastCountFetch = Date.now();
+    const cycleData = computeCycleTimes(logEvents);
+    const todayKey = localDayKey(new Date());
+    feedAllTodayCount = logEvents.filter(e => localDayKey(new Date(e.t)) === todayKey).length;
+    mergeFeedEvents(logEvents.slice(-60));
+    renderOverview(feed, stuck, countDaily, allTimeUnits);
+    renderTotalsSlide(feed, hist);
+    renderWeekCalendar(feed, countDaily);
+    renderStationSlide(stuck);
+    renderFeed();
+    renderLineStatus(feed, stuck, cycleData, {allTime: allTimeUnits, weekTotal: weekFinished});
+    renderShiftSlide(feed, countDaily);
+    renderSalesSlide(salesRows, orders);
+    hideErrorBanner();
+    document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  }catch(e){
+    console.error('Refresh failed:', e.message);
+    showErrorBanner(e.message);
+  }
+}
+function showErrorBanner(msg){
+  const el = document.getElementById('errorBanner');
+  el.textContent = 'Could not load data: ' + msg + ' \u2014 press R to reconnect, or check the connection.';
+  el.style.display = 'block';
+}
+function hideErrorBanner(){
+  document.getElementById('errorBanner').style.display = 'none';
+}
+
+// ==================== Slide rotation + remote/keyboard navigation ====================
+const SLIDES = ['overview','output','station','cycle','shift','sales'];
+let currentSlideIdx = 0;
+let autoAdvanceTimer = null;
+const AUTO_ADVANCE_MS = 18000;
+
+function showSlide(idx){
+  currentSlideIdx = ((idx % SLIDES.length) + SLIDES.length) % SLIDES.length;
+  document.querySelectorAll('.slide').forEach(el => {
+    el.classList.toggle('active', el.dataset.slide === SLIDES[currentSlideIdx]);
+  });
+  document.querySelectorAll('#dots .dot').forEach((d,i) => d.classList.toggle('active', i === currentSlideIdx));
+}
+function nextSlide(){ showSlide(currentSlideIdx + 1); }
+function prevSlide(){ showSlide(currentSlideIdx - 1); }
+// ---- Shark school transition: a handful of sharks cross the screen and the slide swaps
+// underneath them mid-swim, so the change reads as the school carrying the next slide in. ----
+const SHARK_SWITCH_AT_MS = 1250;
+let sharkPendingSwitch = null;
+let sharkCleanup = null;
+let sharkSeq = 0;
+function sharkSvg(){
+  const id = 'shg' + (sharkSeq++);
+  return '<svg viewBox="0 0 220 90" fill="none">' +
+    '<defs><linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#6d4aff"/><stop offset="1" stop-color="#d946ef"/></linearGradient></defs>' +
+    '<g class="tail"><path d="M54,44 C40,40 26,26 10,8 C16,24 20,36 22,45 C20,54 16,64 8,82 C26,66 40,52 54,47 Z" fill="url(#' + id + ')"/></g>' +
+    '<path d="M108,27 C112,15 118,5 128,2 C126,12 128,20 137,27 Z" fill="url(#' + id + ')"/>' +
+    '<path d="M62,39 C64,34 67,31 71,30 C70,34 71,37 74,39 Z" fill="url(#' + id + ')"/>' +
+    '<path d="M46,45 C62,30 110,22 158,26 C184,28 204,36 216,44 C206,50 190,56 164,58 C118,64 66,60 46,45 Z" fill="url(#' + id + ')"/>' +
+    '<path d="M72,52 C104,61 152,61 196,51 C174,58 132,63 98,61 C86,59 78,56 72,52 Z" fill="#fff" fill-opacity=".2"/>' +
+    '<path d="M130,55 C128,65 120,75 108,81 C124,77 138,67 147,57 Z" fill="url(#' + id + ')"/>' +
+    '<path d="M166,37 L164,50 M172,36 L170,50 M178,36 L176,49" stroke="#fff" stroke-opacity=".28" stroke-width="1.6" stroke-linecap="round"/>' +
+    '<circle cx="193" cy="39" r="2.6" fill="#0b0716"/><circle cx="193.8" cy="38.2" r=".8" fill="#fff" fill-opacity=".8"/>' +
+    '<path d="M46,45 C62,30 110,22 158,26 C184,28 204,36 216,44" stroke="#e9ddff" stroke-opacity=".35" stroke-width="1"/>' +
+    '</svg>';
+}
+function sharkTransition(onSwitch){
+  const layer = document.getElementById('sharkLayer');
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduce || sharkPendingSwitch){ onSwitch(); return; }
+  clearTimeout(sharkCleanup);
+  layer.innerHTML = '<div class="shark-veil"></div>';
+  // [width vw, top vh, duration s, delay s, opacity] — back to front, so the big lead shark draws last
+  const school = [
+    [7, 16, 3.6, 0.15, .45], [8, 74, 3.4, 0.35, .5], [9, 30, 3.2, 0.05, .6],
+    [11, 64, 3.0, 0.25, .75], [13, 22, 2.9, 0.4, .85], [22, 44, 2.7, 0.0, 1]
+  ];
+  let html = '';
+  school.forEach(([w, top, dur, delay, op]) => {
+    const jitterTop = top + (Math.random() * 6 - 3);
+    html += '<div class="shark" style="top:' + jitterTop + 'vh; opacity:' + op + '; --w:' + w + 'vw; --dur:' + dur + 's; --delay:' + delay + 's;">' +
+      '<div class="bob" style="animation-delay:-' + (Math.random() * 1.2).toFixed(2) + 's;">' + sharkSvg() + '</div></div>';
+    // Bubble trail: dropped along the shark's path at roughly the moment it passes each point
+    for(let i = 1; i <= 5; i++){
+      const t = i / 6;
+      const size = (0.4 + Math.random() * 0.6) * (w / 10);
+      html += '<div class="bubble" style="left:' + (-32 + 164 * t - w * 0.15).toFixed(1) + 'vw; top:' + (jitterTop + w * 0.2).toFixed(1) + 'vh;' +
+        ' width:' + size.toFixed(2) + 'vw; height:' + size.toFixed(2) + 'vw; animation-delay:' + (delay + dur * t).toFixed(2) + 's;"></div>';
+    }
+  });
+  layer.insertAdjacentHTML('beforeend', html);
+  sharkPendingSwitch = setTimeout(() => { sharkPendingSwitch = null; onSwitch(); }, SHARK_SWITCH_AT_MS);
+  sharkCleanup = setTimeout(() => { layer.innerHTML = ''; }, 5500);
+}
+
+function resetAutoAdvance(){
+  clearTimeout(autoAdvanceTimer);
+  // A manual slide change mid-swim wins; drop the pending automatic switch
+  if(sharkPendingSwitch){ clearTimeout(sharkPendingSwitch); sharkPendingSwitch = null; }
+  autoAdvanceTimer = setTimeout(() => {
+    sharkTransition(() => { nextSlide(); resetAutoAdvance(); });
+  }, AUTO_ADVANCE_MS);
+  // Progress bar filling toward the next auto-advance — useful feedback on how long until the
+  // slide changes, and constant, purposeful motion rather than a static screen between changes.
+  const bar = document.getElementById('advanceProgress');
+  bar.style.transition = 'none';
+  bar.style.width = '0%';
+  void bar.offsetWidth; // forces a reflow so the transition below actually restarts cleanly
+  bar.style.transition = 'width ' + AUTO_ADVANCE_MS + 'ms linear';
+  bar.style.width = '100%';
+}
+document.getElementById('dots').innerHTML = SLIDES.map((_,i) =>
+  '<button class="dot" aria-label="Go to slide ' + (i+1) + '" data-idx="' + i + '"></button>'
+).join('');
+document.querySelectorAll('#dots .dot').forEach(dot => {
+  dot.addEventListener('click', () => {
+    showSlide(Number(dot.dataset.idx));
+    resetAutoAdvance();
+  });
+});
+
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'ArrowRight' || e.key === 'ArrowDown'){ nextSlide(); resetAutoAdvance(); }
+  else if(e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ prevSlide(); resetAutoAdvance(); }
+  else if(e.key === 'd' || e.key === 'D'){ showDiagnostics(); }
+  else if(e.key === 'r' || e.key === 'R'){
+    // Clears saved credentials and shows the setup screen again — a way to reconnect without
+    // needing to open developer tools and clear localStorage by hand.
+    localStorage.removeItem(SETUP_URL_KEY);
+    localStorage.removeItem(SETUP_TOKEN_KEY);
+    location.reload();
+  }
+});
+
+function tickClock(){
+  document.getElementById('clockDisplay').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+
+function startDisplay(){
+  showSlide(0);
+  resetAutoAdvance();
+  tickClock();
+  setInterval(tickClock, 1000);
+  refreshAllData();
+  setInterval(refreshAllData, 60000);
+  setInterval(pollFeed, FEED_POLL_MS);
+  // Reloads the page once a day, in the small hours, to clear any state a browser tab left
+  // running for weeks or months at a time could quietly build up (memory growth, a stuck
+  // connection, etc.) — an always-on floor display should stay healthy without anyone needing
+  // to notice or intervene.
+  setInterval(checkDailyReload, 60000);
+}
+let hasReloadedToday = false;
+function checkDailyReload(){
+  const now = new Date();
+  if(now.getHours() === 3 && now.getMinutes() === 0 && !hasReloadedToday){
+    hasReloadedToday = true;
+    location.reload();
+  }
+  if(now.getHours() !== 3) hasReloadedToday = false;
+}
+
+initSetup();
+</script>
+</body>
+</html>
