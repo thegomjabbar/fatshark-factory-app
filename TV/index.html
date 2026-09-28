@@ -460,7 +460,7 @@
 
   <div class="slide" data-slide="sales">
     <div class="slide-head">
-      <div class="slide-title">Sales &amp; Orders</div>
+      <div class="slide-title">Customer Orders</div>
       <div class="slide-sub" id="salesSub"></div>
     </div>
     <div class="sales-layout">
@@ -626,7 +626,6 @@ document.getElementById('btnSetupConnect').addEventListener('click', async () =>
 // ==================== Data loading (mirrors the main app's logic) ====================
 const LOOKER_SHEET_NAME = 'Looker_TV_Feed';
 const COUNT_SHEET_NAME = 'Count';
-const SALES_SHEET_NAME = 'Sales';
 
 async function loadLookerFeed(){
   const json = await sheetPost({action: 'getFullSheet', sheet: LOOKER_SHEET_NAME});
@@ -651,24 +650,6 @@ async function loadLookerFeed(){
 async function loadCountSheet(){
   const json = await sheetPost({action: 'getFullSheet', sheet: COUNT_SHEET_NAME});
   return json.rows || [];
-}
-async function loadSalesFeed(){
-  const json = await sheetPost({action: 'getFullSheet', sheet: SALES_SHEET_NAME});
-  const rows = json.rows || [];
-  if(rows.length < 2) return [];
-  const headers = rows[0].map(h => String(h).trim());
-  const idx = {
-    total: headers.indexOf('SALES-Extended Total'),
-    company: headers.indexOf('SALES-Company Name'),
-    qty: headers.findIndex(h => /qty|quantity|units/i.test(h)),
-    status: headers.findIndex(h => /dropdown/i.test(h))
-  };
-  return rows.slice(1).filter(r => r[idx.company]).map(r => ({
-    total: Number(r[idx.total]) || 0,
-    company: String(r[idx.company] || '').trim(),
-    qty: idx.qty > -1 ? (Number(r[idx.qty]) || 0) : 0,
-    status: idx.status > -1 ? String(r[idx.status] || '').trim() : ''
-  }));
 }
 async function loadCustomerOrders(feed){
   const goals = feed.filter(r => r.category === 'Scorecard: Goal');
@@ -1447,15 +1428,56 @@ function renderShiftSlide(feed, countDaily){
   ).join('');
 }
 
-function renderSalesSlide(salesRows, orders){
-  // Revenue is shown only as the overall total; per customer the board shows units, not dollars.
-  const total = salesRows.reduce((s,r) => s + r.total, 0);
-  const useQty = salesRows.some(r => r.qty > 0);
+// =====================================================================
+// CUSTOMER ALIASES — customer names never appear on screen. Each customer
+// is shown as a Disney character instead. Pinned pairings are stored as
+// hashes of the normalized name, so the real names are not in this public
+// source file; every other customer gets a fixed character picked from its
+// hash, so the same customer always shows the same name on every screen.
+// Work-order labels (WO-...) are order numbers, not names, and stay as is.
+// =====================================================================
+const CUSTOMER_ALIAS_PINNED = {"8162c38d": "Goofy", "b9aa2e84": "Nemo", "a7577ff6": "Nemo", "97c097e4": "Nemo"};
+const CUSTOMER_ALIAS_POOL = ['Mickey','Minnie','Donald','Daisy','Pluto','Chip','Dale','Dory','Marlin','Simba','Nala','Timon','Pumbaa','Rafiki','Baloo','Mowgli','Bagheera','Ariel','Sebastian','Flounder','Belle','Lumiere','Aladdin','Genie','Jasmine','Abu','Mulan','Mushu','Stitch','Lilo','Moana','Maui','Elsa','Anna','Olaf','Sven','Rapunzel','Pascal','Tinker Bell','Peter Pan','Dumbo','Bambi','Thumper','Winnie','Tigger','Eeyore','Piglet','Buzz','Woody','Jessie','Rex','Hamm','Wall-E','Eve','Remy','Dash','Sulley','Mike','Boo','Lightning','Mater','Russell','Dug','Joy','Bing Bong','Merida','Tiana','Ray','Hercules','Pegasus','Pocahontas','Meeko','Kuzco','Pacha','Baymax','Hiro','Judy','Nick','Flash','Mirabel','Bruno','Asha','Kida','Milo'];
+function customerAliasHash(str){
+  let h = 0x811c9dc5;
+  for(let i = 0; i < str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+}
+function customerAliasBase(name){
+  const norm = String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if(!norm) return 'Unknown';
+  const key = customerAliasHash(norm).toString(16);
+  if(CUSTOMER_ALIAS_PINNED[key]) return CUSTOMER_ALIAS_PINNED[key];
+  return CUSTOMER_ALIAS_POOL[customerAliasHash('pool:' + norm) % CUSTOMER_ALIAS_POOL.length];
+}
+// "ANIL_6_24 - H2D" -> "<alias> 6 24 - H2D": the customer part is swapped, order suffix and style kept
+function customerAlias(label){
+  const text = String(label || '').trim();
+  if(!text) return text;
+  if(/^WO[\s\-_#]*\d/i.test(text)) return text;
+  const styleMatch = text.match(/^(.*?)(\s*-\s*H2[A-F])$/i);
+  const body = styleMatch ? styleMatch[1] : text;
+  const style = styleMatch ? styleMatch[2] : '';
+  const us = body.indexOf('_');
+  const cust = us > 0 ? body.slice(0, us) : body;
+  const rest = us > 0 ? ' ' + body.slice(us + 1).replace(/_/g, ' ') : '';
+  return customerAliasBase(cust) + rest + style;
+}
+
+// One bar per customer (all of that customer's orders added together), shown by alias
+function customerGroup(label){
+  const text = String(label || '').trim();
+  if(/^WO[\s\-_#]*\d/i.test(text)) return text.replace(/\s*-\s*H2[A-F]$/i, '');
+  const body = text.replace(/\s*-\s*H2[A-F]$/i, '');
+  const us = body.indexOf('_');
+  return customerAliasBase(us > 0 ? body.slice(0, us) : body);
+}
+function renderSalesSlide(orders){
+  // No money and no customer names on this board: units shipped per customer, shown by alias.
   const units = {};
-  if(useQty) salesRows.forEach(r => { units[r.company] = (units[r.company] || 0) + r.qty; });
-  else orders.forEach(o => { units[o.name] = (units[o.name] || 0) + o.shipped; });
+  orders.forEach(o => { const k = customerGroup(o.name); units[k] = (units[k] || 0) + o.shipped; });
   const totalUnits = Object.values(units).reduce((s,v) => s + v, 0);
-  document.getElementById('salesSub').textContent = '$' + fmtNum(total) + ' total revenue \u00b7 ' + fmtNum(totalUnits) + ' units';
+  document.getElementById('salesSub').textContent = fmtNum(totalUnits) + ' units shipped against customer orders';
   const top = Object.entries(units).filter(([,v]) => v > 0).sort((a,b) => b[1] - a[1]).slice(0, 6);
   const maxU = top.length ? top[0][1] : 1;
   document.getElementById('custList').innerHTML = top.map(([name, u]) =>
@@ -1465,7 +1487,7 @@ function renderSalesSlide(salesRows, orders){
 
   const openOrders = orders.filter(o => o.pct < 100).sort((a,b) => b.pct - a.pct).slice(0, 6);
   document.getElementById('orderList').innerHTML = openOrders.map(o =>
-    '<div class="order-row"><div class="order-top"><span>' + o.name + '</span><span><span class="order-pct">' + o.pct + '%</span><small>' + fmtNum(o.shipped) + ' / ' + fmtNum(o.goal) + '</small></span></div>' +
+    '<div class="order-row"><div class="order-top"><span>' + customerAlias(o.name) + '</span><span><span class="order-pct">' + o.pct + '%</span><small>' + fmtNum(o.shipped) + ' / ' + fmtNum(o.goal) + '</small></span></div>' +
     '<div class="mini-track"><div class="mini-fill" style="width:' + o.pct + '%; background:var(--purple);"></div></div></div>'
   ).join('') || '<div class="dash-msg">No open orders.</div>';
 }
@@ -1473,8 +1495,8 @@ function renderSalesSlide(salesRows, orders){
 // ==================== Refresh cycle ====================
 async function refreshAllData(){
   try{
-    const [feed, countRows, salesRows, logEvents, hist] = await Promise.all([
-      loadLookerFeed(), loadCountSheet(), loadSalesFeed(), loadLogEvents(LOG_WINDOW_ROWS), getHistory()
+    const [feed, countRows, logEvents, hist] = await Promise.all([
+      loadLookerFeed(), loadCountSheet(), loadLogEvents(LOG_WINDOW_ROWS), getHistory()
     ]);
     const countDaily = loadCountDaily(countRows);
     const allTimeUnits = hist.units.length || Object.values(totalsDaily(feed, null)).reduce((a,o) => a + o.total, 0);
@@ -1494,7 +1516,7 @@ async function refreshAllData(){
     renderFeed();
     renderLineStatus(feed, stuck, cycleData, {allTime: allTimeUnits, weekTotal: weekFinished});
     renderShiftSlide(feed, countDaily);
-    renderSalesSlide(salesRows, orders);
+    renderSalesSlide(orders);
     hideErrorBanner();
     document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
   }catch(e){
