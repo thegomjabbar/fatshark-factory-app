@@ -50,6 +50,30 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
   nav.tabs button.active{background:var(--accent); color:#fff;}
   .tabpanel{display:none;}
+  /* ---- Optical Module Serials (floor, one at a time) ---- */
+  .om-live-go{ font-size:17px; padding:14px 30px; }
+  .om-live-fieldlab{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px; }
+  .om-live-history{ font-family:var(--mono); font-size:13px; padding:8px 0; }
+  .om-live-history.ok{ color:#1d7a3f; font-weight:700; }
+  .om-live-history.warn{ color:#a13636; font-weight:700; }
+  .om-live-card{ min-height:330px; display:flex; align-items:center; }
+  .om-live-empty{ width:100%; text-align:center; color:var(--muted); font-size:16px; padding:70px 0; }
+  .om-live-body{ display:flex; gap:36px; align-items:center; width:100%; flex-wrap:wrap; padding:8px 4px; }
+  .om-live-qr{ width:270px; height:270px; flex:none; background:#fff; padding:14px; border:1px solid var(--line); border-radius:8px; }
+  .om-live-qr img, .om-live-qr canvas{ width:100% !important; height:100% !important; image-rendering:pixelated; display:block; }
+  .om-live-info{ flex:1; min-width:280px; }
+  .om-live-label{ font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); }
+  .om-live-serial{ font-family:var(--mono); font-size:46px; font-weight:800; letter-spacing:.05em; margin:8px 0 12px; word-break:break-all; color:var(--ink); }
+  .om-live-status{ font-weight:700; font-size:14px; margin-bottom:14px; }
+  .om-live-status.ok{ color:#1d7a3f; }
+  .om-live-status.saving{ color:#7a5b12; }
+  .om-live-status.err{ color:#a13636; }
+  .om-live-card.fresh{ animation:omLiveFlash 1.1s ease-out; }
+  @keyframes omLiveFlash{ from{ box-shadow:0 0 0 4px var(--accent-soft), 0 0 34px rgba(139,63,224,.35); } to{ box-shadow:0 1px 2px rgba(28,24,48,.04); } }
+  .om-live-saved{ color:#1d7a3f; font-weight:700; }
+  .om-live-unsaved{ color:#a13636; font-weight:700; }
+  .settings-eng-head{ margin:22px 0 10px; padding-top:14px; border-top:2px solid var(--accent-soft); }
+  .settings-eng-head h2{ margin:0 0 6px; font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:var(--accent); }
   .tabpanel.active{display:block;}
   main{max-width:1180px; margin:0 auto; padding:16px 24px 30px;}
   .grid{display:grid; grid-template-columns:1.1fr 1fr; gap:18px;}
@@ -717,7 +741,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div class="entry-stats" id="entryStats"></div>
     <div class="entry-stats" id="drilldownTriggers" style="margin-top:8px;">
       <div class="entry-stat-card trigger-card clickable" id="triggerOutputVolume" data-drilldown="outputVolumePanel" style="border-left:3px solid oklch(0.78 0.2 300);"><div class="kid">// D1</div><div class="val" style="color:oklch(0.78 0.2 300);">&mdash;</div><div class="lab">Output Volume</div><div class="chart-hint">CLICK TO OPEN &rarr;</div></div>
-      <div class="entry-stat-card trigger-card clickable" id="triggerSalesRevenue" data-drilldown="salesRevenuePanel" style="border-left:3px solid oklch(0.75 0.15 195);"><div class="kid">// D2</div><div class="val" style="color:oklch(0.75 0.15 195);">&mdash;</div><div class="lab">Sales Revenue</div><div class="chart-hint">CLICK TO OPEN &rarr;</div></div>
       <div class="entry-stat-card trigger-card clickable" id="triggerStationWip" data-drilldown="stationWipPanel" style="border-left:3px solid oklch(0.75 0.16 60);"><div class="kid">// D3</div><div class="val" style="color:oklch(0.75 0.16 60);">&mdash;</div><div class="lab">Station WIP</div><div class="chart-hint">CLICK TO OPEN &rarr;</div></div>
       <div class="entry-stat-card trigger-card clickable" id="triggerCustomerOrders" data-drilldown="customerOrdersPanel" style="border-left:3px solid oklch(0.72 0.2 340);"><div class="kid">// D4</div><div class="val" style="color:oklch(0.72 0.2 340);">&mdash;</div><div class="lab">Open Orders</div><div class="chart-hint">CLICK TO OPEN &rarr;</div></div>
       <div class="entry-stat-card trigger-card clickable" id="triggerUnitsPerShift" data-drilldown="unitsPerShiftPanel" style="border-left:3px solid oklch(0.7 0.17 220);"><div class="kid">// D5</div><div class="val" style="color:oklch(0.7 0.17 220);">&mdash;</div><div class="lab">Units by Shift</div><div class="chart-hint">CLICK TO OPEN &rarr;</div></div>
@@ -746,22 +769,6 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <div class="ops-feature-side-col" id="outputVolumeSide"></div>
       </div>
       <div class="ops-breakdown" id="outputVolumeBreakdown"></div>
-    </div>
-
-    <div class="ops-feature ops-bracket" id="salesRevenuePanel" style="display:none;">
-      <div class="ops-feature-head">
-        // SALES &middot; REVENUE
-        <span class="ops-period-toggle" data-target="sales">
-          <button data-period="day">DAY</button><button data-period="week" class="active">WEEK</button><button data-period="month">MONTH</button><button data-period="year">YEAR</button>
-        </span>
-        <span class="ops-live-pill"><i></i>LIVE</span>
-        <span class="ops-close-drilldown" data-close="salesRevenuePanel">&times; CLOSE</span>
-      </div>
-      <div class="ops-feature-body">
-        <div class="ops-feature-chart-col"><div id="salesRevenueChart"></div></div>
-        <div class="ops-feature-side-col" id="salesRevenueSide"></div>
-      </div>
-      <div class="ops-breakdown" id="salesRevenueBreakdown"></div>
     </div>
 
     <div class="ops-station-panel ops-bracket" id="stationWipPanel" style="display:none;">
@@ -816,7 +823,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <button id="tabBtnShipping">Shipping Labels</button>
     <button id="tabBtnStations">Station Sign In/Out</button>
     <button id="tabBtnScanOut">Ship to Warehouse</button>
-    <button id="tabBtnOptical" class="restricted">Optical Module Rework</button>
+    <button id="tabBtnOMLive">Optical Module Serials</button>
     <button id="tabBtnReturn">Return / Scrap Labels</button>
   </nav>
   <div class="tabs-dropdown-wrap">
@@ -825,7 +832,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <option value="shipping">Shipping Labels</option>
       <option value="stations">Station Sign In/Out</option>
       <option value="scanout">Ship to Warehouse</option>
-      <option value="optical" class="restricted-opt">Optical Module Rework</option>
+      <option value="omlive">Optical Module Serials</option>
       <option value="return">Return / Scrap Labels</option>
     </select>
   </div>
@@ -834,7 +841,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 <div id="pinOverlay" class="pin-overlay" style="display:none;">
   <div class="pin-box">
     <h3>Engineer Access</h3>
-    <p class="hint">Enter the 4-digit engineer PIN to unlock Settings and the serial/optical module generators.</p>
+    <p class="hint">Enter the 4-digit engineer PIN to unlock Settings, the headset serial generator and optical module rework.</p>
     <input type="password" id="pinInput" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="&bull;&bull;&bull;&bull;" autocomplete="off">
     <div class="hint" id="pinError" style="color:#a13636; min-height:16px;"></div>
     <div class="btnrow">
@@ -1055,70 +1062,61 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
 </div><!-- /tab-scanout -->
 
-<div id="tab-optical" class="tabpanel">
+<div id="tab-omlive" class="tabpanel">
 
   <div class="panel">
-    <h2>Generate optical module serial numbers</h2>
-    <p class="hint">Format: <b>CMA[YY][WW][6 random A-Z0-9]</b> &mdash; same scheme as headset serials, but always product code <b>CMA</b>. Checked against the OpticalModelSN sheet (and this browser's local backup) so nothing gets duplicated.</p>
+    <h2>Optical module serials <span class="count" id="omLiveSessionCount">0 this session</span></h2>
+    <p class="hint">One new serial for every optical module. Generate a serial, scan the QR code into the laser software, mark the module, then generate the next one. Every serial follows the <b>CMA[YY][WW][6 random A-Z0-9]</b> format, is checked against every serial already on the OpticalModelSN sheet so it never repeats, and is saved to the sheet the moment it's made.</p>
     <div class="row3">
       <label class="field">
-        <span>Quantity</span>
-        <input type="number" id="opticalQty" value="10" min="1" max="500">
+        <span>Your initials</span>
+        <input type="text" id="omLivePerson" maxlength="8" placeholder="e.g. tm" autocomplete="off">
       </label>
       <label class="field">
-        <span>Person</span>
-        <input type="text" id="opticalPerson" value="tm">
+        <span>Copy serial to clipboard</span>
+        <select id="omLiveAutoCopy">
+          <option value="yes">Yes, every time</option>
+          <option value="no">No</option>
+        </select>
       </label>
-      <label class="field">
-        <span>Date generated</span>
-        <input type="date" id="opticalDate">
-      </label>
+      <div class="field">
+        <span class="om-live-fieldlab">Duplicate check</span>
+        <div class="om-live-history" id="omLiveHistory">Checking the sheet&hellip;</div>
+      </div>
     </div>
-    <div class="note" id="opticalHistoryWarning" style="display:none; background:#fdf4e3; border-color:#eed8a8; color:#7a5b12;">
-      &#9888; This browser hasn't confirmed the full sheet history yet this session — dedupe is only checking against this browser's local backup, not everything ever generated. Go to Settings &rarr; Google Sheet sync &rarr; "Pull optical module serials now" before generating a large batch.
+    <div class="btnrow">
+      <button class="accent om-live-go" id="btnOmLiveGenerate">Generate next serial</button>
     </div>
-    <div class="btnrow" style="margin-top:12px;">
-      <button class="accent" id="btnOpticalGenerate">Generate batch</button>
-      <button class="secondary" id="btnOpticalClear">Clear batch</button>
+    <div class="hint" id="omLiveMsg"></div>
+  </div>
+
+  <div class="panel om-live-card" id="omLiveCard">
+    <div class="om-live-empty" id="omLiveEmpty">Enter your initials, then press <b>Generate next serial</b>.</div>
+    <div class="om-live-body" id="omLiveBody" style="display:none;">
+      <div class="om-live-qr" id="omLiveQR"></div>
+      <div class="om-live-info">
+        <div class="om-live-label">Scan into the laser software</div>
+        <div class="om-live-serial" id="omLiveSerial"></div>
+        <div class="om-live-status" id="omLiveStatus"></div>
+        <div class="btnrow">
+          <button class="secondary" id="btnOmLiveCopy">Copy serial</button>
+          <button class="secondary" id="btnOmLiveRetry" style="display:none;">Retry saving to sheet</button>
+        </div>
+      </div>
     </div>
-    <div class="note">New optical module serials auto-push to the OpticalModelSN sheet the instant they're generated (same as headset serials). If the sheet connection is unavailable, they're still safely reserved in this browser's local library — use "Push batch to sheet" below to retry.</div>
   </div>
 
   <div class="panel">
-    <h2>Generated batch <span class="count" id="opticalBatchCount">0 rows</span></h2>
-    <div class="tablewrap">
-      <table id="opticalBatchTable">
-        <thead>
-          <tr>
-            <th>UniqID</th><th>Person</th><th>ProductCode</th><th>OpticalModelSN</th>
-            <th>QR</th><th>Marked</th><th>LinkedHeadsetSN</th><th>YYWWSN</th>
-            <th>ButtonPressed</th><th>DateTime</th>
-          </tr>
-        </thead>
-        <tbody id="opticalBatchBody"></tbody>
+    <h2>Generated on this computer <span class="count" id="omLiveListCount">0</span></h2>
+    <div class="tablewrap" style="max-height:320px;">
+      <table>
+        <thead><tr><th>Time</th><th>Optical module serial</th><th>By</th><th>Sheet</th></tr></thead>
+        <tbody id="omLiveListBody"></tbody>
       </table>
     </div>
-    <div class="btnrow" style="margin-top:10px;">
-      <button class="secondary" id="btnOpticalExportCSV" disabled>Download CSV</button>
-      <button class="secondary" id="btnOpticalCopyTSV" disabled>Copy as TSV (paste into sheet)</button>
-      <button class="secondary" id="btnOpticalPush" disabled>Push batch to Google Sheet</button>
-      <button class="danger" id="btnUndoOpticalGenerate" disabled>Undo last generate (remove from sheet too)</button>
-    </div>
-    <div class="hint" id="opticalPushMsg"></div>
-    <div class="hint" id="opticalUndoMsg"></div>
   </div>
 
-  <div class="panel">
-    <h2>Print optical module labels <span class="count" id="opticalLabelsCount">0</span></h2>
-    <p class="hint">Same label size and options as the headset labels above, but a smaller, separate QR size (set in Settings &rarr; Serial sticker options) since these are usually smaller parts.</p>
-    <div class="btnrow">
-      <button class="secondary" id="btnOpticalBuildLabels">Build labels for this batch</button>
-      <button class="accent" id="btnOpticalPrint" disabled>Print these labels</button>
-    </div>
-    <div class="labels-preview" id="opticalLabelsPreview"></div>
-  </div>
-
-</div><!-- /tab-optical -->
+</div><!-- /tab-omlive -->
 
 <div id="tab-return" class="tabpanel">
 
@@ -1219,7 +1217,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <button class="secondary" id="btnSettingsBack">&larr; Back</button>
     <button class="danger" id="btnLockBuilder">Lock to Builder mode</button>
   </div>
-  <p class="hint" style="margin:-10px 0 16px;">"Lock to Builder mode" immediately hides the Serial &amp; QR Labels and Optical Module Rework tabs and requires the engineer PIN again to get back in — use this before handing the computer to floor staff.</p>
+  <p class="hint" style="margin:-10px 0 16px;">"Lock to Builder mode" immediately hides the Serial &amp; QR Labels tab and the Optical Module Rework tools (here in Settings) and requires the engineer PIN again to get back in — use this before handing the computer to floor staff.</p>
 
   <div class="panel">
     <h2>Local serial library <span class="count" id="libCount">loading&hellip;</span></h2>
@@ -1328,6 +1326,74 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <div class="hint" id="headerIconMsg"></div>
     </div>
   </div>
+
+  <div class="settings-eng-head">
+    <h2>Engineering &middot; Optical Module Rework</h2>
+    <p class="hint">Batch generator for replacement serials when the laser mis-marks a module. Rework rows go to the same OpticalModelSN sheet, tagged <b>GenOM</b> in the ButtonPressed column. Serials from the floor's Optical Module Serials tab are tagged <b>LiveOM</b>, so the two can be told apart.</p>
+  </div>
+
+
+  <div class="panel">
+    <h2>Rework: generate replacement serials</h2>
+    <p class="hint">Format: <b>CMA[YY][WW][6 random A-Z0-9]</b> &mdash; same scheme as headset serials, but always product code <b>CMA</b>. Checked against the OpticalModelSN sheet (and this browser's local backup) so nothing gets duplicated.</p>
+    <div class="row3">
+      <label class="field">
+        <span>Quantity</span>
+        <input type="number" id="opticalQty" value="10" min="1" max="500">
+      </label>
+      <label class="field">
+        <span>Person</span>
+        <input type="text" id="opticalPerson" value="tm">
+      </label>
+      <label class="field">
+        <span>Date generated</span>
+        <input type="date" id="opticalDate">
+      </label>
+    </div>
+    <div class="note" id="opticalHistoryWarning" style="display:none; background:#fdf4e3; border-color:#eed8a8; color:#7a5b12;">
+      &#9888; This browser hasn't confirmed the full sheet history yet this session — dedupe is only checking against this browser's local backup, not everything ever generated. Go to Settings &rarr; Google Sheet sync &rarr; "Pull optical module serials now" before generating a large batch.
+    </div>
+    <div class="btnrow" style="margin-top:12px;">
+      <button class="accent" id="btnOpticalGenerate">Generate batch</button>
+      <button class="secondary" id="btnOpticalClear">Clear batch</button>
+    </div>
+    <div class="note">New optical module serials auto-push to the OpticalModelSN sheet the instant they're generated (same as headset serials). If the sheet connection is unavailable, they're still safely reserved in this browser's local library — use "Push batch to sheet" below to retry.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Generated batch <span class="count" id="opticalBatchCount">0 rows</span></h2>
+    <div class="tablewrap">
+      <table id="opticalBatchTable">
+        <thead>
+          <tr>
+            <th>UniqID</th><th>Person</th><th>ProductCode</th><th>OpticalModelSN</th>
+            <th>QR</th><th>Marked</th><th>LinkedHeadsetSN</th><th>YYWWSN</th>
+            <th>ButtonPressed</th><th>DateTime</th>
+          </tr>
+        </thead>
+        <tbody id="opticalBatchBody"></tbody>
+      </table>
+    </div>
+    <div class="btnrow" style="margin-top:10px;">
+      <button class="secondary" id="btnOpticalExportCSV" disabled>Download CSV</button>
+      <button class="secondary" id="btnOpticalCopyTSV" disabled>Copy as TSV (paste into sheet)</button>
+      <button class="secondary" id="btnOpticalPush" disabled>Push batch to Google Sheet</button>
+      <button class="danger" id="btnUndoOpticalGenerate" disabled>Undo last generate (remove from sheet too)</button>
+    </div>
+    <div class="hint" id="opticalPushMsg"></div>
+    <div class="hint" id="opticalUndoMsg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Print optical module labels <span class="count" id="opticalLabelsCount">0</span></h2>
+    <p class="hint">Same label size and options as the headset labels above, but a smaller, separate QR size (set in Settings &rarr; Serial sticker options) since these are usually smaller parts.</p>
+    <div class="btnrow">
+      <button class="secondary" id="btnOpticalBuildLabels">Build labels for this batch</button>
+      <button class="accent" id="btnOpticalPrint" disabled>Print these labels</button>
+    </div>
+    <div class="labels-preview" id="opticalLabelsPreview"></div>
+  </div>
+
 
   <div class="panel">
     <h2>Local optical module library <span class="count" id="opticalLibCount">loading&hellip;</span></h2>
@@ -2075,6 +2141,7 @@ function addToLibrary(list){
 // =====================================================================
 let opticalLibrarySet = new Set();
 let opticalHistoryPulled = false; // ensures the FULL sheet history is checked at least once per session, automatically
+let opticalHistoryPulledAt = 0;   // when that last happened, so long-running floor sessions re-check now and then
 let opticalBatch = [];
 let lastGeneratedOpticalRows = []; // rows from the MOST RECENT single Generate click, for "Undo last generate"
 const OPTICAL_LIB_KEY = 'optical-serial-library-v1';
@@ -2176,6 +2243,7 @@ async function refreshOpticalHistory(){
     const added = addToOpticalLibrary(list);
     await saveOpticalLibrary();
     opticalHistoryPulled = true;
+    opticalHistoryPulledAt = Date.now();
     // Big, hard-to-miss count so you can visually confirm the pull actually found real
     // data before trusting it — rather than a small note buried in a status line.
     msg.innerHTML = '<div style="font-size:20px; font-weight:800; color:#1d7a3f;">' + list.length.toLocaleString() + ' serial(s) found in the OpticalModelSN sheet</div>' +
@@ -3324,20 +3392,20 @@ document.getElementById('btnDiagnoseCount').addEventListener('click', () => {
 
   body.innerHTML = '';
   if(!nearMisses.length){
-    msg.textContent = 'Exact matches counted: ' + exact.length + '. No near-miss rows found for "' + custName + '" (' + style + ') — the count looks correct based on what\'s in SentToWH right now.';
+    msg.textContent = 'Exact matches counted: ' + exact.length + '. No near-miss rows found for "' + customerAlias(custName) + '" (' + style + ') — the count looks correct based on what\'s in SentToWH right now.';
     wrap.style.display = 'none';
     return;
   }
-  msg.textContent = 'Exact matches counted: ' + exact.length + '. Found ' + nearMisses.length + ' row(s) that look like they should belong to "' + custName + '" but did NOT count — check these for typos/spacing/style mismatches:';
+  msg.textContent = 'Exact matches counted: ' + exact.length + '. Found ' + nearMisses.length + ' row(s) that look like they should belong to "' + customerAlias(custName) + '" but did NOT count — check these for typos/spacing/style mismatches:';
   nearMisses.forEach(r => {
     const rowStyle = styleFromSerial(r.sn);
     const rowCustNorm = customerNameFromSentField(r.customer);
     let why;
-    if(rowCustNorm !== custName) why = 'Customer text is "' + r.customer + '" — doesn\'t exactly match "' + custName + '" (check for a typo or extra/missing space)';
+    if(rowCustNorm !== custName) why = 'Customer text is "' + customerAlias(r.customer) + '" — doesn\'t exactly match "' + customerAlias(custName) + '" (check for a typo or extra/missing space)';
     else if(rowStyle !== style) why = 'Serial style is ' + rowStyle + ', not ' + style + ' — wrong style for this goal';
     else why = 'Unclear — worth a manual look';
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${r.sn}</td><td>${r.customer}</td><td>${why}</td>`;
+    tr.innerHTML = `<td>${r.sn}</td><td>${customerAlias(r.customer)}</td><td>${why}</td>`;
     body.appendChild(tr);
   });
   wrap.style.display = 'block';
@@ -3382,7 +3450,7 @@ function populateScanCustomerSelect(){
     const opt = document.createElement('option');
     opt.value = g.label;
     const remaining = g.target - shippedCountFor(g.label);
-    opt.textContent = g.label + ' (' + remaining + ' remaining of ' + g.target + (g.dueDate ? ', due ' + g.dueDate : '') + ')';
+    opt.textContent = customerAlias(g.label) + ' (' + remaining + ' remaining of ' + g.target + (g.dueDate ? ', due ' + g.dueDate : '') + ')';
     sel.appendChild(opt);
   });
   if(current && activeGoals.some(g => g.label === current)) sel.value = current;
@@ -3627,13 +3695,13 @@ function handleScan(rawSn){
   const expectedStyle = styleFromCustomerLabel(customerLabel);
   const actualStyle = styleFromSerial(sn);
   if(expectedStyle && actualStyle !== expectedStyle){
-    flagResult('blue', sn + ' is style ' + actualStyle + ' but ' + customerLabel + ' needs ' + expectedStyle + ' — wrong style, not added. Remove/re-check this unit.');
+    flagResult('blue', sn + ' is style ' + actualStyle + ' but ' + customerAlias(customerLabel) + ' needs ' + expectedStyle + ' — wrong style, not added. Remove/re-check this unit.');
     return;
   }
   // 4) goal check — never let a scan push the customer over their target
   const projectedTotal = shippedCountFor(customerLabel) + currentBox.length + 1;
   if(projectedTotal > goal.target){
-    flagResult('orange', 'Goal already met for ' + customerLabel + ' (' + goal.target + ') — ' + sn + ' not added. Start a new box/customer or adjust the goal.');
+    flagResult('orange', 'Goal already met for ' + customerAlias(customerLabel) + ' (' + goal.target + ') — ' + sn + ' not added. Start a new box/customer or adjust the goal.');
     return;
   }
 
@@ -4216,6 +4284,206 @@ document.getElementById('btnCopyTSV').addEventListener('click', async () => {
   document.getElementById(id).addEventListener('input', renderLabelPreviews);
 });
 
+
+// =====================================================================
+// OPTICAL MODULE SERIALS (floor) — one new serial per module, on demand.
+// Same CMA[YY][WW][6 random] scheme, same dedupe library and the same
+// appendOpticalModules sheet action as the rework generator; rows are
+// tagged LiveOM (rework rows are GenOM) so the two can be told apart.
+// =====================================================================
+const OM_LIVE_PERSON_KEY = 'om-live-person-v1';
+const OM_LIVE_AUTOCOPY_KEY = 'om-live-autocopy-v1';
+const OM_LIVE_BUTTON = 'LiveOM';
+const OM_LIVE_RECHECK_MS = 20 * 60 * 1000; // re-pull the sheet's serial list every 20 min on a long shift
+let omLiveRows = [];      // generated on this computer this session, newest first
+let omLiveBusy = false;
+
+(function initOmLive(){
+  const person = document.getElementById('omLivePerson');
+  const autoCopy = document.getElementById('omLiveAutoCopy');
+  person.value = localStorage.getItem(OM_LIVE_PERSON_KEY) || '';
+  autoCopy.value = localStorage.getItem(OM_LIVE_AUTOCOPY_KEY) || 'yes';
+  person.addEventListener('input', () => localStorage.setItem(OM_LIVE_PERSON_KEY, person.value.trim()));
+  autoCopy.addEventListener('change', () => localStorage.setItem(OM_LIVE_AUTOCOPY_KEY, autoCopy.value));
+  document.getElementById('btnOmLiveGenerate').addEventListener('click', omLiveGenerate);
+  document.getElementById('btnOmLiveCopy').addEventListener('click', () => { if(omLiveRows[0]) omLiveCopy(omLiveRows[0].opticalSN, true); });
+  document.getElementById('btnOmLiveRetry').addEventListener('click', omLiveRetryUnsaved);
+})();
+
+function omLiveUpdateHistory(){
+  const el = document.getElementById('omLiveHistory');
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token){
+    el.className = 'om-live-history warn';
+    el.textContent = 'No sheet connection. Ask an engineer to connect it in Settings.';
+  }else if(opticalHistoryPulled){
+    el.className = 'om-live-history ok';
+    el.textContent = opticalLibrarySet.size.toLocaleString() + ' serials on record. New ones never repeat these.';
+  }else{
+    el.className = 'om-live-history warn';
+    el.textContent = 'Not checked against the sheet yet.';
+  }
+}
+async function omLiveEnsureHistory(){
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token) return false;
+  if(!opticalHistoryPulled || Date.now() - opticalHistoryPulledAt > OM_LIVE_RECHECK_MS){
+    document.getElementById('omLiveHistory').className = 'om-live-history';
+    document.getElementById('omLiveHistory').textContent = 'Checking the sheet\u2026';
+    await refreshOpticalHistory();
+  }
+  omLiveUpdateHistory();
+  return opticalHistoryPulled;
+}
+function omLiveOnOpen(){
+  omLiveUpdateHistory();
+  omLiveEnsureHistory();
+  const person = document.getElementById('omLivePerson');
+  if(!person.value.trim()) person.focus();
+}
+
+async function omLiveCopy(serial, announce){
+  try{
+    await navigator.clipboard.writeText(serial);
+    if(announce) document.getElementById('omLiveMsg').textContent = serial + ' copied to the clipboard.';
+    return true;
+  }catch(e){
+    if(announce) document.getElementById('omLiveMsg').textContent = 'Could not copy automatically. Scan the QR code, or select the serial and copy it.';
+    return false;
+  }
+}
+
+async function omLivePush(row){
+  const result = await sheetPost({action: 'appendOpticalModules', rows: rowsForOptical([row])});
+  // A "skipped duplicate" here means this exact serial is already on the sheet. The local
+  // library already excludes every serial the sheet had, so that only happens when a retry
+  // re-sends a row whose first attempt actually landed. Either way, it's on the sheet.
+  row.pushedToSheet = true;
+  return result;
+}
+
+async function omLiveGenerate(){
+  if(omLiveBusy) return;
+  const msg = document.getElementById('omLiveMsg');
+  const personEl = document.getElementById('omLivePerson');
+  const person = personEl.value.trim();
+  if(!person){
+    msg.textContent = 'Enter your initials first.';
+    personEl.focus();
+    return;
+  }
+  const cfg = sheetConfig();
+  const online = !!(cfg.url && cfg.token);
+  const btn = document.getElementById('btnOmLiveGenerate');
+  omLiveBusy = true; btn.disabled = true; btn.textContent = 'Generating\u2026';
+  msg.textContent = '';
+  try{
+    if(online) await omLiveEnsureHistory();
+    const {yy, ww} = isoWeekParts('');
+    const serial = buildUniqueOpticalSerial(OPTICAL_PRODUCT_CODE + yy + ww);
+    const row = {
+      uniqId: genUniqID(),
+      person: person,
+      productCode: OPTICAL_PRODUCT_CODE,
+      opticalSN: serial,
+      qr: 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(serial),
+      marked: '',
+      linkedHeadsetSN: '',
+      yywwsn: serial.slice(3),
+      buttonPressed: OM_LIVE_BUTTON,
+      dateTime: new Date().toLocaleString(),
+      pushedToSheet: false,
+      time: new Date()
+    };
+    await saveOpticalLibrary();
+    refreshOpticalLibCount();
+    omLiveRows.unshift(row);
+    omLiveShow(row, 'saving');
+    omLiveRenderList();
+    if(document.getElementById('omLiveAutoCopy').value === 'yes') omLiveCopy(serial, false);
+    if(online){
+      try{
+        await omLivePush(row);
+        omLiveShow(row, 'ok');
+      }catch(e){
+        row.pushError = e.message;
+        omLiveShow(row, 'err');
+      }
+    }else{
+      row.pushError = 'no sheet connection';
+      omLiveShow(row, 'err');
+    }
+    omLiveRenderList();
+    omLiveUpdateHistory();
+  }catch(e){
+    msg.textContent = 'Could not generate a serial: ' + e.message;
+  }finally{
+    omLiveBusy = false; btn.disabled = false; btn.textContent = 'Generate next serial';
+  }
+}
+
+function omLiveShow(row, state){
+  document.getElementById('omLiveEmpty').style.display = 'none';
+  document.getElementById('omLiveBody').style.display = 'flex';
+  const serialEl = document.getElementById('omLiveSerial');
+  if(serialEl.textContent !== row.opticalSN){
+    serialEl.textContent = row.opticalSN;
+    const target = document.getElementById('omLiveQR');
+    target.innerHTML = '';
+    try{
+      new QRCode(target, {text: row.opticalSN, width: 540, height: 540, correctLevel: QRCode.CorrectLevel.M});
+    }catch(e){
+      target.textContent = 'QR could not be drawn: ' + e.message;
+    }
+    const card = document.getElementById('omLiveCard');
+    card.classList.remove('fresh'); void card.offsetWidth; card.classList.add('fresh');
+  }
+  const status = document.getElementById('omLiveStatus');
+  const retry = document.getElementById('btnOmLiveRetry');
+  if(state === 'ok'){
+    status.className = 'om-live-status ok';
+    status.textContent = '\u2713 Saved to the OpticalModelSN sheet. Ready to mark.';
+    retry.style.display = omLiveRows.some(r => !r.pushedToSheet) ? '' : 'none';
+  }else if(state === 'saving'){
+    status.className = 'om-live-status saving';
+    status.textContent = 'Saving to the sheet\u2026';
+    retry.style.display = 'none';
+  }else{
+    status.className = 'om-live-status err';
+    status.textContent = '\u26A0 Not saved to the sheet yet (' + (row.pushError || 'unknown error') + '). Press Retry before marking this module.';
+    retry.style.display = '';
+  }
+}
+
+async function omLiveRetryUnsaved(){
+  const pending = omLiveRows.filter(r => !r.pushedToSheet);
+  if(!pending.length) return;
+  const btn = document.getElementById('btnOmLiveRetry');
+  btn.disabled = true; btn.textContent = 'Retrying\u2026';
+  try{
+    await sheetPost({action: 'appendOpticalModules', rows: rowsForOptical(pending)});
+    pending.forEach(r => { r.pushedToSheet = true; delete r.pushError; });
+    document.getElementById('omLiveMsg').textContent = pending.length + ' serial(s) saved to the sheet.';
+  }catch(e){
+    pending.forEach(r => { r.pushError = e.message; });
+    document.getElementById('omLiveMsg').textContent = 'Still could not reach the sheet: ' + e.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Retry saving to sheet';
+  }
+  if(omLiveRows[0]) omLiveShow(omLiveRows[0], omLiveRows[0].pushedToSheet ? 'ok' : 'err');
+  omLiveRenderList();
+}
+
+function omLiveRenderList(){
+  document.getElementById('omLiveListBody').innerHTML = omLiveRows.map(r =>
+    '<tr><td>' + r.time.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}) + '</td>' +
+    '<td><b style="font-family:var(--mono);">' + r.opticalSN + '</b></td><td>' + r.person + '</td>' +
+    '<td>' + (r.pushedToSheet ? '<span class="om-live-saved">Saved</span>' : '<span class="om-live-unsaved">Not saved</span>') + '</td></tr>'
+  ).join('');
+  document.getElementById('omLiveListCount').textContent = omLiveRows.length.toLocaleString();
+  document.getElementById('omLiveSessionCount').textContent = omLiveRows.length.toLocaleString() + ' this session';
+}
+
 // =====================================================================
 // TABS
 // =====================================================================
@@ -4223,27 +4491,27 @@ document.getElementById('tabBtnSerial').addEventListener('click', () => switchTa
 document.getElementById('tabBtnShipping').addEventListener('click', () => switchTab('shipping'));
 document.getElementById('tabBtnScanOut').addEventListener('click', () => switchTab('scanout'));
 document.getElementById('tabBtnStations').addEventListener('click', () => switchTab('stations'));
-document.getElementById('tabBtnOptical').addEventListener('click', () => switchTab('optical'));
+document.getElementById('tabBtnOMLive').addEventListener('click', () => switchTab('omlive'));
 document.getElementById('tabBtnReturn').addEventListener('click', () => switchTab('return'));
 document.getElementById('tabDropdown').addEventListener('change', (e) => switchTab(e.target.value));
 let lastActiveTab = 'serial';
 function switchTab(name){
-  // Builder mode: Serial & QR Labels and Optical Module Rework require the engineer PIN.
-  // This is checked here too (not just by hiding the nav buttons) so it can't be bypassed
-  // by anything else in the app that calls switchTab() directly.
-  if(!engineerUnlocked && (name === 'serial' || name === 'optical')) return;
+  // Builder mode: Serial & QR Labels requires the engineer PIN (Optical Module Rework now lives
+  // in Settings, which is already behind the PIN). Checked here too, not just by hiding the nav
+  // button, so it can't be bypassed by anything else in the app that calls switchTab() directly.
+  if(!engineerUnlocked && name === 'serial') return;
   lastActiveTab = name;
   document.getElementById('tab-serial').classList.toggle('active', name === 'serial');
   document.getElementById('tab-shipping').classList.toggle('active', name === 'shipping');
   document.getElementById('tab-stations').classList.toggle('active', name === 'stations');
   document.getElementById('tab-scanout').classList.toggle('active', name === 'scanout');
-  document.getElementById('tab-optical').classList.toggle('active', name === 'optical');
+  document.getElementById('tab-omlive').classList.toggle('active', name === 'omlive');
   document.getElementById('tab-return').classList.toggle('active', name === 'return');
   document.getElementById('tabBtnSerial').classList.toggle('active', name === 'serial');
   document.getElementById('tabBtnShipping').classList.toggle('active', name === 'shipping');
   document.getElementById('tabBtnStations').classList.toggle('active', name === 'stations');
   document.getElementById('tabBtnScanOut').classList.toggle('active', name === 'scanout');
-  document.getElementById('tabBtnOptical').classList.toggle('active', name === 'optical');
+  document.getElementById('tabBtnOMLive').classList.toggle('active', name === 'omlive');
   document.getElementById('tabBtnReturn').classList.toggle('active', name === 'return');
   document.getElementById('tabDropdown').value = name;
   if(name === 'shipping') renderShipPreview();
@@ -4261,10 +4529,7 @@ function switchTab(name){
       if(!opticalHistoryPulled) refreshOpticalHistory();
     }
   }
-  if(name === 'optical' && !opticalHistoryPulled){
-    const cfg = sheetConfig();
-    if(cfg.url && cfg.token) refreshOpticalHistory();
-  }
+  if(name === 'omlive') omLiveOnOpen();
   if(name === 'serial' && !headsetHistoryPulled){
     const cfg = sheetConfig();
     if(cfg.url && cfg.token) refreshHeadsetHistory();
@@ -4284,10 +4549,9 @@ let engineerUnlocked = sessionStorage.getItem('engineer-unlocked') === 'true';
 
 function applyAccessMode(){
   document.getElementById('tabBtnSerial').classList.toggle('restricted', !engineerUnlocked);
-  document.getElementById('tabBtnOptical').classList.toggle('restricted', !engineerUnlocked);
-  document.querySelectorAll('#tabDropdown option[value="serial"], #tabDropdown option[value="optical"]')
+  document.querySelectorAll('#tabDropdown option[value="serial"]')
     .forEach(opt => opt.classList.toggle('restricted-opt', !engineerUnlocked));
-  if(!engineerUnlocked && (lastActiveTab === 'serial' || lastActiveTab === 'optical')){
+  if(!engineerUnlocked && lastActiveTab === 'serial'){
     lastActiveTab = 'shipping';
     switchTab('shipping');
   }
@@ -4339,7 +4603,10 @@ function openSettings(){
   document.getElementById('tab-serial').classList.remove('active');
   document.getElementById('tab-shipping').classList.remove('active');
   document.getElementById('tab-scanout').classList.remove('active');
-  document.getElementById('tab-optical').classList.remove('active');
+  document.getElementById('tab-omlive').classList.remove('active');
+  document.getElementById('tab-stations').classList.remove('active');
+  // The rework generator lives in here now, so make sure its dedupe list is current
+  if(!opticalHistoryPulled){ const c = sheetConfig(); if(c.url && c.token) refreshOpticalHistory(); }
   document.getElementById('tab-return').classList.remove('active');
   document.getElementById('view-settings').classList.add('active');
   document.querySelector('nav.tabs').style.display = 'none';
@@ -4797,35 +5064,6 @@ function closeStationSlide(){
 document.getElementById('btnCloseStationSlide').addEventListener('click', closeStationSlide);
 document.getElementById('stationSlideOverlay').addEventListener('click', closeStationSlide);
 
-function openCustomerOrdersSlide(company, orders){
-  const overlay = document.getElementById('stationSlideOverlay');
-  const panel = document.getElementById('stationSlidePanel');
-  const title = document.getElementById('stationSlideTitle');
-  const sub = document.getElementById('stationSlideSub');
-  const list = document.getElementById('stationSlideList');
-  const totalUnits = orders.reduce((s, o) => s + o.qty, 0);
-  const totalRevenue = orders.reduce((s, o) => s + o.total, 0);
-  title.textContent = '// ' + company.toUpperCase();
-  sub.textContent = orders.length + ' order(s) \u00b7 ' + totalUnits.toLocaleString() + ' units \u00b7 $' + totalRevenue.toLocaleString() + ' total';
-  // sorted most-recent first where a real date exists; orders with no parseable date sort last
-  const sorted = orders.slice().sort((a, b) => {
-    const da = new Date(a.firmDate || a.date), db = new Date(b.firmDate || b.date);
-    const va = isNaN(da) ? -Infinity : da.getTime(), vb = isNaN(db) ? -Infinity : db.getTime();
-    return vb - va;
-  });
-  list.innerHTML = sorted.map(o => {
-    const dateShown = o.firmDate || o.date || 'No date set';
-    const unitPrice = o.price !== null ? o.price : (o.qty ? o.total / o.qty : 0);
-    return '<div style="padding:9px 0; border-bottom:1px solid rgba(255,255,255,.06);">' +
-      '<div style="font-weight:700; font-size:11.5px;">' + dateShown + (o.sku ? ' \u00b7 ' + o.sku : '') + '</div>' +
-      '<div style="font-size:10.5px; color:oklch(0.6 0.05 295); margin-top:3px;">' +
-      o.qty.toLocaleString() + 'u @ $' + unitPrice.toLocaleString(undefined, {maximumFractionDigits: 2}) + '/u &nbsp;=&nbsp; $' + Math.round(o.total).toLocaleString() +
-      '</div></div>';
-  }).join('') || '<div style="color:oklch(0.55 0.05 295);">No orders found.</div>';
-  overlay.classList.add('show');
-  panel.classList.add('show');
-}
-
 function buildStatCardHtml(c, val, idx, matches){
   const kid = '// K' + String(idx + 1).padStart(2, '0');
   const hasTrend = matches.length > 1;
@@ -4924,7 +5162,6 @@ async function refreshHomeStats(force){
     await renderOutputVolumePanel(feed);
     renderCustomerOrdersChart(feed);
     await renderUnitsPerShiftPanel(feed);
-    await renderSalesRevenuePanel(force);
 
     const perStat = cfg.map(c => {
       const matches = findLookerMatches(feed, c);
@@ -5527,12 +5764,48 @@ function openShiftStyleDrilldown(day){
   panel.classList.add('show');
 }
 
+// =====================================================================
+// CUSTOMER ALIASES — customer names never appear on screen. Each customer
+// is shown as a Disney character instead. Pinned pairings are stored as
+// hashes of the normalized name, so the real names are not in this public
+// source file; every other customer gets a fixed character picked from its
+// hash, so the same customer always shows the same name on every screen.
+// Work-order labels (WO-...) are order numbers, not names, and stay as is.
+// =====================================================================
+const CUSTOMER_ALIAS_PINNED = {"8162c38d": "Goofy", "b9aa2e84": "Nemo", "a7577ff6": "Nemo", "97c097e4": "Nemo"};
+const CUSTOMER_ALIAS_POOL = ['Mickey','Minnie','Donald','Daisy','Pluto','Chip','Dale','Dory','Marlin','Simba','Nala','Timon','Pumbaa','Rafiki','Baloo','Mowgli','Bagheera','Ariel','Sebastian','Flounder','Belle','Lumiere','Aladdin','Genie','Jasmine','Abu','Mulan','Mushu','Stitch','Lilo','Moana','Maui','Elsa','Anna','Olaf','Sven','Rapunzel','Pascal','Tinker Bell','Peter Pan','Dumbo','Bambi','Thumper','Winnie','Tigger','Eeyore','Piglet','Buzz','Woody','Jessie','Rex','Hamm','Wall-E','Eve','Remy','Dash','Sulley','Mike','Boo','Lightning','Mater','Russell','Dug','Joy','Bing Bong','Merida','Tiana','Ray','Hercules','Pegasus','Pocahontas','Meeko','Kuzco','Pacha','Baymax','Hiro','Judy','Nick','Flash','Mirabel','Bruno','Asha','Kida','Milo'];
+function customerAliasHash(str){
+  let h = 0x811c9dc5;
+  for(let i = 0; i < str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+}
+function customerAliasBase(name){
+  const norm = String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if(!norm) return 'Unknown';
+  const key = customerAliasHash(norm).toString(16);
+  if(CUSTOMER_ALIAS_PINNED[key]) return CUSTOMER_ALIAS_PINNED[key];
+  return CUSTOMER_ALIAS_POOL[customerAliasHash('pool:' + norm) % CUSTOMER_ALIAS_POOL.length];
+}
+// "ANIL_6_24 - H2D" -> "<alias> 6 24 - H2D": the customer part is swapped, order suffix and style kept
+function customerAlias(label){
+  const text = String(label || '').trim();
+  if(!text) return text;
+  if(/^WO[\s\-_#]*\d/i.test(text)) return text;
+  const styleMatch = text.match(/^(.*?)(\s*-\s*H2[A-F])$/i);
+  const body = styleMatch ? styleMatch[1] : text;
+  const style = styleMatch ? styleMatch[2] : '';
+  const us = body.indexOf('_');
+  const cust = us > 0 ? body.slice(0, us) : body;
+  const rest = us > 0 ? ' ' + body.slice(us + 1).replace(/_/g, ' ') : '';
+  return customerAliasBase(cust) + rest + style;
+}
+
 // ---- Customer Orders: built from "Scorecard: Goal" / "Scorecard: Goal Shipped" row pairs ----
 let customerOrdersShowAll = false;
 let customerOrdersListCache = [];
 function renderOrderRow(o){
   return '<div class="ops-order-row">' +
-    '<div class="ops-order-name" title="' + o.name + '">' + o.name + '</div>' +
+    '<div class="ops-order-name">' + customerAlias(o.name) + '</div>' +
     '<div class="ops-order-bar-track"><div class="ops-order-bar-fill ' + o.status + '" style="width:' + o.pct.toFixed(1) + '%;"></div></div>' +
     '<div class="ops-order-nums"><b>' + o.shipped.toLocaleString() + '</b> / ' + o.target.toLocaleString() + 'u &middot; ' + o.remaining.toLocaleString() + ' left</div>' +
     '<div class="ops-order-status ' + o.status + '">' + o.status.toUpperCase() + '</div>' +
@@ -5588,108 +5861,6 @@ function renderCustomerOrdersChart(feed){
 }
 
 // ---- Sales Revenue (from the "Sales" tab — a proper business table, not long-format) ----
-const SALES_SHEET_NAME = 'Sales';
-let salesFeedCache = null;
-async function loadSalesFeed(force){
-  if(salesFeedCache && !force) return salesFeedCache;
-  const json = await sheetPost({action: 'getFullSheet', sheet: SALES_SHEET_NAME});
-  const rows = json.rows || [];
-  if(rows.length < 2){ salesFeedCache = []; return salesFeedCache; }
-  const headers = rows[0].map(h => String(h).trim());
-  // Status column header wording isn't fully confirmed against the real sheet (it was
-  // truncated in the screenshot I could see) — matched loosely by "dropdown" in the header
-  // text. If this doesn't pick up the right column, the exact header name is needed to fix it.
-  const statusIdx = headers.findIndex(h => /dropdown/i.test(h));
-  const idx = {
-    date: headers.indexOf('SALES-Requested Delivery Date'),
-    firmDate: headers.indexOf('SALES-Firm Delivery Date'),
-    total: headers.indexOf('SALES-Extended Total'),
-    qty: headers.indexOf('SALES-Requested Quantity'),
-    price: headers.indexOf('SALES-Per Unit Price'),
-    sku: headers.indexOf('SALES-SKU'),
-    company: headers.indexOf('SALES-Company Name'),
-    status: statusIdx
-  };
-  salesFeedCache = rows.slice(1)
-    .filter(r => r[idx.date] || r[idx.company]) // keep any real order row even if its date can't be parsed later
-    .map(r => ({
-      date: r[idx.date],
-      firmDate: idx.firmDate > -1 ? r[idx.firmDate] : null,
-      total: Number(r[idx.total]) || 0,
-      qty: Number(r[idx.qty]) || 0,
-      price: idx.price > -1 ? (Number(r[idx.price]) || 0) : null,
-      sku: String(r[idx.sku] || '').trim(),
-      company: String(r[idx.company] || '').trim(),
-      status: idx.status > -1 ? String(r[idx.status] || '').trim() : ''
-    }));
-  return salesFeedCache;
-}
-let salesRevenueGranularity = 'week';
-async function renderSalesRevenuePanel(force){
-  const panel = document.getElementById('salesRevenuePanel');
-  try{
-    const rows = await loadSalesFeed(force);
-    if(!rows.length){ panel.dataset.hasData = '0'; syncDrilldownDisplay(); return; }
-    panel.dataset.hasData = '1';
-    const agg = salesRevenueGranularity === 'year'
-      ? aggregateYearAsMonths(rows, r => r.date, r => r.total, r => r.company)
-      : aggregateByPeriod(rows, salesRevenueGranularity, r => r.date, r => r.total, r => r.company);
-    const chartEl = document.getElementById('salesRevenueChart');
-    if(agg.length < 2){
-      chartEl.innerHTML = '<div class="dash-panel-msg" style="padding:40px 10px; text-align:center;">' +
-        'Only ' + agg.length + ' ' + salesRevenueGranularity + '(s) of data exist so far' + (agg.length ? ' (' + agg[0].label + ')' : '') + ' \u2014 not enough history yet for a ' + salesRevenueGranularity + ' trend line.<br>' +
-        'Try DAY or WEEK for more detail, or check back once more ' + salesRevenueGranularity + '(s) of order data exist.</div>';
-    }else{
-      renderSmoothAreaChart(chartEl, agg.map(a => a.total), agg.map(a => a.label), 'salesGrad');
-    }
-    // IMPORTANT: Total Revenue / Avg Order Value are computed from ALL rows directly, NOT from
-    // the chart's `agg` — a row whose date can't be parsed (e.g. "ON HOLD" instead of a real
-    // date) still counts as a real order and must be included here, even though it genuinely
-    // can't be plotted on the date-based chart above. Computing this from `agg` was the actual
-    // bug behind the dashboard total looking lower than the real sheet total.
-    const allTime = rows.reduce((s, r) => s + r.total, 0);
-    const avgOrder = rows.length ? (allTime / rows.length) : 0;
-    const unparseableCount = rows.filter(r => isNaN(new Date(r.date))).length;
-    let delta = null;
-    if(agg.length > 1){
-      const prev = agg[agg.length - 2].total, cur = agg[agg.length - 1].total;
-      if(prev) delta = ((cur - prev) / Math.abs(prev)) * 100;
-    }
-    const companyTotals = {}, companyUnits = {};
-    rows.forEach(r => {
-      const k = r.company || 'Unknown';
-      companyTotals[k] = (companyTotals[k] || 0) + r.total;
-      companyUnits[k] = (companyUnits[k] || 0) + r.qty;
-    });
-    document.getElementById('salesRevenueSide').innerHTML =
-      renderSideBlock('TOTAL REVENUE', '$' + Math.round(allTime).toLocaleString(), 'all-time, all ' + rows.length + ' order(s)') +
-      renderSideBlock('AVG ORDER VALUE', '$' + Math.round(avgOrder).toLocaleString(), 'per line item') +
-      renderSideBlock(salesRevenueGranularity.toUpperCase() + ' DELTA', delta === null ? '\u2014' : (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%', 'vs prior ' + salesRevenueGranularity) +
-      renderSideBlock('AVG / ' + salesRevenueGranularity.toUpperCase(), '$' + Math.round(allTime / (agg.map(a=>a.total).length || 1)).toLocaleString(), '');
-    const sortedCustomers = Object.entries(companyTotals).sort((a, b) => b[1] - a[1]).slice(0, 12);
-    document.getElementById('salesRevenueBreakdown').innerHTML =
-      '<div class="dash-panel-lab" style="margin-bottom:2px;">BY CUSTOMER <span style="font-weight:400; color:oklch(0.5 0.04 295); font-size:9.5px;">(units &middot; revenue &mdash; click a customer to see every order)</span></div>' +
-      (unparseableCount ? '<div style="font-size:9px; color:oklch(0.6 0.05 295); margin-bottom:6px;">' + unparseableCount + ' order(s) have a non-date delivery status (e.g. "ON HOLD") and won\u2019t appear on the chart above, but ARE included in every total here.</div>' : '') +
-      sortedCustomers.map(([k, v]) =>
-        '<div class="ops-breakdown-row clickable-row" data-company="' + k.replace(/"/g, '&quot;') + '">' +
-        '<span>' + k + '</span><span>' + Math.round(companyUnits[k] || 0).toLocaleString() + 'u &middot; $' + Math.round(v).toLocaleString() + '</span></div>'
-      ).join('');
-    document.getElementById('salesRevenueBreakdown').querySelectorAll('.clickable-row').forEach(row => {
-      row.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const company = row.dataset.company;
-        openCustomerOrdersSlide(company, rows.filter(r => (r.company || 'Unknown') === company));
-      });
-    });
-    document.getElementById('triggerSalesRevenue').querySelector('.val').textContent = '$' + Math.round(allTime).toLocaleString();
-    syncDrilldownDisplay();
-  }catch(e){
-    panel.dataset.hasData = '1';
-    document.getElementById('salesRevenueChart').innerHTML = '<div class="dash-panel-msg" style="color:#e08484;">Could not load "' + SALES_SHEET_NAME + '" tab: ' + e.message + '</div>';
-    syncDrilldownDisplay();
-  }
-}
-
 // wire the period-toggle buttons (delegated, since both panels share the same button markup)
 document.querySelectorAll('.ops-period-toggle').forEach(toggle => {
   toggle.addEventListener('click', (e) => {
@@ -5703,9 +5874,6 @@ document.querySelectorAll('.ops-period-toggle').forEach(toggle => {
       outputVolumeGranularity = btn.dataset.period;
       outputVolumeSelectedPeriod = null;
       loadLookerFeed().then(feed => renderOutputVolumePanel(feed));
-    }else if(target === 'sales'){
-      salesRevenueGranularity = btn.dataset.period;
-      renderSalesRevenuePanel();
     }
   });
 });
@@ -5714,7 +5882,7 @@ document.querySelectorAll('.ops-period-toggle').forEach(toggle => {
 // which one is controlled by clicking its trigger card above — matching the reference UI where
 // the KPI row stays fixed and one shared box below morphs its content, rather than N stacked
 // collapsible boxes each taking up their own space. ----
-const DRILLDOWN_PANEL_IDS = ['outputVolumePanel', 'salesRevenuePanel', 'stationWipPanel', 'customerOrdersPanel', 'unitsPerShiftPanel'];
+const DRILLDOWN_PANEL_IDS = ['outputVolumePanel', 'stationWipPanel', 'customerOrdersPanel', 'unitsPerShiftPanel'];
 let activeDrilldown = 'outputVolumePanel'; // one drilldown open by default, matching the reference — never a fully empty state
 function syncDrilldownDisplay(){
   DRILLDOWN_PANEL_IDS.forEach(id => {
@@ -6093,6 +6261,10 @@ function advanceWorkOrder(usedWo){
   });
   resetIdleTimer();
 })();
+
+window.addEventListener('beforeunload', (e) => {
+  if(typeof omLiveRows !== 'undefined' && omLiveRows.some(r => !r.pushedToSheet)){ e.preventDefault(); e.returnValue = ''; }
+});
 
 // ---------- init ----------
 (function init(){
