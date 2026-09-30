@@ -50,6 +50,33 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
   nav.tabs button.active{background:var(--accent); color:#fff;}
   .tabpanel{display:none;}
+  /* ---- Locate ---- */
+  .loc-search{ display:flex; gap:10px; }
+  .loc-search input{ flex:1; font-family:var(--mono); font-size:20px; padding:12px 14px; letter-spacing:.04em; text-transform:uppercase; }
+  .loc-search button{ font-size:15px; padding:0 28px; }
+  .loc-status{ display:flex; align-items:center; gap:14px; padding:14px 16px; border-radius:8px; background:var(--accent-soft); margin-bottom:16px; }
+  .loc-status .dot{ width:14px; height:14px; border-radius:50%; flex:none; }
+  .loc-status .big{ font-size:20px; font-weight:800; }
+  .loc-status .sub{ color:var(--muted); font-size:13px; margin-top:2px; }
+  .loc-facts{ display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:10px 18px; }
+  .loc-fact .k{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .loc-fact .v{ font-size:15px; font-weight:700; margin-top:2px; word-break:break-word; }
+  .loc-fact .v.mono, .loc-mono{ font-family:var(--mono); }
+  .loc-link{ color:var(--accent); cursor:pointer; text-decoration:underline; }
+  .loc-timeline{ position:relative; margin:4px 0 0 8px; padding-left:22px; border-left:2px solid var(--line); }
+  .loc-item{ position:relative; padding:8px 0 14px; }
+  .loc-item::before{ content:''; position:absolute; left:-30px; top:12px; width:12px; height:12px; border-radius:50%; background:var(--c, var(--accent)); border:2px solid var(--panel); box-shadow:0 0 0 2px var(--c, var(--accent)); }
+  .loc-item .t{ font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .loc-item .h{ font-weight:800; font-size:15px; margin-top:2px; }
+  .loc-item .d{ font-size:13px; color:var(--ink); margin-top:3px; }
+  .loc-item .d span{ color:var(--muted); }
+  .loc-tag{ display:inline-block; font-family:var(--mono); font-size:11px; font-weight:800; padding:1px 7px; border-radius:4px; margin-right:6px; vertical-align:1px; }
+  .loc-tag.in{ background:#e3f5ea; color:#1d7a3f; } .loc-tag.out{ background:#fdf1dc; color:#8a5a0b; }
+  .loc-tag.gen{ background:var(--accent-soft); color:var(--accent); } .loc-tag.hold{ background:#fbe4e4; color:#a13636; }
+  .loc-tag.ship{ background:#e0f2f7; color:var(--cyan); } .loc-tag.om{ background:#efe7fb; color:#6b3fb0; }
+  .loc-records td{ vertical-align:top; }
+  .loc-suggest{ margin-top:8px; display:flex; flex-wrap:wrap; gap:6px; }
+  .loc-suggest button{ font-family:var(--mono); font-size:12px; padding:4px 10px; }
   /* ---- Optical Module Serials (floor, one at a time) ---- */
   .om-live-go{ font-size:17px; padding:14px 30px; }
   .om-live-fieldlab{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px; }
@@ -824,6 +851,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <button id="tabBtnStations">Station Sign In/Out</button>
     <button id="tabBtnScanOut">Ship to Warehouse</button>
     <button id="tabBtnOMLive">Optical Module Serials</button>
+    <button id="tabBtnLocate">Locate</button>
     <button id="tabBtnReturn">Return / Scrap Labels</button>
   </nav>
   <div class="tabs-dropdown-wrap">
@@ -833,6 +861,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <option value="stations">Station Sign In/Out</option>
       <option value="scanout">Ship to Warehouse</option>
       <option value="omlive">Optical Module Serials</option>
+      <option value="locate">Locate</option>
       <option value="return">Return / Scrap Labels</option>
     </select>
   </div>
@@ -1117,6 +1146,19 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   </div>
 
 </div><!-- /tab-omlive -->
+
+<div id="tab-locate" class="tabpanel">
+  <div class="panel">
+    <h2>Locate a unit</h2>
+    <p class="hint">Scan or type a headset or optical module serial to see where it is right now and its full history: when it was generated and by whom, the optical module it's linked to, every station sign in and out with operator and time, holds, and when it went to the warehouse.</p>
+    <div class="loc-search">
+      <input type="text" id="locInput" placeholder="Scan or type a serial, e.g. H2F2639QPJ5AA" autocomplete="off" spellcheck="false">
+      <button class="accent" id="btnLocate">Locate</button>
+    </div>
+    <div class="hint" id="locMsg"></div>
+  </div>
+  <div id="locResult"></div>
+</div><!-- /tab-locate -->
 
 <div id="tab-return" class="tabpanel">
 
@@ -4484,6 +4526,224 @@ function omLiveRenderList(){
   document.getElementById('omLiveSessionCount').textContent = omLiveRows.length.toLocaleString() + ' this session';
 }
 
+
+// =====================================================================
+// LOCATE — full history of one serial, read straight from the sheet tabs.
+// Headset: SerialNumbers row (generation), OpticalModelSN (linked module),
+// every Log event (station in/out, operator, time), Count (current hold),
+// Hold Archive (past holds), SentToWH (sent to warehouse).
+// Optical module: its OpticalModelSN row, plus the headset it's linked to.
+// Tabs are cached for 2 minutes, so repeat lookups are instant.
+// =====================================================================
+const LOCATE_CACHE_MS = 2 * 60 * 1000;
+const LOCATE_TABS = {serials: 'SerialNumbers', optical: 'OpticalModelSN', log: 'Log', sent: 'SentToWH', holdArchive: 'Hold Archive', count: 'Count'};
+const locateCache = {};
+async function locateTab(key){
+  const c = locateCache[key];
+  if(c && Date.now() - c.at < LOCATE_CACHE_MS) return c.rows;
+  try{
+    const json = await sheetPost({action: 'getFullSheet', sheet: LOCATE_TABS[key]});
+    locateCache[key] = {at: Date.now(), rows: json.rows || []};
+  }catch(e){
+    locateCache[key] = {at: Date.now(), rows: [], error: e.message};
+  }
+  return locateCache[key].rows;
+}
+function locDate(v){
+  if(v === null || v === undefined || v === '') return null;
+  if(v instanceof Date) return isNaN(v) ? null : v;
+  if(typeof v === 'number' && v > 30000 && v < 80000){ const d = new Date(Math.round((v - 25569) * 86400000)); return new Date(d.getTime() + d.getTimezoneOffset() * 60000); }
+  const t = Date.parse(String(v));
+  return isNaN(t) ? null : new Date(t);
+}
+function locFmt(d){ return d ? d.toLocaleString([], {month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '\u2014'; }
+function locEsc(v){ return String(v === null || v === undefined ? '' : v).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function locCell(v){ return String(v === null || v === undefined ? '' : v).trim(); }
+function locStationName(raw){ const n = stationNumberFromLabel(raw); return n && STATION_LABELS[n] ? STATION_LABELS[n] : (raw || 'Unknown station'); }
+// Rows of any tab that mention the serial, as {header: value} pairs, customer names aliased
+function locMatchRows(rows, serial){
+  if(!rows || rows.length < 2) return [];
+  const headers = rows[0].map(h => locCell(h));
+  const out = [];
+  for(let r = 1; r < rows.length; r++){
+    const row = rows[r];
+    if(!row.some(v => locCell(v).toUpperCase().indexOf(serial) > -1)) continue;
+    const pairs = [];
+    headers.forEach((h, i) => {
+      let v = row[i];
+      if(v === '' || v === null || v === undefined) return;
+      if(/^https?:/i.test(String(v))) return;               // QR image links etc.
+      const d = /date|time|stamp/i.test(h) ? locDate(v) : null;
+      let text = d ? locFmt(d) : locCell(v);
+      if(/customer|company|client/i.test(h)) text = customerAlias(text);
+      pairs.push({h: h || ('Column ' + (i + 1)), v: text, d: d});
+    });
+    out.push(pairs);
+  }
+  return out;
+}
+function locRowTime(pairs){
+  const withDate = pairs.find(p => p.d);
+  return withDate ? withDate.d : null;
+}
+
+async function runLocate(query){
+  const msg = document.getElementById('locMsg');
+  const out = document.getElementById('locResult');
+  const serial = String(query || '').trim().toUpperCase().replace(/\s+/g, '');
+  if(!serial){ msg.textContent = 'Scan or type a serial first.'; return; }
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token){ msg.textContent = 'No sheet connection on this computer. Ask an engineer to connect it in Settings.'; return; }
+  document.getElementById('locInput').value = serial;
+  msg.textContent = 'Looking up ' + serial + '\u2026';
+  out.innerHTML = '';
+  const btn = document.getElementById('btnLocate');
+  btn.disabled = true;
+  try{
+    const [serialRows, opticalRows, logRows, sentRows, holdRows, countRows] = await Promise.all(
+      ['serials','optical','log','sent','holdArchive','count'].map(k => locateTab(k)));
+
+    // ---- is it a headset or an optical module? ----
+    const omIdx = {sn: OPTICAL_COLUMNS.indexOf('opticalSN'), link: OPTICAL_COLUMNS.indexOf('linkedHeadsetSN'), person: OPTICAL_COLUMNS.indexOf('person'), dt: OPTICAL_COLUMNS.indexOf('dateTime'), btn: OPTICAL_COLUMNS.indexOf('buttonPressed'), marked: OPTICAL_COLUMNS.indexOf('marked')};
+    const hsIdx = {serial: COLUMNS.indexOf('serial'), person: COLUMNS.indexOf('person'), wo: COLUMNS.indexOf('workOrder'), gen: COLUMNS.indexOf('dateGenerated'), dt: COLUMNS.indexOf('dateTime'), status: COLUMNS.indexOf('status'), om: COLUMNS.indexOf('linkedOmSn'), product: COLUMNS.indexOf('productCode')};
+    const omRowFor = sn => opticalRows.slice(1).find(r => locCell(r[omIdx.sn]).toUpperCase() === sn);
+    const hsRowFor = sn => serialRows.slice(1).find(r => locCell(r[hsIdx.serial]).toUpperCase() === sn);
+
+    let headsetSN = serial, omRow = null, hsRow = hsRowFor(serial);
+    if(!hsRow){
+      omRow = omRowFor(serial);
+      if(omRow){
+        const linked = locCell(omRow[omIdx.link]).toUpperCase();
+        headsetSN = linked || null;
+        hsRow = linked ? hsRowFor(linked) : null;
+      }
+    }
+    const searchedOM = !!omRow && serial === locCell(omRow[omIdx.sn]).toUpperCase();
+    const logFor = sn => logRows.slice(1).filter(r => locCell(r[1]).toUpperCase() === sn);
+    const hsLog = headsetSN ? logFor(headsetSN) : [];
+
+    if(!hsRow && !omRow && !hsLog.length){
+      // nothing exact: offer close matches from both serial lists
+      const pool = serialRows.slice(1).map(r => locCell(r[hsIdx.serial]).toUpperCase())
+        .concat(opticalRows.slice(1).map(r => locCell(r[omIdx.sn]).toUpperCase())).filter(Boolean);
+      const near = pool.filter(sn => sn.indexOf(serial) > -1).slice(0, 12);
+      msg.innerHTML = 'No record of <b class="loc-mono">' + locEsc(serial) + '</b> on the SerialNumbers, OpticalModelSN or Log tabs.' +
+        (near.length ? '<div class="loc-suggest">' + near.map(sn => '<button class="secondary" data-loc="' + sn + '">' + sn + '</button>').join('') + '</div>' : '');
+      return;
+    }
+
+    // linked optical module (either direction)
+    if(!omRow && headsetSN){
+      const fromHs = hsRow ? locCell(hsRow[hsIdx.om]).toUpperCase() : '';
+      omRow = (fromHs && omRowFor(fromHs)) || opticalRows.slice(1).find(r => locCell(r[omIdx.link]).toUpperCase() === headsetSN) || null;
+    }
+    const omSN = omRow ? locCell(omRow[omIdx.sn]).toUpperCase() : (hsRow ? locCell(hsRow[hsIdx.om]).toUpperCase() : '');
+
+    // ---- timeline ----
+    const items = [];
+    if(hsRow){
+      const gen = locDate(hsRow[hsIdx.gen]) || locDate(hsRow[hsIdx.dt]);
+      items.push({t: gen, c: 'var(--accent)', tag: 'gen', tagText: 'GENERATED', h: 'Headset serial generated',
+        d: '<span>By</span> ' + locEsc(locCell(hsRow[hsIdx.person]) || 'unknown') + (locCell(hsRow[hsIdx.wo]) ? ' &nbsp;<span>Work order</span> ' + locEsc(hsRow[hsIdx.wo]) : '')});
+    }
+    if(omRow){
+      const b = locCell(omRow[omIdx.btn]);
+      items.push({t: locDate(omRow[omIdx.dt]), c: '#6b3fb0', tag: 'om', tagText: 'OPTICAL MODULE', h: 'Optical module ' + locEsc(locCell(omRow[omIdx.sn])) + ' generated',
+        d: '<span>By</span> ' + locEsc(locCell(omRow[omIdx.person]) || 'unknown') + ' &nbsp;<span>Source</span> ' + (b === 'LiveOM' ? 'floor generator' : b === 'GenOM' ? 'rework' : locEsc(b || '\u2014')) +
+           (locCell(omRow[omIdx.marked]) ? ' &nbsp;<span>Marked</span> ' + locEsc(omRow[omIdx.marked]) : '') +
+           (locCell(omRow[omIdx.link]) ? ' &nbsp;<span>Linked to</span> <b class="loc-mono">' + locEsc(omRow[omIdx.link]) + '</b>' : ' &nbsp;<span>Not linked to a headset yet</span>')});
+    }
+    // Log events, paired so each sign-out shows how long the unit spent at that station
+    const events = hsLog.map(r => ({event: locCell(r[2]), person: locCell(r[3]), station: locCell(r[4]), t: locDate(r[5]), comment: locCell(r[6])}))
+      .sort((a, b) => (a.t ? a.t.getTime() : 0) - (b.t ? b.t.getTime() : 0));
+    const openIn = {};
+    events.forEach(e => {
+      const n = stationNumberFromLabel(e.station) || e.station;
+      const isIn = /movein/i.test(e.event), isOut = /moveout/i.test(e.event);
+      let dur = '';
+      if(isIn) openIn[n] = e.t;
+      if(isOut && openIn[n] && e.t){ dur = formatDuration(e.t - openIn[n]); delete openIn[n]; }
+      items.push({t: e.t, c: isIn ? '#1d7a3f' : isOut ? '#c7851a' : 'var(--muted)', tag: isIn ? 'in' : isOut ? 'out' : 'gen',
+        tagText: isIn ? 'SIGNED IN' : isOut ? 'SIGNED OUT' : e.event.toUpperCase(), h: locStationName(e.station),
+        d: '<span>Operator</span> ' + locEsc(e.person || 'unknown') + (dur ? ' &nbsp;<span>Time at station</span> ' + dur : '') + (e.comment ? ' &nbsp;<span>Note</span> ' + locEsc(e.comment) : '')});
+    });
+    // holds, past and present
+    const holdPast = headsetSN ? locMatchRows(holdRows, headsetSN) : [];
+    holdPast.forEach(pairs => items.push({t: locRowTime(pairs), c: '#a13636', tag: 'hold', tagText: 'HOLD (ARCHIVED)', h: 'Put on hold, since cleared',
+      d: pairs.filter(p => !p.d).map(p => '<span>' + locEsc(p.h) + '</span> ' + locEsc(p.v)).join(' &nbsp;')}));
+    let holdNow = '';
+    if(headsetSN && countRows.length){
+      const hi = countRows[0].findIndex(h => /on hold/i.test(locCell(h)));
+      if(hi > -1){
+        const hit = countRows.slice(1).map(r => locCell(r[hi])).find(v => v.toUpperCase().indexOf(headsetSN) > -1);
+        if(hit) holdNow = hit;
+      }
+    }
+    // sent to warehouse
+    const sent = headsetSN ? locMatchRows(sentRows, headsetSN) : [];
+    sent.forEach(pairs => items.push({t: locRowTime(pairs), c: 'var(--cyan)', tag: 'ship', tagText: 'TO WAREHOUSE', h: 'Sent to warehouse',
+      d: pairs.filter(p => !p.d && !/^(sn|serial|headset ?sn)$/i.test(p.h)).map(p => '<span>' + locEsc(p.h) + '</span> ' + locEsc(p.v)).join(' &nbsp;')}));
+
+    items.sort((a, b) => (a.t ? a.t.getTime() : -Infinity) - (b.t ? b.t.getTime() : -Infinity));
+
+    // ---- where is it now? ----
+    const lastEv = events.length ? events[events.length - 1] : null;
+    let status = {c: 'var(--muted)', big: 'Generated, not started', sub: 'No station activity yet.'};
+    if(sent.length){
+      const t = locRowTime(sent[sent.length - 1]);
+      status = {c: 'var(--cyan)', big: 'Sent to warehouse', sub: t ? 'On ' + locFmt(t) : 'Found on the SentToWH tab.'};
+    }else if(holdNow){
+      status = {c: '#a13636', big: 'On hold', sub: holdNow};
+    }else if(lastEv && /movein/i.test(lastEv.event)){
+      status = {c: '#1d7a3f', big: 'At ' + locStationName(lastEv.station), sub: 'Signed in by ' + (lastEv.person || 'unknown') + ' ' + (lastEv.t ? formatDuration(Date.now() - lastEv.t) + ' ago (' + locFmt(lastEv.t) + ')' : '')};
+    }else if(lastEv && /moveout/i.test(lastEv.event)){
+      const n = Number(stationNumberFromLabel(lastEv.station));
+      status = {c: '#c7851a', big: n >= 6 ? 'Packed, waiting to go to the warehouse' : 'Between stations, waiting for ' + (STATION_LABELS[String(n + 1)] || 'the next station'),
+        sub: 'Signed out of ' + locStationName(lastEv.station) + ' by ' + (lastEv.person || 'unknown') + ' ' + (lastEv.t ? formatDuration(Date.now() - lastEv.t) + ' ago' : '')};
+    }else if(searchedOM && !headsetSN){
+      status = {c: '#6b3fb0', big: 'Optical module, not linked yet', sub: 'Generated but not attached to a headset.'};
+    }
+    const firstT = items.find(i => i.t), lastT = [...items].reverse().find(i => i.t);
+    const style = headsetSN ? styleFromSerialLoc(headsetSN) : '';
+    const facts = [
+      ['Headset serial', headsetSN || '\u2014', true],
+      ['Optical module', omSN ? '<span class="loc-link" data-loc="' + omSN + '">' + omSN + '</span>' : 'Not linked', true],
+      ['Style', style || '\u2014'],
+      ['Work order', hsRow && locCell(hsRow[hsIdx.wo]) ? locEsc(hsRow[hsIdx.wo]) : '\u2014'],
+      ['Generated', hsRow ? locFmt(locDate(hsRow[hsIdx.gen]) || locDate(hsRow[hsIdx.dt])) : '\u2014'],
+      ['Stations completed', (() => { const done = new Set(events.filter(e => /moveout/i.test(e.event)).map(e => stationNumberFromLabel(e.station)).filter(Boolean)); return done.size ? [...done].sort().join(', ') : 'None'; })()],
+      ['Time since first record', firstT && lastT ? formatDuration(Date.now() - firstT.t) : '\u2014'],
+      ['Sheet status', hsRow && locCell(hsRow[hsIdx.status]) ? locEsc(hsRow[hsIdx.status]) : '\u2014']
+    ];
+    if(searchedOM && headsetSN) facts[0][1] = '<span class="loc-link" data-loc="' + headsetSN + '">' + headsetSN + '</span>';
+
+    out.innerHTML =
+      '<div class="panel"><h2>' + (searchedOM ? 'Optical module ' + locEsc(serial) : locEsc(serial)) + '</h2>' +
+        '<div class="loc-status"><span class="dot" style="background:' + status.c + ';"></span><div><div class="big">' + locEsc(status.big) + '</div><div class="sub">' + locEsc(status.sub) + '</div></div></div>' +
+        '<div class="loc-facts">' + facts.map(f => '<div class="loc-fact"><div class="k">' + f[0] + '</div><div class="v' + (f[2] ? ' mono' : '') + '">' + f[1] + '</div></div>').join('') + '</div></div>' +
+      '<div class="panel"><h2>Full history <span class="count">' + items.length + ' events</span></h2>' +
+        (items.length ? '<div class="loc-timeline">' + items.map(i =>
+          '<div class="loc-item" style="--c:' + i.c + ';"><div class="t">' + locFmt(i.t) + '</div>' +
+          '<div class="h"><span class="loc-tag ' + i.tag + '">' + i.tagText + '</span>' + i.h + '</div>' +
+          (i.d ? '<div class="d">' + i.d + '</div>' : '') + '</div>').join('') + '</div>'
+        : '<div class="hint">No history recorded yet.</div>') + '</div>';
+    const missing = Object.keys(LOCATE_TABS).filter(k => locateCache[k] && locateCache[k].error).map(k => LOCATE_TABS[k]);
+    msg.textContent = missing.length ? 'Could not read: ' + missing.join(', ') + '. History from those tabs is missing.' : '';
+  }catch(e){
+    msg.textContent = 'Lookup failed: ' + e.message;
+  }finally{
+    btn.disabled = false;
+  }
+}
+function styleFromSerialLoc(sn){ const m = String(sn).toUpperCase().match(/^H2[A-F]/); return m ? m[0] : ''; }
+
+document.getElementById('btnLocate').addEventListener('click', () => runLocate(document.getElementById('locInput').value));
+document.getElementById('locInput').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); runLocate(e.target.value); } });
+document.getElementById('tab-locate').addEventListener('click', e => {
+  const t = e.target.closest('[data-loc]');
+  if(t) runLocate(t.getAttribute('data-loc'));
+});
+
 // =====================================================================
 // TABS
 // =====================================================================
@@ -4492,6 +4752,7 @@ document.getElementById('tabBtnShipping').addEventListener('click', () => switch
 document.getElementById('tabBtnScanOut').addEventListener('click', () => switchTab('scanout'));
 document.getElementById('tabBtnStations').addEventListener('click', () => switchTab('stations'));
 document.getElementById('tabBtnOMLive').addEventListener('click', () => switchTab('omlive'));
+document.getElementById('tabBtnLocate').addEventListener('click', () => switchTab('locate'));
 document.getElementById('tabBtnReturn').addEventListener('click', () => switchTab('return'));
 document.getElementById('tabDropdown').addEventListener('change', (e) => switchTab(e.target.value));
 let lastActiveTab = 'serial';
@@ -4506,12 +4767,14 @@ function switchTab(name){
   document.getElementById('tab-stations').classList.toggle('active', name === 'stations');
   document.getElementById('tab-scanout').classList.toggle('active', name === 'scanout');
   document.getElementById('tab-omlive').classList.toggle('active', name === 'omlive');
+  document.getElementById('tab-locate').classList.toggle('active', name === 'locate');
   document.getElementById('tab-return').classList.toggle('active', name === 'return');
   document.getElementById('tabBtnSerial').classList.toggle('active', name === 'serial');
   document.getElementById('tabBtnShipping').classList.toggle('active', name === 'shipping');
   document.getElementById('tabBtnStations').classList.toggle('active', name === 'stations');
   document.getElementById('tabBtnScanOut').classList.toggle('active', name === 'scanout');
   document.getElementById('tabBtnOMLive').classList.toggle('active', name === 'omlive');
+  document.getElementById('tabBtnLocate').classList.toggle('active', name === 'locate');
   document.getElementById('tabBtnReturn').classList.toggle('active', name === 'return');
   document.getElementById('tabDropdown').value = name;
   if(name === 'shipping') renderShipPreview();
@@ -4530,6 +4793,7 @@ function switchTab(name){
     }
   }
   if(name === 'omlive') omLiveOnOpen();
+  if(name === 'locate') setTimeout(() => document.getElementById('locInput').focus(), 50);
   if(name === 'serial' && !headsetHistoryPulled){
     const cfg = sheetConfig();
     if(cfg.url && cfg.token) refreshHeadsetHistory();
@@ -4604,6 +4868,7 @@ function openSettings(){
   document.getElementById('tab-shipping').classList.remove('active');
   document.getElementById('tab-scanout').classList.remove('active');
   document.getElementById('tab-omlive').classList.remove('active');
+  document.getElementById('tab-locate').classList.remove('active');
   document.getElementById('tab-stations').classList.remove('active');
   // The rework generator lives in here now, so make sure its dedupe list is current
   if(!opticalHistoryPulled){ const c = sheetConfig(); if(c.url && c.token) refreshOpticalHistory(); }
@@ -5765,39 +6030,43 @@ function openShiftStyleDrilldown(day){
 }
 
 // =====================================================================
-// CUSTOMER ALIASES — customer names never appear on screen. Each customer
-// is shown as a Disney character instead. Pinned pairings are stored as
-// hashes of the normalized name, so the real names are not in this public
-// source file; every other customer gets a fixed character picked from its
-// hash, so the same customer always shows the same name on every screen.
+// CUSTOMER ALIASES — customer names never appear on screen; each customer
+// shows as a Disney character. The named accounts are pinned (stored as
+// hashes of the normalized name, so real names aren't in this public file).
+// Everything else is retail: all retail orders of the same style share one
+// character (every retail H2C order is Mickey, every retail H2D is Minnie...).
 // Work-order labels (WO-...) are order numbers, not names, and stay as is.
 // =====================================================================
-const CUSTOMER_ALIAS_PINNED = {"8162c38d": "Goofy", "b9aa2e84": "Nemo", "a7577ff6": "Nemo", "97c097e4": "Nemo"};
-const CUSTOMER_ALIAS_POOL = ['Mickey','Minnie','Donald','Daisy','Pluto','Chip','Dale','Dory','Marlin','Simba','Nala','Timon','Pumbaa','Rafiki','Baloo','Mowgli','Bagheera','Ariel','Sebastian','Flounder','Belle','Lumiere','Aladdin','Genie','Jasmine','Abu','Mulan','Mushu','Stitch','Lilo','Moana','Maui','Elsa','Anna','Olaf','Sven','Rapunzel','Pascal','Tinker Bell','Peter Pan','Dumbo','Bambi','Thumper','Winnie','Tigger','Eeyore','Piglet','Buzz','Woody','Jessie','Rex','Hamm','Wall-E','Eve','Remy','Dash','Sulley','Mike','Boo','Lightning','Mater','Russell','Dug','Joy','Bing Bong','Merida','Tiana','Ray','Hercules','Pegasus','Pocahontas','Meeko','Kuzco','Pacha','Baymax','Hiro','Judy','Nick','Flash','Mirabel','Bruno','Asha','Kida','Milo'];
+const CUSTOMER_ALIAS_PINNED = {"8162c38d": "Goofy", "b9aa2e84": "Nemo", "97c097e4": "Nemo", "a7577ff6": "Nemo", "9d045db2": "Peter Pan", "5dc350ed": "Peter Pan"};
+const RETAIL_ALIAS_BY_STYLE = {H2B:'Donald', H2C:'Mickey', H2D:'Minnie', H2E:'Simba', H2F:'Stitch'};
+const RETAIL_ALIAS_FALLBACK = 'Pluto';   // retail order with no style on its label
 function customerAliasHash(str){
   let h = 0x811c9dc5;
   for(let i = 0; i < str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
   return h >>> 0;
 }
-function customerAliasBase(name){
+function customerAliasBase(name, style){
   const norm = String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if(!norm) return 'Unknown';
-  const key = customerAliasHash(norm).toString(16);
-  if(CUSTOMER_ALIAS_PINNED[key]) return CUSTOMER_ALIAS_PINNED[key];
-  return CUSTOMER_ALIAS_POOL[customerAliasHash('pool:' + norm) % CUSTOMER_ALIAS_POOL.length];
+  const pinned = CUSTOMER_ALIAS_PINNED[customerAliasHash(norm).toString(16)];
+  if(pinned) return pinned;
+  return RETAIL_ALIAS_BY_STYLE[String(style || '').toUpperCase()] || RETAIL_ALIAS_FALLBACK;
 }
-// "ANIL_6_24 - H2D" -> "<alias> 6 24 - H2D": the customer part is swapped, order suffix and style kept
+// "ANIL_6_24 - H2D" -> "Minnie 6/24 · H2D"; "CRAIG_USA1 - H2C" -> "Mickey USA1 · H2C"
 function customerAlias(label){
   const text = String(label || '').trim();
   if(!text) return text;
   if(/^WO[\s\-_#]*\d/i.test(text)) return text;
-  const styleMatch = text.match(/^(.*?)(\s*-\s*H2[A-F])$/i);
-  const body = styleMatch ? styleMatch[1] : text;
-  const style = styleMatch ? styleMatch[2] : '';
+  const styleMatch = text.match(/^(.*?)\s*-\s*(H2[A-F])$/i);
+  const body = styleMatch ? styleMatch[1].trim() : text;
+  const style = styleMatch ? ' \u00b7 ' + styleMatch[2].toUpperCase() : '';
   const us = body.indexOf('_');
   const cust = us > 0 ? body.slice(0, us) : body;
-  const rest = us > 0 ? ' ' + body.slice(us + 1).replace(/_/g, ' ') : '';
-  return customerAliasBase(cust) + rest + style;
+  let tag = us > 0 ? body.slice(us + 1) : '';
+  if(/^\d+(_\d+)+$/.test(tag)) tag = tag.replace(/_/g, '/');       // 6_24 -> 6/24
+  else if(/^\d+$/.test(tag)) tag = '#' + tag;                       // _1 -> #1
+  else tag = tag.replace(/_/g, ' ');
+  return customerAliasBase(cust, styleMatch ? styleMatch[2] : '') + (tag ? ' ' + tag : '') + style;
 }
 
 // ---- Customer Orders: built from "Scorecard: Goal" / "Scorecard: Goal Shipped" row pairs ----
