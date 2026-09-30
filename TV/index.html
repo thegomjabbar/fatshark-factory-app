@@ -146,6 +146,17 @@
   .ss-share div{ height:100%; border-radius:99px; }
   .day-style{ font-size:.85vw; color:var(--muted); }
   .day-style b{ font-weight:700; }
+  .fs-btn{ display:inline-flex; align-items:center; gap:.5vw; margin-left:1vw; padding:.6vh .9vw; border-radius:8px; cursor:pointer;
+    background:oklch(1 0 0 / .06); border:1px solid oklch(0.72 0.2 300 / .45); color:var(--ink); font:inherit; font-size:.85vw; font-weight:700;
+    transition:opacity .4s, background .2s; }
+  .fs-btn:hover{ background:oklch(0.72 0.2 300 / .2); }
+  .fs-btn svg{ width:1.1vw; height:1.1vw; }
+  .fs-btn .fs-exit{ display:none; }
+  body.is-fs .fs-btn .fs-enter{ display:none; }
+  body.is-fs .fs-btn .fs-exit{ display:inline; }
+  /* in full screen the button and cursor fade out when the mouse is idle, so the TV shows only the dashboard */
+  body.is-fs.idle .fs-btn{ opacity:0; pointer-events:none; }
+  body.is-fs.idle{ cursor:none; }
   #diagPanel{ display:none; position:fixed; inset:8vh 6vw; z-index:30; background:oklch(0.12 0.03 292 / .97); border:1px solid var(--purple);
     border-radius:14px; padding:3vh 2.4vw; overflow:auto; font-size:1vw; }
   #diagPanel h3{ margin:0 0 1.6vh; font-size:1.5vw; }
@@ -373,6 +384,10 @@
     <span id="lastUpdated" class="mono" style="color:var(--muted); font-size:.85vw;"></span>
     <span id="clockDisplay" class="mono"></span>
     <span class="live"><i></i>LIVE</span>
+    <button id="fsBtn" class="fs-btn" title="Full screen (F)" aria-label="Full screen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="fs-enter" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path class="fs-exit" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+      <span id="fsLabel">Full screen</span>
+    </button>
   </div>
 </div>
 
@@ -1695,6 +1710,7 @@ document.addEventListener('keydown', (e) => {
   if(e.key === 'ArrowRight' || e.key === 'ArrowDown'){ nextSlide(); resetAutoAdvance(); }
   else if(e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ prevSlide(); resetAutoAdvance(); }
   else if(e.key === 'd' || e.key === 'D'){ showDiagnostics(); }
+  else if(e.key === 'f' || e.key === 'F'){ toggleFullscreen(); }
   else if(e.key === 'r' || e.key === 'R'){
     // Clears saved credentials and shows the setup screen again — a way to reconnect without
     // needing to open developer tools and clear localStorage by hand.
@@ -1702,6 +1718,42 @@ document.addEventListener('keydown', (e) => {
     localStorage.removeItem(SETUP_TOKEN_KEY);
     location.reload();
   }
+});
+
+// ---- Full screen, like Data Studio's present mode. Browsers only allow this after a click or key
+// press, so it can't switch on by itself when the page loads; see kiosk mode for unattended TVs.
+function isFullscreen(){ return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+function toggleFullscreen(){
+  const el = document.documentElement;
+  if(!isFullscreen()){
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if(req){ const r = req.call(el); if(r && r.catch) r.catch(() => {}); }
+  }else{
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if(exit){ const r = exit.call(document); if(r && r.catch) r.catch(() => {}); }
+  }
+}
+function syncFullscreenUI(){
+  const on = isFullscreen();
+  document.body.classList.toggle('is-fs', on);
+  document.getElementById('fsLabel').textContent = on ? 'Exit full screen' : 'Full screen';
+  nudgeIdle();
+}
+let idleTimer = null;
+function nudgeIdle(){
+  document.body.classList.remove('idle');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => document.body.classList.add('idle'), 3000);
+}
+document.getElementById('fsBtn').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', syncFullscreenUI);
+document.addEventListener('webkitfullscreenchange', syncFullscreenUI);
+document.addEventListener('mousemove', nudgeIdle);
+// the charts are sized from their containers, so redraw them once the screen size settles
+let fsRedrawTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(fsRedrawTimer);
+  fsRedrawTimer = setTimeout(() => { if(typeof refreshAllData === 'function') refreshAllData(); }, 600);
 });
 
 function tickClock(){
