@@ -116,7 +116,7 @@
   .tot-stat{ padding:1.6vh 1.2vw; display:flex; flex-direction:column; justify-content:center; min-width:0; }
   .tot-stat .l{ font-size:.85vw; color:var(--muted); font-weight:600; }
   .tot-stat .v{ font-size:2.5vw; font-weight:800; line-height:1.1; margin-top:.6vh; white-space:nowrap; }
-  .tot-stat .s{ font-size:.8vw; color:var(--muted); margin-top:.4vh; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tot-stat .s{ font-size:.72vw; color:var(--muted); margin-top:.4vh; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .tot-bottom{ display:grid; grid-template-columns:1fr 1fr; gap:1.6vw; min-height:0; }
   .list-panel{ display:flex; flex-direction:column; min-height:0; }
   .tl-rows{ flex:1; display:flex; flex-direction:column; justify-content:space-evenly; min-height:0; }
@@ -394,7 +394,7 @@
     <div class="tot-wrap">
       <div class="tot-top">
         <div class="panel trend-panel">
-          <div class="trend-head"><div class="panel-lab">Units built per day</div>
+          <div class="trend-head"><div class="panel-lab">Headsets built per day</div>
             <div class="trend-key"><span><i style="background:oklch(0.78 0.2 300);"></i>Daily</span><span><i style="background:var(--cyan);"></i>7-day average</span></div></div>
           <div id="trendChart"></div>
         </div>
@@ -402,7 +402,7 @@
       </div>
       <div class="tot-bottom">
         <div class="panel list-panel"><div class="panel-lab">By style, all-time</div><div class="tl-rows" id="totStyles"></div></div>
-        <div class="panel list-panel"><div class="panel-lab">By month</div><div class="tl-rows" id="totMonths"></div></div>
+        <div class="panel list-panel"><div class="panel-lab">By month, headsets</div><div class="tl-rows" id="totMonths"></div></div>
       </div>
     </div>
   </div>
@@ -724,14 +724,54 @@ function wipFromState(){
   return out;
 }
 // ==================== Production history (all-time, monthly, by style) ====================
-// The Looker feed only carries recent rows, so all-time and monthly totals are rebuilt from the
-// tabs that hold one row per unit. Headset style is read from the serial prefix (H2F2639... =
-// H2F). If these numbers don't match the main tracker, press D on the TV to see what each tab
-// contributed, then adjust the list below.
-const HISTORY_SOURCES = [
-  {sheet: 'SerialNumbers'},                              // headsets
-  {sheet: 'OpticalModelSN', style: 'Optical Module'}     // optical modules
-];
+// All-time and monthly totals come from the Monthly Archive tab: one column per month
+// ("January 2026"), row 2 = totals, then one cell per finished unit ("SN | 1/27 9:49 am").
+// That's the same source the sheet's "Total Headsets Built" and the tracker use. Optical
+// modules (CMA...) in the archive are listed by style but never counted as headsets.
+// Recent days the archive doesn't have yet are filled in from the Looker feed.
+// Press D on the TV to see what the archive contributed.
+const MONTHLY_ARCHIVE_TAB = 'Monthly Archive';
+const MONTH_NAMES_TV = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+function archiveMonthOf(label){
+  const iso = String(label || '').match(/^(\d{4})-(\d{2})-\d{2}T/);   // a real date cell formatted as "January 2026"
+  if(iso) return {year: +iso[1], monthIndex: +iso[2] - 1};
+  const m = String(label || '').trim().toLowerCase().match(/([a-z]+)\s+(\d{4})/);
+  if(!m || MONTH_NAMES_TV.indexOf(m[1]) < 0) return null;
+  return {year: +m[2], monthIndex: MONTH_NAMES_TV.indexOf(m[1])};
+}
+function parseMonthlyArchive(rows){
+  const info = {sheet: MONTHLY_ARCHIVE_TAB, rows: Math.max(0, rows.length - 2), units: [], months: [], sheetTotals: {}, dupes: 0, first: null, last: null};
+  if(rows.length < 3){ info.error = 'expected month headers, a totals row, then unit rows'; return info; }
+  const header = rows[0];
+  const seen = new Set();
+  for(let col = 0; col < header.length; col++){
+    const mo = archiveMonthOf(header[col]);
+    if(!mo) continue;
+    const key = mo.year + '-' + String(mo.monthIndex + 1).padStart(2, '0');
+    info.months.push(key);
+    const tot = Number((rows[1] || [])[col]);
+    if(!isNaN(tot) && tot > 0) info.sheetTotals[key] = tot;
+    for(let r = 2; r < rows.length; r++){
+      const cell = (rows[r] || [])[col];
+      if(!cell) continue;
+      const parts = String(cell).split('|');
+      if(parts.length < 2) continue;
+      const sn = parts[0].trim().toUpperCase();
+      const dm = parts[1].trim().match(/^(\d+)\/(\d+)/);
+      if(!sn || !dm) continue;
+      const dedupeKey = sn + '|' + key;
+      if(seen.has(dedupeKey)){ info.dupes++; continue; }
+      seen.add(dedupeKey);
+      const day = localDayKey(new Date(mo.year, +dm[1] - 1, +dm[2], 12));
+      const sm = sn.match(/^(H2[A-Z]|CMA)/);
+      const style = sm ? (sm[1] === 'CMA' ? 'Optical Module' : sm[1]) : 'Other';
+      info.units.push({day: day, style: style});
+      if(!info.first || day < info.first) info.first = day;
+      if(!info.last || day > info.last) info.last = day;
+    }
+  }
+  return info;
+}
 const HISTORY_REFRESH_MS = 10 * 60000;   // history changes slowly; re-read every 10 minutes
 
 function parseDateCell(v){
@@ -792,11 +832,10 @@ function parseLedger(rows, src){
 let historyCache = null, historyLoadedAt = 0;
 async function getHistory(){
   if(historyCache && Date.now() - historyLoadedAt < HISTORY_REFRESH_MS) return historyCache;
-  const results = await Promise.all(HISTORY_SOURCES.map(async src => {
-    try{ return parseLedger((await sheetPost({action: 'getFullSheet', sheet: src.sheet})).rows || [], src); }
-    catch(e){ return {sheet: src.sheet, rows: 0, units: [], error: e.message}; }
-  }));
-  historyCache = {units: results.flatMap(r => r.units), diag: results};
+  let info;
+  try{ info = parseMonthlyArchive((await sheetPost({action: 'getFullSheet', sheet: MONTHLY_ARCHIVE_TAB})).rows || []); }
+  catch(e){ info = {sheet: MONTHLY_ARCHIVE_TAB, rows: 0, units: [], months: [], sheetTotals: {}, error: e.message}; }
+  historyCache = {units: info.units, diag: [info]};
   historyLoadedAt = Date.now();
   return historyCache;
 }
@@ -806,7 +845,23 @@ function totalsDaily(feed, hist){
   if(hist && hist.units.length){
     hist.units.forEach(u => {
       const o = out[u.day] = out[u.day] || {total: 0, styles: {}};
-      o.total++; o.styles[u.style] = (o.styles[u.style] || 0) + 1;
+      // total = headsets only; optical modules are tracked per style but never counted as a unit
+      if(productGroupForMetric(u.style) === 'Headsets') o.total++;
+      o.styles[u.style] = (o.styles[u.style] || 0) + 1;
+    });
+    // days the archive hasn't caught up on yet (usually today) come from the Looker feed,
+    // but never a day the archive already covers, so nothing is counted twice
+    const archived = new Set(Object.keys(out));
+    const lastArchived = [...archived].sort().pop() || '';
+    feed.forEach(r => {
+      if(r.category !== 'Daily Production' || !r.metric) return;
+      const d = new Date(r.timestamp); if(isNaN(d)) return;
+      const k = localDayKey(d);
+      if(archived.has(k) || k <= lastArchived) return;
+      const v = isNaN(r.value) ? 0 : r.value;
+      const o = out[k] = out[k] || {total: 0, styles: {}};
+      if(productGroupForMetric(r.metric) === 'Headsets') o.total += v;
+      o.styles[r.metric] = (o.styles[r.metric] || 0) + v;
     });
   }else{
     feed.forEach(r => {
@@ -814,7 +869,8 @@ function totalsDaily(feed, hist){
       const d = new Date(r.timestamp); if(isNaN(d)) return;
       const v = isNaN(r.value) ? 0 : r.value;
       const o = out[localDayKey(d)] = out[localDayKey(d)] || {total: 0, styles: {}};
-      o.total += v; o.styles[r.metric] = (o.styles[r.metric] || 0) + v;
+      if(productGroupForMetric(r.metric) === 'Headsets') o.total += v;
+      o.styles[r.metric] = (o.styles[r.metric] || 0) + v;
     });
   }
   return out;
@@ -849,12 +905,17 @@ function loadCountDaily(rows){
 function showDiagnostics(){
   const el = document.getElementById('diagPanel');
   if(el.style.display === 'block'){ el.style.display = 'none'; return; }
-  const h = historyCache;
-  const total = h ? h.units.length : 0;
-  el.innerHTML = '<h3>Data source check</h3><p style="color:var(--muted);">What each history tab contributed to the all-time total. Press D again to close.</p>' +
-    '<table><tr><th>Tab</th><th>Rows</th><th>Units counted</th><th>Duplicate serials skipped</th><th>Date column</th><th>Serial column</th><th>First day</th><th>Last day</th><th>Problem</th></tr>' +
-    (h ? h.diag.map(d => '<tr><td>' + d.sheet + '</td><td>' + fmtNum(d.rows) + '</td><td><b>' + fmtNum(d.units.length) + '</b></td><td>' + fmtNum(d.dupes || 0) + '</td><td>' + (d.dateCol || '') + '</td><td>' + (d.serialCol || '') + '</td><td>' + (d.first || '') + '</td><td>' + (d.last || '') + '</td><td style="color:var(--amber);">' + (d.error || '') + '</td></tr>').join('') : '<tr><td colspan="9">Not loaded yet.</td></tr>') +
-    '</table><p style="margin-top:2vh; font-size:1.3vw;">All-time total: <b>' + fmtNum(total) + '</b></p>';
+  const d = historyCache && historyCache.diag[0];
+  if(!d){ el.innerHTML = '<h3>Data source check</h3><p>Not loaded yet.</p>'; el.style.display = 'block'; return; }
+  const byMonth = {};
+  d.units.forEach(u => { if(productGroupForMetric(u.style) === 'Headsets'){ const m = u.day.slice(0,7); byMonth[m] = (byMonth[m] || 0) + 1; } });
+  const om = d.units.filter(u => u.style === 'Optical Module').length;
+  el.innerHTML = '<h3>Data source check: ' + d.sheet + ' tab</h3>' +
+    '<p style="color:var(--muted);">Headsets counted per month from the unit cells, next to the totals row on the sheet. Press D again to close.</p>' +
+    (d.error ? '<p style="color:var(--amber);">Problem: ' + d.error + '</p>' : '') +
+    '<table><tr><th>Month</th><th>Headsets counted</th><th>Sheet totals row</th></tr>' +
+    d.months.map(m => '<tr><td>' + m + '</td><td><b>' + fmtNum(byMonth[m] || 0) + '</b></td><td>' + (d.sheetTotals[m] !== undefined ? fmtNum(d.sheetTotals[m]) : '\u2014') + '</td></tr>').join('') +
+    '</table><p style="margin-top:2vh; font-size:1.2vw;">Headsets: <b>' + fmtNum(Object.values(byMonth).reduce((a,b) => a + b, 0)) + '</b> &nbsp; Optical modules excluded: <b>' + fmtNum(om) + '</b> &nbsp; Duplicate cells skipped: <b>' + fmtNum(d.dupes || 0) + '</b></p>';
   el.style.display = 'block';
 }
 
@@ -987,7 +1048,7 @@ function renderOverview(feed, stuck, countDaily, allTimeUnits){
     '</div>'
   ).join('');
   cards.forEach((c,i) => animateCountUp(document.getElementById('kcard-val-' + i), c.val));
-  document.getElementById('overviewSub').textContent = fmtNum(allTime) + ' units built all-time';
+  document.getElementById('overviewSub').textContent = fmtNum(allTime) + ' headsets built all-time';
 }
 
 // ==================== Rolling 7-day calendar (shift slide) ====================
@@ -1118,10 +1179,10 @@ function renderTotalsSlide(feed, hist){
   const monthAgoKey = localDayKey(monthAgo);
   const recentStyles = new Set();
   Object.keys(daily).forEach(k => { if(k >= monthAgoKey) Object.keys(daily[k].styles).forEach(st => { if(productGroupForMetric(st) === 'Headsets' && daily[k].styles[st] > 0) recentStyles.add(st.toUpperCase()); }); });
-  const omTotal = allTime - headsetTotal;
+  const omTotal = Object.keys(byStyle).filter(k => productGroupForMetric(k) !== 'Headsets').reduce((a,k) => a + byStyle[k], 0);
   let bestDay = dayKeys.reduce((b,k) => !b || daily[k].total > daily[b].total ? k : b, null);
   const stats = [
-    {l: 'All-time units', v: fmtNum(allTime), s: fmtNum(headsetTotal) + ' headsets' + (omTotal > 0 ? ' + ' + fmtNum(omTotal) + ' OM' : ''), c: 'var(--purple)'},
+    {l: 'All-time headsets', v: fmtNum(allTime), s: omTotal > 0 ? fmtNum(omTotal) + ' OM excluded' : 'Headsets only', c: 'var(--purple)'},
     {l: 'Styles in production', v: String(recentStyles.size), s: [...recentStyles].sort().reverse().join(', ') || 'Last 30 days', c: 'var(--cyan)'},
     {l: monthName(curKey).split(' ')[0] + ' so far', v: fmtNum(byMonth[curKey] || 0), s: 'On pace for ' + fmtNum(pace), c: 'var(--green)'},
     {l: 'Best day', v: bestDay ? fmtNum(daily[bestDay].total) : '\u2014', s: bestDay ? new Date(bestDay + 'T12:00:00').toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'}) : '', c: 'var(--amber)'}
@@ -1376,7 +1437,7 @@ function renderLineStatus(feed, stuck, cycleData, extras){
       }).join('') + '</tbody></table>';
   }
 
-  document.getElementById('lsSub').textContent = fmtNum(allTime) + ' units built all-time';
+  document.getElementById('lsSub').textContent = fmtNum(allTime) + ' headsets built all-time';
 }
 
 // Shift page: one card per shift plus the total, then a card per working day (from the Count tab)
@@ -1429,48 +1490,54 @@ function renderShiftSlide(feed, countDaily){
 }
 
 // =====================================================================
-// CUSTOMER ALIASES — customer names never appear on screen. Each customer
-// is shown as a Disney character instead. Pinned pairings are stored as
-// hashes of the normalized name, so the real names are not in this public
-// source file; every other customer gets a fixed character picked from its
-// hash, so the same customer always shows the same name on every screen.
+// CUSTOMER ALIASES — customer names never appear on screen; each customer
+// shows as a Disney character. The named accounts are pinned (stored as
+// hashes of the normalized name, so real names aren't in this public file).
+// Everything else is retail: all retail orders of the same style share one
+// character (every retail H2C order is Mickey, every retail H2D is Minnie...).
 // Work-order labels (WO-...) are order numbers, not names, and stay as is.
 // =====================================================================
-const CUSTOMER_ALIAS_PINNED = {"8162c38d": "Goofy", "b9aa2e84": "Nemo", "a7577ff6": "Nemo", "97c097e4": "Nemo"};
-const CUSTOMER_ALIAS_POOL = ['Mickey','Minnie','Donald','Daisy','Pluto','Chip','Dale','Dory','Marlin','Simba','Nala','Timon','Pumbaa','Rafiki','Baloo','Mowgli','Bagheera','Ariel','Sebastian','Flounder','Belle','Lumiere','Aladdin','Genie','Jasmine','Abu','Mulan','Mushu','Stitch','Lilo','Moana','Maui','Elsa','Anna','Olaf','Sven','Rapunzel','Pascal','Tinker Bell','Peter Pan','Dumbo','Bambi','Thumper','Winnie','Tigger','Eeyore','Piglet','Buzz','Woody','Jessie','Rex','Hamm','Wall-E','Eve','Remy','Dash','Sulley','Mike','Boo','Lightning','Mater','Russell','Dug','Joy','Bing Bong','Merida','Tiana','Ray','Hercules','Pegasus','Pocahontas','Meeko','Kuzco','Pacha','Baymax','Hiro','Judy','Nick','Flash','Mirabel','Bruno','Asha','Kida','Milo'];
+const CUSTOMER_ALIAS_PINNED = {"8162c38d": "Goofy", "b9aa2e84": "Nemo", "97c097e4": "Nemo", "a7577ff6": "Nemo", "9d045db2": "Peter Pan", "5dc350ed": "Peter Pan"};
+const RETAIL_ALIAS_BY_STYLE = {H2B:'Donald', H2C:'Mickey', H2D:'Minnie', H2E:'Simba', H2F:'Stitch'};
+const RETAIL_ALIAS_FALLBACK = 'Pluto';   // retail order with no style on its label
 function customerAliasHash(str){
   let h = 0x811c9dc5;
   for(let i = 0; i < str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
   return h >>> 0;
 }
-function customerAliasBase(name){
+function customerAliasBase(name, style){
   const norm = String(name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if(!norm) return 'Unknown';
-  const key = customerAliasHash(norm).toString(16);
-  if(CUSTOMER_ALIAS_PINNED[key]) return CUSTOMER_ALIAS_PINNED[key];
-  return CUSTOMER_ALIAS_POOL[customerAliasHash('pool:' + norm) % CUSTOMER_ALIAS_POOL.length];
+  const pinned = CUSTOMER_ALIAS_PINNED[customerAliasHash(norm).toString(16)];
+  if(pinned) return pinned;
+  return RETAIL_ALIAS_BY_STYLE[String(style || '').toUpperCase()] || RETAIL_ALIAS_FALLBACK;
 }
-// "ANIL_6_24 - H2D" -> "<alias> 6 24 - H2D": the customer part is swapped, order suffix and style kept
+// "ANIL_6_24 - H2D" -> "Minnie 6/24 · H2D"; "CRAIG_USA1 - H2C" -> "Mickey USA1 · H2C"
 function customerAlias(label){
   const text = String(label || '').trim();
   if(!text) return text;
   if(/^WO[\s\-_#]*\d/i.test(text)) return text;
-  const styleMatch = text.match(/^(.*?)(\s*-\s*H2[A-F])$/i);
-  const body = styleMatch ? styleMatch[1] : text;
-  const style = styleMatch ? styleMatch[2] : '';
+  const styleMatch = text.match(/^(.*?)\s*-\s*(H2[A-F])$/i);
+  const body = styleMatch ? styleMatch[1].trim() : text;
+  const style = styleMatch ? ' \u00b7 ' + styleMatch[2].toUpperCase() : '';
   const us = body.indexOf('_');
   const cust = us > 0 ? body.slice(0, us) : body;
-  const rest = us > 0 ? ' ' + body.slice(us + 1).replace(/_/g, ' ') : '';
-  return customerAliasBase(cust) + rest + style;
+  let tag = us > 0 ? body.slice(us + 1) : '';
+  if(/^\d+(_\d+)+$/.test(tag)) tag = tag.replace(/_/g, '/');       // 6_24 -> 6/24
+  else if(/^\d+$/.test(tag)) tag = '#' + tag;                       // _1 -> #1
+  else tag = tag.replace(/_/g, ' ');
+  return customerAliasBase(cust, styleMatch ? styleMatch[2] : '') + (tag ? ' ' + tag : '') + style;
 }
 
 // One bar per customer (all of that customer's orders added together), shown by alias
 function customerGroup(label){
   const text = String(label || '').trim();
   if(/^WO[\s\-_#]*\d/i.test(text)) return text.replace(/\s*-\s*H2[A-F]$/i, '');
+  const sm = text.match(/\s*-\s*(H2[A-F])$/i);
   const body = text.replace(/\s*-\s*H2[A-F]$/i, '');
   const us = body.indexOf('_');
-  return customerAliasBase(us > 0 ? body.slice(0, us) : body);
+  const base = customerAliasBase(us > 0 ? body.slice(0, us) : body, sm ? sm[1] : '');
+  return base;
 }
 function renderSalesSlide(orders){
   // No money and no customer names on this board: units shipped per customer, shown by alias.
@@ -1499,7 +1566,7 @@ async function refreshAllData(){
       loadLookerFeed(), loadCountSheet(), loadLogEvents(LOG_WINDOW_ROWS), getHistory()
     ]);
     const countDaily = loadCountDaily(countRows);
-    const allTimeUnits = hist.units.length || Object.values(totalsDaily(feed, null)).reduce((a,o) => a + o.total, 0);
+    const allTimeUnits = Object.values(totalsDaily(feed, hist)).reduce((a,o) => a + o.total, 0);
     const weekFinished = countDaily.length ? countDaily.filter(r => r.day >= dayOffsetKey(-6)).reduce((a,r) => a + r.total, 0) : undefined;
     const orders = await loadCustomerOrders(feed);
     let stuck = loadStuckAtStations(countRows);
