@@ -5733,8 +5733,16 @@ let outputVolumeGranularity = 'day';
 let outputVolumeSelectedPeriod = null; // when set, breakdown shows just this one period instead of the full range
 async function renderOutputVolumePanel(feed){
   const panel = document.getElementById('outputVolumePanel');
-  const dailyRows = feed.filter(r => r.category === 'Daily Production');
-  const archiveRows = await loadMonthlyArchive();
+  // Headsets only: optical modules (CMA...) are a different product and never count toward
+  // headsets built. The Monthly Archive is the record of finished units; the Looker feed only
+  // fills in days the archive doesn't cover yet, so no day is ever counted twice.
+  const isHeadset = r => /^H2[A-Z]$/i.test(String(r.metric || '').trim());
+  const archiveRows = (await loadMonthlyArchive()).filter(isHeadset);
+  const dayKeyOf = d => { const x = new Date(d); return x.getFullYear() + '-' + (x.getMonth() + 1) + '-' + x.getDate(); };
+  const archivedDays = new Set(archiveRows.map(r => dayKeyOf(r.timestamp)));
+  const lastArchived = archiveRows.reduce((m, r) => Math.max(m, new Date(r.timestamp).setHours(0,0,0,0)), 0);
+  const dailyRows = feed.filter(r => r.category === 'Daily Production' && isHeadset(r) &&
+    !archivedDays.has(dayKeyOf(r.timestamp)) && new Date(r.timestamp).setHours(0,0,0,0) > lastArchived);
   const rows = dailyRows.concat(archiveRows);
   if(!rows.length){ panel.dataset.hasData = '0'; syncDrilldownDisplay(); return; }
   panel.dataset.hasData = '1';
