@@ -50,6 +50,24 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
   nav.tabs button.active{background:var(--accent); color:#fff;}
   .tabpanel{display:none;}
+  /* ---- Part scrap report ---- */
+  .sr-stats{ display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin:12px 0 16px; }
+  .sr-stat{ background:var(--accent-soft); border-radius:8px; padding:10px 12px; }
+  .sr-stat .v{ font-size:22px; font-weight:800; }
+  .sr-stat .k{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .sr-grid{ display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:14px; margin-bottom:16px; }
+  .sr-grid h3, #srBody h3{ font-size:12px; text-transform:uppercase; letter-spacing:.05em; margin:0 0 6px; color:var(--accent); }
+  .sr-bar{ height:6px; border-radius:99px; background:#c0392b; opacity:.75; }
+  @media (max-width:900px){ .sr-grid{ grid-template-columns:1fr; } .sr-stats{ grid-template-columns:repeat(2,1fr); } }
+  /* ---- Part scrap ---- */
+  .ps-overlay{ display:none; position:fixed; inset:0; z-index:60; background:rgba(20,16,36,.55); align-items:flex-start; justify-content:center; padding:6vh 16px; overflow:auto; }
+  .ps-overlay.open{ display:flex; }
+  .ps-box{ background:var(--panel); border-radius:12px; width:min(760px, 100%); padding:20px 22px; box-shadow:0 20px 60px rgba(20,16,36,.35); border-top:4px solid #c0392b; }
+  .ps-head{ display:flex; justify-content:space-between; align-items:center; }
+  .ps-head h2{ margin:0; }
+  .ps-history{ margin-top:14px; }
+  .ps-history table{ width:100%; }
+  .loc-tag.scrap{ background:#fbe4e4; color:#a13636; }
   /* ---- Locate ---- */
   .loc-search{ display:flex; gap:10px; }
   .loc-search input{ flex:1; font-family:var(--mono); font-size:20px; padding:12px 14px; letter-spacing:.04em; text-transform:uppercase; }
@@ -852,7 +870,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <button id="tabBtnScanOut">Ship to Warehouse</button>
     <button id="tabBtnOMLive">Optical Module Serials</button>
     <button id="tabBtnLocate">Locate</button>
-    <button id="tabBtnReturn">Return / Scrap Labels</button>
+    <button id="tabBtnReturn">Return / Scrap</button>
   </nav>
   <div class="tabs-dropdown-wrap">
     <select id="tabDropdown">
@@ -1193,6 +1211,23 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div class="labels-preview" id="returnLabelPreview"></div>
   </div>
 
+  <div class="panel" id="scrapReportPanel">
+    <h2>Part scrap report <span class="count" id="srCount"></span></h2>
+    <p class="hint">Every part scrapped and replaced on the line, from the Part Scrap tab of the sheet. Pick a date range, then download the full list or the summary as a CSV to share with quality.</p>
+    <div class="row3">
+      <label class="field"><span>From</span><input type="date" id="srFrom"></label>
+      <label class="field"><span>To</span><input type="date" id="srTo"></label>
+      <label class="field"><span>Style</span><select id="srStyle"><option value="">All styles</option></select></label>
+    </div>
+    <div class="btnrow">
+      <button class="accent" id="btnSrLoad">Load report</button>
+      <button class="secondary" id="btnSrCsv" disabled>Download full list (CSV)</button>
+      <button class="secondary" id="btnSrSummaryCsv" disabled>Download summary (CSV)</button>
+    </div>
+    <div class="hint" id="srMsg"></div>
+    <div id="srBody"></div>
+  </div>
+
 </div><!-- /tab-return -->
 
 <div id="tab-stations" class="tabpanel">
@@ -1229,9 +1264,52 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     </label>
     <div class="btnrow">
       <button class="secondary" id="btnStationRefresh">Refresh station status</button>
+      <button class="danger" id="btnOpenPartScrap">Scrap a part</button>
+      <span class="hint" id="partScrapQueueNote" style="align-self:center;"></span>
     </div>
     <div class="hint" id="stationScanMsg"></div>
     <div id="stationScanToast" class="station-toast"></div>
+  </div>
+
+  <div id="partScrapOverlay" class="ps-overlay">
+    <div class="ps-box">
+      <div class="ps-head"><h2>Scrap a part</h2><button class="secondary" id="btnClosePartScrap">Close</button></div>
+      <p class="hint">Log a part that went bad and was replaced on this unit. The unit stays where it is in the line; this only records the part.</p>
+      <div class="row2">
+        <label class="field"><span>Headset serial</span><input type="text" id="psSerial" placeholder="Scan the headset serial" autocomplete="off"></label>
+        <label class="field"><span>Station</span>
+          <select id="psStation">
+            <option value="2">Station 2 — Build</option>
+            <option value="3">Station 3 — Testing</option>
+            <option value="4">Station 4 — Final Assembly</option>
+            <option value="1">Station 1 — Laser Mark + OM Link</option>
+            <option value="5">Station 5 — QC</option>
+            <option value="6">Station 6 — Packing</option>
+          </select>
+        </label>
+      </div>
+      <div class="hint" id="psUnitNote"></div>
+      <div class="row3">
+        <label class="field"><span>Part scrapped</span><select id="psPart"></select></label>
+        <label class="field"><span>How many</span><input type="number" id="psQty" value="1" min="1" max="20"></label>
+        <label class="field"><span>Reason</span>
+          <select id="psReason">
+            <option>Cosmetic / scratches</option>
+            <option>Not functioning</option>
+            <option>Damaged during build</option>
+            <option>Other</option>
+          </select>
+        </label>
+      </div>
+      <label class="field"><span>Details (what was wrong) &mdash; required for "Other"</span><input type="text" id="psDetails" placeholder="e.g. scratch on lens side, fan not spinning" autocomplete="off"></label>
+      <label class="field" id="psReplacementWrap" style="display:none;"><span>New optical module serial (optional)</span><input type="text" id="psReplacement" placeholder="Scan the replacement optical module" autocomplete="off"></label>
+      <div class="row2">
+        <label class="field"><span>Your initials</span><input type="text" id="psPerson" autocomplete="off"></label>
+        <div class="field"><span class="om-live-fieldlab">&nbsp;</span><button class="danger" id="btnSubmitPartScrap" style="width:100%;">Log scrapped part</button></div>
+      </div>
+      <div class="hint" id="psMsg"></div>
+      <div class="ps-history" id="psHistory"></div>
+    </div>
   </div>
 
   <div id="stationWarningOverlay" class="station-warning-overlay">
@@ -4527,6 +4605,291 @@ function omLiveRenderList(){
 }
 
 
+
+// =====================================================================
+// PART SCRAP — a part that went bad and was replaced on a unit (mostly at
+// stations 2-4). Saved to its own "Part Scrap" tab, never the Log, because
+// station/WIP logic reads each unit's latest Log event to know where it is.
+// If the sheet can't be reached, entries wait in this browser and are sent
+// with the next successful save, so nothing is lost.
+// =====================================================================
+const PART_SCRAP_TAB = 'Part Scrap';
+const PART_SCRAP_PARTS = ['Top shell','Bottom shell','Fan','Fan cover','DVR board','HDMI board','Power board','Optical module','Power button','Spring','IPD button assembly','DVR button caps','Flex cable (HDMI)','Flex cable (optical module)','5-pin cable (power board)'];
+const PART_SCRAP_QUEUE_KEY = 'part-scrap-queue-v1';
+const PART_SCRAP_PERSON_KEY = 'part-scrap-person-v1';
+let partScrapCache = null;   // {at, rows}
+
+function partScrapQueue(){ try{ return JSON.parse(localStorage.getItem(PART_SCRAP_QUEUE_KEY) || '[]'); }catch(e){ return []; } }
+function setPartScrapQueue(q){ localStorage.setItem(PART_SCRAP_QUEUE_KEY, JSON.stringify(q)); updatePartScrapQueueNote(); }
+function updatePartScrapQueueNote(){
+  const n = partScrapQueue().length;
+  document.getElementById('partScrapQueueNote').textContent = n ? n + ' scrapped part(s) waiting to save to the sheet' : '';
+}
+(function initPartScrap(){
+  const sel = document.getElementById('psPart');
+  sel.innerHTML = PART_SCRAP_PARTS.map(p => '<option>' + p + '</option>').join('');
+  sel.addEventListener('change', () => {
+    document.getElementById('psReplacementWrap').style.display = sel.value === 'Optical module' ? '' : 'none';
+  });
+  document.getElementById('btnOpenPartScrap').addEventListener('click', openPartScrap);
+  document.getElementById('btnClosePartScrap').addEventListener('click', closePartScrap);
+  document.getElementById('partScrapOverlay').addEventListener('click', e => { if(e.target.id === 'partScrapOverlay') closePartScrap(); });
+  document.getElementById('btnSubmitPartScrap').addEventListener('click', submitPartScrap);
+  const serial = document.getElementById('psSerial');
+  serial.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); partScrapLookupUnit(serial.value); } });
+  serial.addEventListener('change', () => partScrapLookupUnit(serial.value));
+  updatePartScrapQueueNote();
+})();
+
+function openPartScrap(){
+  const last = stationRecentScans[0];
+  const person = localStorage.getItem(PART_SCRAP_PERSON_KEY) || document.getElementById('stationPerson').value.trim();
+  document.getElementById('psPerson').value = person;
+  document.getElementById('psSerial').value = last ? last.serial : '';
+  document.getElementById('psQty').value = 1;
+  document.getElementById('psDetails').value = '';
+  document.getElementById('psReplacement').value = '';
+  document.getElementById('psMsg').textContent = '';
+  document.getElementById('psUnitNote').textContent = '';
+  document.getElementById('psHistory').innerHTML = '';
+  if(last){
+    const n = String(last.station || '').match(/\d+/);
+    if(n) document.getElementById('psStation').value = n[0];
+    partScrapLookupUnit(last.serial);
+  }
+  document.getElementById('partScrapOverlay').classList.add('open');
+  setTimeout(() => document.getElementById(last ? 'psPart' : 'psSerial').focus(), 50);
+}
+function closePartScrap(){
+  document.getElementById('partScrapOverlay').classList.remove('open');
+  setTimeout(() => document.getElementById('stationScanInput').focus(), 50);
+}
+
+async function partScrapRows(force){
+  if(partScrapCache && !force && Date.now() - partScrapCache.at < 60000) return partScrapCache.rows;
+  try{
+    const json = await sheetPost({action: 'getFullSheet', sheet: PART_SCRAP_TAB});
+    partScrapCache = {at: Date.now(), rows: json.rows || []};
+  }catch(e){
+    partScrapCache = {at: Date.now(), rows: []};   // tab not created yet, or no connection
+  }
+  return partScrapCache.rows;
+}
+// Where is this unit now, and what's already been scrapped on it?
+async function partScrapLookupUnit(raw){
+  const sn = String(raw || '').trim().toUpperCase();
+  const note = document.getElementById('psUnitNote');
+  if(!sn){ note.textContent = ''; return; }
+  document.getElementById('psSerial').value = sn;
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token){ note.textContent = 'No sheet connection, so the unit\'s station can\'t be checked. Pick the station yourself.'; return; }
+  note.textContent = 'Checking ' + sn + '\u2026';
+  try{
+    const json = await sheetPost({action: 'getSerialStationEvents', serial: sn});
+    const events = json.events || [];
+    if(!events.length){
+      note.textContent = sn + ' has no station activity yet. Check the serial, or pick the station yourself.';
+    }else{
+      const st = buildStateFromEvents(events);
+      const latest = st.latest || st;
+      const num = stationNumberFromLabel(latest.station);
+      if(num){
+        document.getElementById('psStation').value = num;
+        note.textContent = sn + ' is ' + (latest.event === 'MoveIn' ? 'signed in at' : 'last signed out of') + ' ' + (STATION_LABELS[num] || 'Station ' + num) + '.' +
+          (['2','3','4'].indexOf(num) < 0 ? ' Parts are usually scrapped at stations 2\u20134, so double-check the station.' : '');
+      }
+    }
+  }catch(e){
+    note.textContent = 'Could not check the unit\'s station (' + e.message + '). Pick the station yourself.';
+  }
+  renderPartScrapHistory(sn);
+}
+async function renderPartScrapHistory(sn){
+  const el = document.getElementById('psHistory');
+  const rows = await partScrapRows();
+  const pending = partScrapQueue().filter(r => r[2] === sn);
+  const saved = rows.slice(1).filter(r => String(r[2] || '').trim().toUpperCase() === sn);
+  const all = saved.map(r => ({row: r, pending: false})).concat(pending.map(r => ({row: r, pending: true})));
+  if(!all.length){ el.innerHTML = '<div class="hint">No parts scrapped on ' + sn + ' yet.</div>'; return; }
+  const totalParts = all.reduce((a, x) => a + (Number(x.row[6]) || 1), 0);
+  el.innerHTML = '<h2 style="font-size:13px;">Already scrapped on this unit <span class="count">' + totalParts + ' part(s)</span></h2>' +
+    '<div class="tablewrap" style="max-height:200px;"><table><thead><tr><th>When</th><th>Part</th><th>Qty</th><th>Reason</th><th>Station</th><th>By</th></tr></thead><tbody>' +
+    all.map(x => { const r = x.row; const d = locDate(r[1]);
+      return '<tr><td>' + (d ? locFmt(d) : locEsc(r[1])) + (x.pending ? ' <b style="color:#a13636;">(not saved yet)</b>' : '') + '</td><td><b>' + locEsc(r[5]) + '</b></td><td>' + locEsc(r[6]) + '</td><td>' +
+        locEsc(r[7]) + (r[8] ? ': ' + locEsc(r[8]) : '') + '</td><td>' + locEsc(r[4]) + '</td><td>' + locEsc(r[9]) + '</td></tr>'; }).join('') +
+    '</tbody></table></div>';
+}
+
+async function submitPartScrap(){
+  const msg = document.getElementById('psMsg');
+  const sn = document.getElementById('psSerial').value.trim().toUpperCase();
+  const part = document.getElementById('psPart').value;
+  const qty = Math.max(1, Math.min(20, parseInt(document.getElementById('psQty').value, 10) || 1));
+  const reason = document.getElementById('psReason').value;
+  const details = document.getElementById('psDetails').value.trim();
+  const person = document.getElementById('psPerson').value.trim();
+  const station = document.getElementById('psStation').value;
+  const replacement = part === 'Optical module' ? document.getElementById('psReplacement').value.trim().toUpperCase() : '';
+  if(!sn){ msg.textContent = 'Scan the headset serial first.'; document.getElementById('psSerial').focus(); return; }
+  if(!/^H2[A-Z]/.test(sn)){ msg.textContent = sn + ' doesn\'t look like a headset serial. Scan the headset, not the part.'; return; }
+  if(!person){ msg.textContent = 'Enter your initials.'; document.getElementById('psPerson').focus(); return; }
+  if(reason === 'Other' && !details){ msg.textContent = 'Describe what was wrong when the reason is "Other".'; document.getElementById('psDetails').focus(); return; }
+  localStorage.setItem(PART_SCRAP_PERSON_KEY, person);
+  // UniqID | DateTime | HeadsetSN | Style | Station | Part | Qty | Reason | Details | Operator | ReplacementSN
+  const row = [genUniqID(), new Date().toLocaleString(), sn, (sn.match(/^H2[A-Z]/) || [''])[0], 'Station #' + station, part, qty, reason, details, person, replacement];
+  const queue = partScrapQueue().concat([row]);
+  const btn = document.getElementById('btnSubmitPartScrap');
+  btn.disabled = true; btn.textContent = 'Saving\u2026';
+  try{
+    await sheetPost({action: 'appendPartScrap', rows: queue});
+    setPartScrapQueue([]);
+    partScrapCache = null;
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Logged: ' + qty + ' \u00d7 ' + locEsc(part) + ' on ' + sn + '.</b>' + (queue.length > 1 ? ' (Also saved ' + (queue.length - 1) + ' that were waiting.)' : '');
+  }catch(e){
+    setPartScrapQueue(queue);
+    msg.innerHTML = '<b style="color:#a13636;">Not saved to the sheet yet</b> (' + locEsc(e.message) + '). It\'s kept on this computer and will be sent with the next scrap that saves.';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Log scrapped part';
+  }
+  document.getElementById('psDetails').value = '';
+  document.getElementById('psReplacement').value = '';
+  document.getElementById('psQty').value = 1;
+  renderPartScrapHistory(sn);
+}
+
+
+// =====================================================================
+// PART SCRAP REPORT — breakdown + CSV export of the Part Scrap tab
+// =====================================================================
+let srRows = [];   // filtered rows currently shown: {date, sn, style, station, part, qty, reason, details, person, replacement, id}
+(function initScrapReport(){
+  const to = new Date(), from = new Date(Date.now() - 30 * 86400000);
+  const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  document.getElementById('srFrom').value = iso(from);
+  document.getElementById('srTo').value = iso(to);
+  document.getElementById('btnSrLoad').addEventListener('click', loadScrapReport);
+  document.getElementById('btnSrCsv').addEventListener('click', () => downloadScrapCsv(false));
+  document.getElementById('btnSrSummaryCsv').addEventListener('click', () => downloadScrapCsv(true));
+})();
+
+async function loadScrapReport(){
+  const msg = document.getElementById('srMsg');
+  const body = document.getElementById('srBody');
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token){ msg.textContent = 'No sheet connection on this computer. Ask an engineer to connect it in Settings.'; return; }
+  msg.textContent = 'Loading the Part Scrap tab\u2026';
+  body.innerHTML = '';
+  let raw;
+  try{
+    raw = (await sheetPost({action: 'getFullSheet', sheet: PART_SCRAP_TAB})).rows || [];
+  }catch(e){
+    msg.textContent = /not found/i.test(e.message) ? 'No parts have been scrapped yet (the Part Scrap tab is created with the first one).' : 'Could not load the report: ' + e.message;
+    return;
+  }
+  const from = document.getElementById('srFrom').value ? new Date(document.getElementById('srFrom').value + 'T00:00:00') : null;
+  const to = document.getElementById('srTo').value ? new Date(document.getElementById('srTo').value + 'T23:59:59') : null;
+  const all = raw.slice(1).filter(r => locCell(r[2])).map(r => ({
+    id: locCell(r[0]), date: locDate(r[1]), sn: locCell(r[2]).toUpperCase(), style: locCell(r[3]) || (locCell(r[2]).toUpperCase().match(/^H2[A-Z]/) || [''])[0],
+    station: locCell(r[4]), part: locCell(r[5]), qty: Number(r[6]) || 1, reason: locCell(r[7]), details: locCell(r[8]), person: locCell(r[9]), replacement: locCell(r[10])
+  }));
+  // style dropdown lists every style seen, keeping the current choice
+  const styleSel = document.getElementById('srStyle');
+  const keep = styleSel.value;
+  styleSel.innerHTML = '<option value="">All styles</option>' + [...new Set(all.map(r => r.style).filter(Boolean))].sort().map(st => '<option>' + st + '</option>').join('');
+  styleSel.value = keep;
+  const style = styleSel.value;
+  srRows = all.filter(r => (!from || (r.date && r.date >= from)) && (!to || (r.date && r.date <= to)) && (!style || r.style === style))
+    .sort((a, b) => (b.date ? b.date.getTime() : 0) - (a.date ? a.date.getTime() : 0));
+  msg.textContent = '';
+  document.getElementById('btnSrCsv').disabled = !srRows.length;
+  document.getElementById('btnSrSummaryCsv').disabled = !srRows.length;
+  if(!srRows.length){
+    document.getElementById('srCount').textContent = '0 parts';
+    body.innerHTML = '<div class="hint">No parts scrapped in this date range' + (style ? ' for ' + style : '') + '.</div>';
+    return;
+  }
+  const totalParts = srRows.reduce((a, r) => a + r.qty, 0);
+  const units = new Set(srRows.map(r => r.sn));
+  const multi = [...units].filter(sn => srRows.filter(r => r.sn === sn).reduce((a, r) => a + r.qty, 0) > 1);
+  document.getElementById('srCount').textContent = totalParts.toLocaleString() + ' parts';
+
+  const tally = key => {
+    const m = {};
+    srRows.forEach(r => { const k = (key === 'station' ? locStationName(r.station) : r[key]) || '(blank)'; m[k] = m[k] || {qty: 0, units: new Set()}; m[k].qty += r.qty; m[k].units.add(r.sn); });
+    return Object.entries(m).sort((a, b) => b[1].qty - a[1].qty);
+  };
+  const byPart = tally('part'), byStation = tally('station'), byReason = tally('reason');
+  const topReasonFor = part => {
+    const m = {};
+    srRows.filter(r => r.part === part).forEach(r => { m[r.reason] = (m[r.reason] || 0) + r.qty; });
+    const top = Object.entries(m).sort((a, b) => b[1] - a[1])[0];
+    return top ? top[0] : '';
+  };
+  const maxPart = byPart.length ? byPart[0][1].qty : 1;
+  const smallTable = (title, rows) => '<div><h3>' + title + '</h3><div class="tablewrap"><table><thead><tr><th>' + title.replace('By ', '') + '</th><th>Parts</th><th>Units</th></tr></thead><tbody>' +
+    rows.map(([k, v]) => '<tr><td>' + locEsc(k) + '</td><td><b>' + v.qty + '</b></td><td>' + v.units.size + '</td></tr>').join('') + '</tbody></table></div></div>';
+
+  body.innerHTML =
+    '<div class="sr-stats">' +
+      '<div class="sr-stat"><div class="v">' + totalParts.toLocaleString() + '</div><div class="k">Parts scrapped</div></div>' +
+      '<div class="sr-stat"><div class="v">' + units.size.toLocaleString() + '</div><div class="k">Units affected</div></div>' +
+      '<div class="sr-stat"><div class="v">' + multi.length.toLocaleString() + '</div><div class="k">Units needing 2+ parts</div></div>' +
+      '<div class="sr-stat"><div class="v">' + locEsc(byPart[0][0]) + '</div><div class="k">Most scrapped part</div></div>' +
+    '</div>' +
+    '<div class="sr-grid">' +
+      '<div><h3>By part</h3><div class="tablewrap"><table><thead><tr><th>Part</th><th>Parts</th><th>Units</th><th>Top reason</th><th style="width:22%;"></th></tr></thead><tbody>' +
+        byPart.map(([k, v]) => '<tr><td><b>' + locEsc(k) + '</b></td><td><b>' + v.qty + '</b></td><td>' + v.units.size + '</td><td>' + locEsc(topReasonFor(k)) + '</td><td><div class="sr-bar" style="width:' + (v.qty / maxPart * 100) + '%;"></div></td></tr>').join('') +
+      '</tbody></table></div></div>' +
+      smallTable('By station', byStation) +
+      smallTable('By reason', byReason) +
+    '</div>' +
+    '<h3>Every scrapped part, newest first</h3>' +
+    '<div class="tablewrap" style="max-height:420px;"><table><thead><tr><th>When</th><th>Headset serial</th><th>Style</th><th>Station</th><th>Part</th><th>Qty</th><th>Reason</th><th>Details</th><th>By</th><th>New OM</th></tr></thead><tbody>' +
+      srRows.map(r => '<tr><td>' + (r.date ? locFmt(r.date) : '') + '</td><td><span class="loc-link loc-mono" data-sr-sn="' + r.sn + '">' + r.sn + '</span></td><td>' + r.style + '</td><td>' + locEsc(locStationName(r.station)) +
+        '</td><td><b>' + locEsc(r.part) + '</b></td><td>' + r.qty + '</td><td>' + locEsc(r.reason) + '</td><td>' + locEsc(r.details) + '</td><td>' + locEsc(r.person) + '</td><td class="loc-mono">' + locEsc(r.replacement) + '</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+// clicking a serial in the report opens its full history in Locate
+document.getElementById('scrapReportPanel').addEventListener('click', e => {
+  const t = e.target.closest('[data-sr-sn]');
+  if(!t) return;
+  switchTab('locate');
+  runLocate(t.getAttribute('data-sr-sn'));
+});
+
+function csvCell(v){
+  const s = String(v === null || v === undefined ? '' : v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function downloadScrapCsv(summary){
+  if(!srRows.length) return;
+  const from = document.getElementById('srFrom').value || 'start', to = document.getElementById('srTo').value || 'today';
+  const style = document.getElementById('srStyle').value;
+  let lines;
+  if(!summary){
+    lines = [['Date', 'Headset serial', 'Style', 'Station', 'Part', 'Qty', 'Reason', 'Details', 'Operator', 'Replacement optical module', 'Entry ID']]
+      .concat(srRows.map(r => [r.date ? r.date.toLocaleString() : '', r.sn, r.style, locStationName(r.station), r.part, r.qty, r.reason, r.details, r.person, r.replacement, r.id]));
+  }else{
+    const m = {};
+    srRows.forEach(r => {
+      const k = r.part; m[k] = m[k] || {qty: 0, units: new Set(), reasons: {}, stations: {}};
+      m[k].qty += r.qty; m[k].units.add(r.sn);
+      m[k].reasons[r.reason] = (m[k].reasons[r.reason] || 0) + r.qty;
+      const st = locStationName(r.station); m[k].stations[st] = (m[k].stations[st] || 0) + r.qty;
+    });
+    const fmt = o => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join('; ');
+    lines = [['Part', 'Parts scrapped', 'Units affected', 'Reasons', 'Stations', 'Headset serials']]
+      .concat(Object.entries(m).sort((a, b) => b[1].qty - a[1].qty).map(([k, v]) => [k, v.qty, v.units.size, fmt(v.reasons), fmt(v.stations), [...v.units].join(' ')]));
+  }
+  const csv = '\ufeff' + lines.map(row => row.map(csvCell).join(',')).join('\r\n');   // BOM so Excel reads it as UTF-8
+  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'part-scrap-' + (summary ? 'summary-' : '') + from + '-to-' + to + (style ? '-' + style : '') + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
 // =====================================================================
 // LOCATE — full history of one serial, read straight from the sheet tabs.
 // Headset: SerialNumbers row (generation), OpticalModelSN (linked module),
@@ -4536,7 +4899,7 @@ function omLiveRenderList(){
 // Tabs are cached for 2 minutes, so repeat lookups are instant.
 // =====================================================================
 const LOCATE_CACHE_MS = 2 * 60 * 1000;
-const LOCATE_TABS = {serials: 'SerialNumbers', optical: 'OpticalModelSN', log: 'Log', sent: 'SentToWH', holdArchive: 'Hold Archive', count: 'Count'};
+const LOCATE_TABS = {serials: 'SerialNumbers', optical: 'OpticalModelSN', log: 'Log', sent: 'SentToWH', holdArchive: 'Hold Archive', count: 'Count', partScrap: 'Part Scrap'};
 const locateCache = {};
 async function locateTab(key){
   const c = locateCache[key];
@@ -4600,8 +4963,8 @@ async function runLocate(query){
   const btn = document.getElementById('btnLocate');
   btn.disabled = true;
   try{
-    const [serialRows, opticalRows, logRows, sentRows, holdRows, countRows] = await Promise.all(
-      ['serials','optical','log','sent','holdArchive','count'].map(k => locateTab(k)));
+    const [serialRows, opticalRows, logRows, sentRows, holdRows, countRows, scrapRows] = await Promise.all(
+      ['serials','optical','log','sent','holdArchive','count','partScrap'].map(k => locateTab(k)));
 
     // ---- is it a headset or an optical module? ----
     const omIdx = {sn: OPTICAL_COLUMNS.indexOf('opticalSN'), link: OPTICAL_COLUMNS.indexOf('linkedHeadsetSN'), person: OPTICAL_COLUMNS.indexOf('person'), dt: OPTICAL_COLUMNS.indexOf('dateTime'), btn: OPTICAL_COLUMNS.indexOf('buttonPressed'), marked: OPTICAL_COLUMNS.indexOf('marked')};
@@ -4679,6 +5042,12 @@ async function runLocate(query){
         if(hit) holdNow = hit;
       }
     }
+    // parts scrapped and replaced on this unit (Part Scrap tab)
+    const scrapped = headsetSN ? scrapRows.slice(1).filter(r => locCell(r[2]).toUpperCase() === headsetSN) : [];
+    scrapped.forEach(r => items.push({t: locDate(r[1]), c: '#c0392b', tag: 'scrap', tagText: 'PART SCRAPPED',
+      h: (Number(r[6]) > 1 ? r[6] + ' × ' : '') + locEsc(r[5]) + ' replaced at ' + locStationName(r[4]),
+      d: '<span>Reason</span> ' + locEsc(r[7]) + (locCell(r[8]) ? ': ' + locEsc(r[8]) : '') + ' &nbsp;<span>By</span> ' + locEsc(r[9] || 'unknown') +
+         (locCell(r[10]) ? ' &nbsp;<span>New optical module</span> <b class="loc-mono">' + locEsc(r[10]) + '</b>' : '')}));
     // sent to warehouse
     const sent = headsetSN ? locMatchRows(sentRows, headsetSN) : [];
     sent.forEach(pairs => items.push({t: locRowTime(pairs), c: 'var(--cyan)', tag: 'ship', tagText: 'TO WAREHOUSE', h: 'Sent to warehouse',
@@ -4713,7 +5082,8 @@ async function runLocate(query){
       ['Generated', hsRow ? locFmt(locDate(hsRow[hsIdx.gen]) || locDate(hsRow[hsIdx.dt])) : '\u2014'],
       ['Stations completed', (() => { const done = new Set(events.filter(e => /moveout/i.test(e.event)).map(e => stationNumberFromLabel(e.station)).filter(Boolean)); return done.size ? [...done].sort().join(', ') : 'None'; })()],
       ['Time since first record', firstT && lastT ? formatDuration(Date.now() - firstT.t) : '\u2014'],
-      ['Sheet status', hsRow && locCell(hsRow[hsIdx.status]) ? locEsc(hsRow[hsIdx.status]) : '\u2014']
+      ['Sheet status', hsRow && locCell(hsRow[hsIdx.status]) ? locEsc(hsRow[hsIdx.status]) : '\u2014'],
+      ['Parts replaced', scrapped.length ? scrapped.reduce((a, r) => a + (Number(r[6]) || 1), 0) + ' (' + [...new Set(scrapped.map(r => locCell(r[5])))].join(', ') + ')' : 'None']
     ];
     if(searchedOM && headsetSN) facts[0][1] = '<span class="loc-link" data-loc="' + headsetSN + '">' + headsetSN + '</span>';
 
@@ -4727,7 +5097,7 @@ async function runLocate(query){
           '<div class="h"><span class="loc-tag ' + i.tag + '">' + i.tagText + '</span>' + i.h + '</div>' +
           (i.d ? '<div class="d">' + i.d + '</div>' : '') + '</div>').join('') + '</div>'
         : '<div class="hint">No history recorded yet.</div>') + '</div>';
-    const missing = Object.keys(LOCATE_TABS).filter(k => locateCache[k] && locateCache[k].error).map(k => LOCATE_TABS[k]);
+    const missing = Object.keys(LOCATE_TABS).filter(k => k !== 'partScrap' && locateCache[k] && locateCache[k].error).map(k => LOCATE_TABS[k]);
     msg.textContent = missing.length ? 'Could not read: ' + missing.join(', ') + '. History from those tabs is missing.' : '';
   }catch(e){
     msg.textContent = 'Lookup failed: ' + e.message;
