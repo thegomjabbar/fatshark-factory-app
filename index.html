@@ -50,6 +50,25 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
   nav.tabs button.active{background:var(--accent); color:#fff;}
   .tabpanel{display:none;}
+  /* ---- merged Shipping & Warehouse tab ---- */
+  .subtabs{ display:inline-flex; gap:0; margin:0 0 14px; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--panel); }
+  .subtabs button{ border:none; border-radius:0; background:transparent; color:var(--muted); padding:9px 18px; font-weight:700; }
+  .subtabs button + button{ border-left:1px solid var(--line); }
+  .subtabs button.active{ background:var(--accent); color:var(--accent-ink); }
+  /* ---- Locate: looks like a button, turns into a scan box on hover ---- */
+  .quick-loc{ margin-left:auto; position:relative; display:flex; align-items:center; cursor:pointer; }
+  .quick-loc svg{ position:absolute; left:14px; width:16px; height:16px; color:var(--accent-ink); pointer-events:none; transition:color .15s; }
+  .quick-loc input{ width:190px; height:38px; padding:0 14px 0 38px; border-radius:6px; border:1px solid var(--accent); background:var(--accent);
+    color:var(--accent-ink); font:inherit; font-weight:800; font-size:12px; letter-spacing:.08em; text-transform:uppercase; cursor:pointer;
+    transition:width .2s ease, background .15s, color .15s; }
+  .quick-loc input::placeholder{ color:var(--accent-ink); opacity:1; }
+  .quick-loc input:focus{ width:300px; background:var(--panel); color:var(--ink); cursor:text; outline:none; box-shadow:0 0 0 3px var(--accent-soft);
+    font-family:var(--mono); font-size:15px; letter-spacing:.04em; font-weight:700; }
+  .quick-loc input:focus::placeholder{ color:var(--muted); font-family:var(--sans); font-size:12px; font-weight:600; text-transform:none; letter-spacing:0; }
+  .quick-loc:focus-within svg{ color:var(--accent); }
+  /* ---- Locate pop-up ---- */
+  .loc-box{ width:min(1000px, 100%); }
+  .loc-box > .panel:first-child{ border-top:4px solid var(--accent); }
   /* ---- Part scrap report ---- */
   .sr-stats{ display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin:12px 0 16px; }
   .sr-stat{ background:var(--accent-soft); border-radius:8px; padding:10px 12px; }
@@ -864,23 +883,19 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <button id="btnBackToHome" title="Back to home screen">&larr; Home</button>
   </div>
   <nav class="tabs">
-    <button id="tabBtnSerial" class="active restricted">Serial &amp; QR Labels</button>
-    <button id="tabBtnShipping">Shipping Labels</button>
-    <button id="tabBtnStations">Station Sign In/Out</button>
-    <button id="tabBtnScanOut">Ship to Warehouse</button>
     <button id="tabBtnOMLive">Optical Module Serials</button>
-    <button id="tabBtnLocate">Locate</button>
+    <button id="tabBtnStations">Station Sign In/Out</button>
     <button id="tabBtnReturn">Return / Scrap</button>
+    <button id="tabBtnShipping">Shipping &amp; Warehouse</button>
+    <button id="tabBtnSerial" class="restricted">Serial &amp; QR Labels</button>
   </nav>
   <div class="tabs-dropdown-wrap">
     <select id="tabDropdown">
-      <option value="serial" class="restricted-opt">Serial &amp; QR Labels</option>
-      <option value="shipping">Shipping Labels</option>
-      <option value="stations">Station Sign In/Out</option>
-      <option value="scanout">Ship to Warehouse</option>
       <option value="omlive">Optical Module Serials</option>
-      <option value="locate">Locate</option>
-      <option value="return">Return / Scrap Labels</option>
+      <option value="stations">Station Sign In/Out</option>
+      <option value="return">Return / Scrap</option>
+      <option value="shipping">Shipping &amp; Warehouse</option>
+      <option value="serial" class="restricted-opt">Serial &amp; QR Labels</option>
     </select>
   </div>
 </header>
@@ -899,7 +914,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </div>
 
 <main>
-<div id="tab-serial" class="tabpanel active">
+<div id="tab-serial" class="tabpanel">
   <div class="panel">
     <h2>Batch details</h2>
     <div class="row2">
@@ -980,6 +995,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </div><!-- /tab-serial -->
 
 <div id="tab-shipping" class="tabpanel">
+  <div class="subtabs">
+    <button data-subtab="shipping">Shipping labels</button>
+    <button data-subtab="scanout">Ship to warehouse</button>
+  </div>
+
 
   <div class="panel">
     <h2>Shipping label details</h2>
@@ -1041,6 +1061,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </div><!-- /tab-shipping -->
 
 <div id="tab-scanout" class="tabpanel">
+  <div class="subtabs">
+    <button data-subtab="shipping">Shipping labels</button>
+    <button data-subtab="scanout">Ship to warehouse</button>
+  </div>
+
 
   <div class="panel">
     <h2>Customer &amp; box setup <span class="badge" id="scanoutDataBadge"><span class="dot" style="background:#999;"></span>No data loaded</span></h2>
@@ -1165,9 +1190,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
 </div><!-- /tab-omlive -->
 
-<div id="tab-locate" class="tabpanel">
+<div id="locOverlay" class="ps-overlay">
+<div id="tab-locate" class="loc-box">
   <div class="panel">
-    <h2>Locate a unit</h2>
+    <div class="ps-head"><h2>Locate a unit</h2><button class="secondary" id="btnCloseLocate">Close</button></div>
     <p class="hint">Scan or type a headset or optical module serial to see where it is right now and its full history: when it was generated and by whom, the optical module it's linked to, every station sign in and out with operator and time, holds, and when it went to the warehouse.</p>
     <div class="loc-search">
       <input type="text" id="locInput" placeholder="Scan or type a serial, e.g. H2F2639QPJ5AA" autocomplete="off" spellcheck="false">
@@ -1176,7 +1202,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div class="hint" id="locMsg"></div>
   </div>
   <div id="locResult"></div>
-</div><!-- /tab-locate -->
+</div>
+</div><!-- /locOverlay -->
 
 <div id="tab-return" class="tabpanel">
 
@@ -1262,10 +1289,14 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <span>Scan or type a headset serial number, then press Enter</span>
       <input type="text" id="stationScanInput" placeholder="Scan here…" autocomplete="off">
     </label>
-    <div class="btnrow">
+    <div class="btnrow" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
       <button class="secondary" id="btnStationRefresh">Refresh station status</button>
       <button class="danger" id="btnOpenPartScrap">Scrap a part</button>
       <span class="hint" id="partScrapQueueNote" style="align-self:center;"></span>
+      <label class="quick-loc" title="Hover, then scan or type a serial">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
+        <input type="text" id="quickLocate" placeholder="Locate a unit" autocomplete="off" spellcheck="false">
+      </label>
     </div>
     <div class="hint" id="stationScanMsg"></div>
     <div id="stationScanToast" class="station-toast"></div>
@@ -4614,7 +4645,45 @@ function omLiveRenderList(){
 // with the next successful save, so nothing is lost.
 // =====================================================================
 const PART_SCRAP_TAB = 'Part Scrap';
-const PART_SCRAP_PARTS = ['Top shell','Bottom shell','Fan','Fan cover','DVR board','HDMI board','Power board','Optical module','Power button','Spring','IPD button assembly','DVR button caps','Flex cable (HDMI)','Flex cable (optical module)','5-pin cable (power board)'];
+// Part numbers for inventory / fulfilment. Listed by name in the menu; the sheet gets both.
+const PART_SCRAP_PARTS = [
+  {pn: 'RR3116', name: 'Optical Module'},
+  {pn: 'RR3118', name: 'DVR Board'},
+  {pn: 'RR3117', name: 'HDMI Board'},
+  {pn: 'RR3119', name: 'Power Board'},
+  {pn: 'RR3136', name: 'Headset Top (WHT)'},
+  {pn: 'RR3229', name: 'Headset Bottom (WHT)'},
+  {pn: 'RR3138', name: 'Fan'},
+  {pn: 'RR3137', name: 'Fan Top'},
+  {pn: 'RR3144', name: 'Power Button'},
+  {pn: 'RR3145', name: 'Spring'},
+  {pn: 'RR3147', name: 'IPD Button'},
+  {pn: 'RR3146', name: 'IPD Button Cover'},
+  {pn: 'RR3149', name: 'IPD Gears'},
+  {pn: 'RR3148', name: 'IPD Slide Washer'},
+  {pn: 'RR3129', name: 'DVR Buttons'},
+  {pn: 'RR3120', name: 'DVR-HDMI Ribbon'},
+  {pn: 'RR3121', name: 'DVR-OM Ribbon'},
+  {pn: 'RR3124', name: 'White Flex Cable'},
+  {pn: 'RR3122', name: 'RIGHT Door (BLK)'},
+  {pn: 'RR3225', name: 'LEFT Door (BLK)'},
+  {pn: 'RR3131', name: 'Facemask Shell'},
+  {pn: 'RR3132', name: 'Facemask Sweatproof Foam'},
+  {pn: 'RR3134', name: 'Left Mask Foam Pad'},
+  {pn: 'RR3133', name: 'Facemask Sticker - Velcro'},
+  {pn: 'RR3140', name: 'Headset Controller Stickers'},
+  {pn: 'RR3141', name: '3M Long Double Side Adhesive'},
+  {pn: 'RR3142', name: '3M Short Double Side Adhesive'}
+];
+const PART_SCRAP_OM_PN = 'RR3116';
+// Names used before part numbers were added, so older entries still get a part number in reports
+const PART_SCRAP_LEGACY = {'top shell':'RR3136','bottom shell':'RR3229','fan':'RR3138','fan cover':'RR3137','dvr board':'RR3118','hdmi board':'RR3117','power board':'RR3119','optical module':'RR3116','power button':'RR3144','spring':'RR3145','ipd button assembly':'RR3147','dvr button caps':'RR3129','flex cable (hdmi)':'RR3120','flex cable (optical module)':'RR3121'};
+function partNumberFor(name, stored){
+  if(stored) return stored;
+  const n = String(name || '').trim().toLowerCase();
+  const hit = PART_SCRAP_PARTS.find(p => p.name.toLowerCase() === n);
+  return hit ? hit.pn : (PART_SCRAP_LEGACY[n] || '');
+}
 const PART_SCRAP_QUEUE_KEY = 'part-scrap-queue-v1';
 const PART_SCRAP_PERSON_KEY = 'part-scrap-person-v1';
 let partScrapCache = null;   // {at, rows}
@@ -4627,10 +4696,11 @@ function updatePartScrapQueueNote(){
 }
 (function initPartScrap(){
   const sel = document.getElementById('psPart');
-  sel.innerHTML = PART_SCRAP_PARTS.map(p => '<option>' + p + '</option>').join('');
+  sel.innerHTML = PART_SCRAP_PARTS.map(p => '<option value="' + p.pn + '">' + p.name + ' \u2014 ' + p.pn + '</option>').join('');
   sel.addEventListener('change', () => {
-    document.getElementById('psReplacementWrap').style.display = sel.value === 'Optical module' ? '' : 'none';
+    document.getElementById('psReplacementWrap').style.display = sel.value === PART_SCRAP_OM_PN ? '' : 'none';
   });
+  sel.dispatchEvent(new Event('change'));
   document.getElementById('btnOpenPartScrap').addEventListener('click', openPartScrap);
   document.getElementById('btnClosePartScrap').addEventListener('click', closePartScrap);
   document.getElementById('partScrapOverlay').addEventListener('click', e => { if(e.target.id === 'partScrapOverlay') closePartScrap(); });
@@ -4713,9 +4783,9 @@ async function renderPartScrapHistory(sn){
   if(!all.length){ el.innerHTML = '<div class="hint">No parts scrapped on ' + sn + ' yet.</div>'; return; }
   const totalParts = all.reduce((a, x) => a + (Number(x.row[6]) || 1), 0);
   el.innerHTML = '<h2 style="font-size:13px;">Already scrapped on this unit <span class="count">' + totalParts + ' part(s)</span></h2>' +
-    '<div class="tablewrap" style="max-height:200px;"><table><thead><tr><th>When</th><th>Part</th><th>Qty</th><th>Reason</th><th>Station</th><th>By</th></tr></thead><tbody>' +
+    '<div class="tablewrap" style="max-height:200px;"><table><thead><tr><th>When</th><th>Part</th><th>Part #</th><th>Qty</th><th>Reason</th><th>Station</th><th>By</th></tr></thead><tbody>' +
     all.map(x => { const r = x.row; const d = locDate(r[1]);
-      return '<tr><td>' + (d ? locFmt(d) : locEsc(r[1])) + (x.pending ? ' <b style="color:#a13636;">(not saved yet)</b>' : '') + '</td><td><b>' + locEsc(r[5]) + '</b></td><td>' + locEsc(r[6]) + '</td><td>' +
+      return '<tr><td>' + (d ? locFmt(d) : locEsc(r[1])) + (x.pending ? ' <b style="color:#a13636;">(not saved yet)</b>' : '') + '</td><td><b>' + locEsc(r[5]) + '</b></td><td class="loc-mono">' + locEsc(partNumberFor(r[5], locCell(r[11]))) + '</td><td>' + locEsc(r[6]) + '</td><td>' +
         locEsc(r[7]) + (r[8] ? ': ' + locEsc(r[8]) : '') + '</td><td>' + locEsc(r[4]) + '</td><td>' + locEsc(r[9]) + '</td></tr>'; }).join('') +
     '</tbody></table></div>';
 }
@@ -4723,20 +4793,21 @@ async function renderPartScrapHistory(sn){
 async function submitPartScrap(){
   const msg = document.getElementById('psMsg');
   const sn = document.getElementById('psSerial').value.trim().toUpperCase();
-  const part = document.getElementById('psPart').value;
+  const partPn = document.getElementById('psPart').value;
+  const part = (PART_SCRAP_PARTS.find(p => p.pn === partPn) || {name: partPn}).name;
   const qty = Math.max(1, Math.min(20, parseInt(document.getElementById('psQty').value, 10) || 1));
   const reason = document.getElementById('psReason').value;
   const details = document.getElementById('psDetails').value.trim();
   const person = document.getElementById('psPerson').value.trim();
   const station = document.getElementById('psStation').value;
-  const replacement = part === 'Optical module' ? document.getElementById('psReplacement').value.trim().toUpperCase() : '';
+  const replacement = partPn === PART_SCRAP_OM_PN ? document.getElementById('psReplacement').value.trim().toUpperCase() : '';
   if(!sn){ msg.textContent = 'Scan the headset serial first.'; document.getElementById('psSerial').focus(); return; }
   if(!/^H2[A-Z]/.test(sn)){ msg.textContent = sn + ' doesn\'t look like a headset serial. Scan the headset, not the part.'; return; }
   if(!person){ msg.textContent = 'Enter your initials.'; document.getElementById('psPerson').focus(); return; }
   if(reason === 'Other' && !details){ msg.textContent = 'Describe what was wrong when the reason is "Other".'; document.getElementById('psDetails').focus(); return; }
   localStorage.setItem(PART_SCRAP_PERSON_KEY, person);
-  // UniqID | DateTime | HeadsetSN | Style | Station | Part | Qty | Reason | Details | Operator | ReplacementSN
-  const row = [genUniqID(), new Date().toLocaleString(), sn, (sn.match(/^H2[A-Z]/) || [''])[0], 'Station #' + station, part, qty, reason, details, person, replacement];
+  // UniqID | DateTime | HeadsetSN | Style | Station | Part | Qty | Reason | Details | Operator | ReplacementSN | PartNumber
+  const row = [genUniqID(), new Date().toLocaleString(), sn, (sn.match(/^H2[A-Z]/) || [''])[0], 'Station #' + station, part, qty, reason, details, person, replacement, partPn];
   const queue = partScrapQueue().concat([row]);
   const btn = document.getElementById('btnSubmitPartScrap');
   btn.disabled = true; btn.textContent = 'Saving\u2026';
@@ -4744,7 +4815,7 @@ async function submitPartScrap(){
     await sheetPost({action: 'appendPartScrap', rows: queue});
     setPartScrapQueue([]);
     partScrapCache = null;
-    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Logged: ' + qty + ' \u00d7 ' + locEsc(part) + ' on ' + sn + '.</b>' + (queue.length > 1 ? ' (Also saved ' + (queue.length - 1) + ' that were waiting.)' : '');
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Logged: ' + qty + ' \u00d7 ' + locEsc(part) + ' (' + partPn + ') on ' + sn + '.</b>' + (queue.length > 1 ? ' (Also saved ' + (queue.length - 1) + ' that were waiting.)' : '');
   }catch(e){
     setPartScrapQueue(queue);
     msg.innerHTML = '<b style="color:#a13636;">Not saved to the sheet yet</b> (' + locEsc(e.message) + '). It\'s kept on this computer and will be sent with the next scrap that saves.';
@@ -4790,8 +4861,10 @@ async function loadScrapReport(){
   const to = document.getElementById('srTo').value ? new Date(document.getElementById('srTo').value + 'T23:59:59') : null;
   const all = raw.slice(1).filter(r => locCell(r[2])).map(r => ({
     id: locCell(r[0]), date: locDate(r[1]), sn: locCell(r[2]).toUpperCase(), style: locCell(r[3]) || (locCell(r[2]).toUpperCase().match(/^H2[A-Z]/) || [''])[0],
-    station: locCell(r[4]), part: locCell(r[5]), qty: Number(r[6]) || 1, reason: locCell(r[7]), details: locCell(r[8]), person: locCell(r[9]), replacement: locCell(r[10])
+    station: locCell(r[4]), part: locCell(r[5]), qty: Number(r[6]) || 1, reason: locCell(r[7]), details: locCell(r[8]), person: locCell(r[9]), replacement: locCell(r[10]),
+    pn: partNumberFor(r[5], locCell(r[11]))
   }));
+  const pnOf = name => (srRows.find(r => r.part === name) || {}).pn || '';
   // style dropdown lists every style seen, keeping the current choice
   const styleSel = document.getElementById('srStyle');
   const keep = styleSel.value;
@@ -4837,24 +4910,23 @@ async function loadScrapReport(){
       '<div class="sr-stat"><div class="v">' + locEsc(byPart[0][0]) + '</div><div class="k">Most scrapped part</div></div>' +
     '</div>' +
     '<div class="sr-grid">' +
-      '<div><h3>By part</h3><div class="tablewrap"><table><thead><tr><th>Part</th><th>Parts</th><th>Units</th><th>Top reason</th><th style="width:22%;"></th></tr></thead><tbody>' +
-        byPart.map(([k, v]) => '<tr><td><b>' + locEsc(k) + '</b></td><td><b>' + v.qty + '</b></td><td>' + v.units.size + '</td><td>' + locEsc(topReasonFor(k)) + '</td><td><div class="sr-bar" style="width:' + (v.qty / maxPart * 100) + '%;"></div></td></tr>').join('') +
+      '<div><h3>By part</h3><div class="tablewrap"><table><thead><tr><th>Part #</th><th>Part</th><th>Parts</th><th>Units</th><th>Top reason</th><th style="width:20%;"></th></tr></thead><tbody>' +
+        byPart.map(([k, v]) => '<tr><td class="loc-mono">' + locEsc(pnOf(k)) + '</td><td><b>' + locEsc(k) + '</b></td><td><b>' + v.qty + '</b></td><td>' + v.units.size + '</td><td>' + locEsc(topReasonFor(k)) + '</td><td><div class="sr-bar" style="width:' + (v.qty / maxPart * 100) + '%;"></div></td></tr>').join('') +
       '</tbody></table></div></div>' +
       smallTable('By station', byStation) +
       smallTable('By reason', byReason) +
     '</div>' +
     '<h3>Every scrapped part, newest first</h3>' +
-    '<div class="tablewrap" style="max-height:420px;"><table><thead><tr><th>When</th><th>Headset serial</th><th>Style</th><th>Station</th><th>Part</th><th>Qty</th><th>Reason</th><th>Details</th><th>By</th><th>New OM</th></tr></thead><tbody>' +
+    '<div class="tablewrap" style="max-height:420px;"><table><thead><tr><th>When</th><th>Headset serial</th><th>Style</th><th>Station</th><th>Part #</th><th>Part</th><th>Qty</th><th>Reason</th><th>Details</th><th>By</th><th>New OM</th></tr></thead><tbody>' +
       srRows.map(r => '<tr><td>' + (r.date ? locFmt(r.date) : '') + '</td><td><span class="loc-link loc-mono" data-sr-sn="' + r.sn + '">' + r.sn + '</span></td><td>' + r.style + '</td><td>' + locEsc(locStationName(r.station)) +
-        '</td><td><b>' + locEsc(r.part) + '</b></td><td>' + r.qty + '</td><td>' + locEsc(r.reason) + '</td><td>' + locEsc(r.details) + '</td><td>' + locEsc(r.person) + '</td><td class="loc-mono">' + locEsc(r.replacement) + '</td></tr>').join('') +
+        '</td><td class="loc-mono">' + locEsc(r.pn) + '</td><td><b>' + locEsc(r.part) + '</b></td><td>' + r.qty + '</td><td>' + locEsc(r.reason) + '</td><td>' + locEsc(r.details) + '</td><td>' + locEsc(r.person) + '</td><td class="loc-mono">' + locEsc(r.replacement) + '</td></tr>').join('') +
     '</tbody></table></div>';
 }
 // clicking a serial in the report opens its full history in Locate
 document.getElementById('scrapReportPanel').addEventListener('click', e => {
   const t = e.target.closest('[data-sr-sn]');
   if(!t) return;
-  switchTab('locate');
-  runLocate(t.getAttribute('data-sr-sn'));
+  openLocate(t.getAttribute('data-sr-sn'));
 });
 
 function csvCell(v){
@@ -4867,19 +4939,19 @@ function downloadScrapCsv(summary){
   const style = document.getElementById('srStyle').value;
   let lines;
   if(!summary){
-    lines = [['Date', 'Headset serial', 'Style', 'Station', 'Part', 'Qty', 'Reason', 'Details', 'Operator', 'Replacement optical module', 'Entry ID']]
-      .concat(srRows.map(r => [r.date ? r.date.toLocaleString() : '', r.sn, r.style, locStationName(r.station), r.part, r.qty, r.reason, r.details, r.person, r.replacement, r.id]));
+    lines = [['Date', 'Headset serial', 'Style', 'Station', 'Part number', 'Part', 'Qty', 'Reason', 'Details', 'Operator', 'Replacement optical module', 'Entry ID']]
+      .concat(srRows.map(r => [r.date ? r.date.toLocaleString() : '', r.sn, r.style, locStationName(r.station), r.pn, r.part, r.qty, r.reason, r.details, r.person, r.replacement, r.id]));
   }else{
     const m = {};
     srRows.forEach(r => {
-      const k = r.part; m[k] = m[k] || {qty: 0, units: new Set(), reasons: {}, stations: {}};
+      const k = r.part; m[k] = m[k] || {pn: r.pn, qty: 0, units: new Set(), reasons: {}, stations: {}};
       m[k].qty += r.qty; m[k].units.add(r.sn);
       m[k].reasons[r.reason] = (m[k].reasons[r.reason] || 0) + r.qty;
       const st = locStationName(r.station); m[k].stations[st] = (m[k].stations[st] || 0) + r.qty;
     });
     const fmt = o => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join('; ');
-    lines = [['Part', 'Parts scrapped', 'Units affected', 'Reasons', 'Stations', 'Headset serials']]
-      .concat(Object.entries(m).sort((a, b) => b[1].qty - a[1].qty).map(([k, v]) => [k, v.qty, v.units.size, fmt(v.reasons), fmt(v.stations), [...v.units].join(' ')]));
+    lines = [['Part number', 'Part', 'Qty to replace', 'Units affected', 'Reasons', 'Stations', 'Headset serials']]
+      .concat(Object.entries(m).sort((a, b) => b[1].qty - a[1].qty).map(([k, v]) => [v.pn, k, v.qty, v.units.size, fmt(v.reasons), fmt(v.stations), [...v.units].join(' ')]));
   }
   const csv = '\ufeff' + lines.map(row => row.map(csvCell).join(',')).join('\r\n');   // BOM so Excel reads it as UTF-8
   const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
@@ -5045,7 +5117,7 @@ async function runLocate(query){
     // parts scrapped and replaced on this unit (Part Scrap tab)
     const scrapped = headsetSN ? scrapRows.slice(1).filter(r => locCell(r[2]).toUpperCase() === headsetSN) : [];
     scrapped.forEach(r => items.push({t: locDate(r[1]), c: '#c0392b', tag: 'scrap', tagText: 'PART SCRAPPED',
-      h: (Number(r[6]) > 1 ? r[6] + ' × ' : '') + locEsc(r[5]) + ' replaced at ' + locStationName(r[4]),
+      h: (Number(r[6]) > 1 ? r[6] + ' \u00d7 ' : '') + locEsc(r[5]) + (partNumberFor(r[5], locCell(r[11])) ? ' (' + partNumberFor(r[5], locCell(r[11])) + ')' : '') + ' replaced at ' + locStationName(r[4]),
       d: '<span>Reason</span> ' + locEsc(r[7]) + (locCell(r[8]) ? ': ' + locEsc(r[8]) : '') + ' &nbsp;<span>By</span> ' + locEsc(r[9] || 'unknown') +
          (locCell(r[10]) ? ' &nbsp;<span>New optical module</span> <b class="loc-mono">' + locEsc(r[10]) + '</b>' : '')}));
     // sent to warehouse
@@ -5107,6 +5179,61 @@ async function runLocate(query){
 }
 function styleFromSerialLoc(sn){ const m = String(sn).toUpperCase().match(/^H2[A-F]/); return m ? m[0] : ''; }
 
+function openLocate(serial){
+  document.getElementById('locOverlay').classList.add('open');
+  if(serial){ runLocate(serial); }
+  else setTimeout(() => { const i = document.getElementById('locInput'); i.focus(); i.select(); }, 50);
+}
+function closeLocate(){
+  document.getElementById('locOverlay').classList.remove('open');
+  if(lastActiveTab === 'stations') setTimeout(() => document.getElementById('stationScanInput').focus(), 50);
+}
+// A complete serial: headset (H2B–H2F) or optical module (CMA), then YYWW, then 6 characters
+const FULL_SERIAL_RE = /^(H2[B-F]|CMA)\d{4}[A-Z0-9]{6}$/;
+(function initQuickLocate(){
+  const q = document.getElementById('quickLocate');
+  let typed = false;
+  q.addEventListener('mouseenter', () => {
+    q.placeholder = 'Scan or type a serial';
+    q.focus();
+  });
+  // the pointer may already be resting on it (e.g. right after closing the pop-up), so any movement over it counts too
+  q.addEventListener('mousemove', () => { if(document.activeElement !== q && !document.querySelector('.ps-overlay.open')) q.focus(); });
+  q.addEventListener('mouseleave', () => {
+    // moved away without typing anything: give focus back to the station scan box
+    if(!q.value.trim() && !typed){
+      q.blur();
+      if(lastActiveTab === 'stations') document.getElementById('stationScanInput').focus();
+    }
+  });
+  q.addEventListener('focus', () => { q.placeholder = 'Scan or type a serial'; });
+  q.addEventListener('blur', () => { if(!q.value.trim()){ q.placeholder = 'Locate a unit'; typed = false; } });
+  const go = sn => {
+    q.value = ''; typed = false; q.blur(); q.placeholder = 'Locate a unit';
+    openLocate(sn);
+  };
+  q.addEventListener('input', () => {
+    typed = true;
+    const v = q.value.trim().toUpperCase().replace(/\s+/g, '');
+    if(FULL_SERIAL_RE.test(v)) go(v);   // looks it up the moment a full serial is in
+  });
+  q.addEventListener('keydown', e => {
+    if(e.key === 'Enter'){ e.preventDefault(); const v = q.value.trim(); if(v) go(v); }   // partial serials still work with Enter
+    else if(e.key === 'Escape'){ q.value = ''; q.blur(); document.getElementById('stationScanInput').focus(); }
+  });
+})();
+// same instant lookup inside the pop-up, for checking one unit after another
+document.getElementById('locInput').addEventListener('input', e => {
+  const v = e.target.value.trim().toUpperCase().replace(/\s+/g, '');
+  if(FULL_SERIAL_RE.test(v)) runLocate(v);
+});
+document.getElementById('btnCloseLocate').addEventListener('click', closeLocate);
+document.getElementById('locOverlay').addEventListener('click', e => { if(e.target.id === 'locOverlay') closeLocate(); });
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  if(document.getElementById('locOverlay').classList.contains('open')) closeLocate();
+  else if(document.getElementById('partScrapOverlay').classList.contains('open')) closePartScrap();
+});
 document.getElementById('btnLocate').addEventListener('click', () => runLocate(document.getElementById('locInput').value));
 document.getElementById('locInput').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); runLocate(e.target.value); } });
 document.getElementById('tab-locate').addEventListener('click', e => {
@@ -5118,14 +5245,14 @@ document.getElementById('tab-locate').addEventListener('click', e => {
 // TABS
 // =====================================================================
 document.getElementById('tabBtnSerial').addEventListener('click', () => switchTab('serial'));
-document.getElementById('tabBtnShipping').addEventListener('click', () => switchTab('shipping'));
-document.getElementById('tabBtnScanOut').addEventListener('click', () => switchTab('scanout'));
+let lastShipSubtab = 'shipping';
+document.getElementById('tabBtnShipping').addEventListener('click', () => switchTab(lastShipSubtab));
+document.querySelectorAll('[data-subtab]').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.subtab)));
 document.getElementById('tabBtnStations').addEventListener('click', () => switchTab('stations'));
 document.getElementById('tabBtnOMLive').addEventListener('click', () => switchTab('omlive'));
-document.getElementById('tabBtnLocate').addEventListener('click', () => switchTab('locate'));
 document.getElementById('tabBtnReturn').addEventListener('click', () => switchTab('return'));
 document.getElementById('tabDropdown').addEventListener('change', (e) => switchTab(e.target.value));
-let lastActiveTab = 'serial';
+let lastActiveTab = 'omlive';
 function switchTab(name){
   // Builder mode: Serial & QR Labels requires the engineer PIN (Optical Module Rework now lives
   // in Settings, which is already behind the PIN). Checked here too, not just by hiding the nav
@@ -5137,16 +5264,15 @@ function switchTab(name){
   document.getElementById('tab-stations').classList.toggle('active', name === 'stations');
   document.getElementById('tab-scanout').classList.toggle('active', name === 'scanout');
   document.getElementById('tab-omlive').classList.toggle('active', name === 'omlive');
-  document.getElementById('tab-locate').classList.toggle('active', name === 'locate');
   document.getElementById('tab-return').classList.toggle('active', name === 'return');
   document.getElementById('tabBtnSerial').classList.toggle('active', name === 'serial');
-  document.getElementById('tabBtnShipping').classList.toggle('active', name === 'shipping');
+  document.getElementById('tabBtnShipping').classList.toggle('active', name === 'shipping' || name === 'scanout');
+  if(name === 'shipping' || name === 'scanout') lastShipSubtab = name;
+  document.querySelectorAll('[data-subtab]').forEach(b => b.classList.toggle('active', b.dataset.subtab === name));
   document.getElementById('tabBtnStations').classList.toggle('active', name === 'stations');
-  document.getElementById('tabBtnScanOut').classList.toggle('active', name === 'scanout');
   document.getElementById('tabBtnOMLive').classList.toggle('active', name === 'omlive');
-  document.getElementById('tabBtnLocate').classList.toggle('active', name === 'locate');
   document.getElementById('tabBtnReturn').classList.toggle('active', name === 'return');
-  document.getElementById('tabDropdown').value = name;
+  document.getElementById('tabDropdown').value = name === 'scanout' ? 'shipping' : name;
   if(name === 'shipping') renderShipPreview();
   if(name === 'return') renderReturnPreview();
   if(name === 'scanout' && goalsList.length === 0) refreshScanOutData();
@@ -5163,7 +5289,6 @@ function switchTab(name){
     }
   }
   if(name === 'omlive') omLiveOnOpen();
-  if(name === 'locate') setTimeout(() => document.getElementById('locInput').focus(), 50);
   if(name === 'serial' && !headsetHistoryPulled){
     const cfg = sheetConfig();
     if(cfg.url && cfg.token) refreshHeadsetHistory();
@@ -5186,8 +5311,8 @@ function applyAccessMode(){
   document.querySelectorAll('#tabDropdown option[value="serial"]')
     .forEach(opt => opt.classList.toggle('restricted-opt', !engineerUnlocked));
   if(!engineerUnlocked && lastActiveTab === 'serial'){
-    lastActiveTab = 'shipping';
-    switchTab('shipping');
+    lastActiveTab = 'omlive';
+    switchTab('omlive');
   }
 }
 
@@ -5238,7 +5363,6 @@ function openSettings(){
   document.getElementById('tab-shipping').classList.remove('active');
   document.getElementById('tab-scanout').classList.remove('active');
   document.getElementById('tab-omlive').classList.remove('active');
-  document.getElementById('tab-locate').classList.remove('active');
   document.getElementById('tab-stations').classList.remove('active');
   // The rework generator lives in here now, so make sure its dedupe list is current
   if(!opticalHistoryPulled){ const c = sheetConfig(); if(c.url && c.token) refreshOpticalHistory(); }
@@ -5251,7 +5375,7 @@ function closeSettings(){
   document.getElementById('view-settings').classList.remove('active');
   document.querySelector('nav.tabs').style.display = '';
   document.querySelector('.tabs-dropdown-wrap').style.display = '';
-  switchTab(engineerUnlocked ? lastActiveTab : 'shipping');
+  switchTab(engineerUnlocked ? lastActiveTab : 'omlive');
 }
 
 // =====================================================================
@@ -6934,6 +7058,7 @@ window.addEventListener('beforeunload', (e) => {
   updateOpticalGenerateWarning();
   updateHeadsetGenerateWarning();
   applyAccessMode(); // Builder mode by default; bounces off restricted tabs if not unlocked
+  switchTab('omlive'); // everyone starts on the first tab, Optical Module Serials
   // Serial & QR Labels is the default active tab (no click fires switchTab for it), so the
   // same auto-history-pull that other tabs get on open needs to run here explicitly too —
   // only relevant if this session is already unlocked (engineer refreshed the page).
