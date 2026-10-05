@@ -157,6 +157,29 @@
   /* in full screen the button and cursor fade out when the mouse is idle, so the TV shows only the dashboard */
   body.is-fs.idle .fs-btn{ opacity:0; pointer-events:none; }
   body.is-fs.idle{ cursor:none; }
+  /* ---- shift summary slide ---- */
+  .ssum-wrap{ flex:1; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:1.6vh; }
+  .ssum-kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:1.2vw; }
+  .ssum-kpi{ padding:2vh 1.6vw; }
+  .ssum-kpi .v{ font-size:4.4vw; font-weight:800; line-height:1; }
+  .ssum-kpi .l{ font-size:1.05vw; color:var(--muted); margin-top:1vh; font-weight:600; }
+  .ssum-kpi .s{ font-size:.9vw; color:var(--muted); margin-top:.5vh; }
+  .ssum-mid{ display:grid; grid-template-columns:1.5fr 1fr 1fr; gap:1.2vw; min-height:0; }
+  .ssum-panel{ display:flex; flex-direction:column; min-height:0; padding:1.8vh 1.4vw; }
+  .ssum-stations{ flex:1; display:flex; flex-direction:column; justify-content:space-evenly; }
+  .ssum-st{ display:grid; grid-template-columns:2vw 9vw 1fr 1fr 1fr; align-items:center; gap:.8vw; font-size:1.15vw; }
+  .ssum-st.head{ font-size:.8vw; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+  .ssum-st .n{ font-weight:800; color:var(--cyan); font-size:1.4vw; }
+  .ssum-st .nm{ color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ssum-st b{ font-size:1.5vw; }
+  .ssum-list{ flex:1; display:flex; flex-direction:column; gap:1vh; overflow:hidden; }
+  .ssum-item{ display:flex; justify-content:space-between; align-items:baseline; gap:1vw; font-size:1.1vw; padding-bottom:.8vh; border-bottom:1px solid var(--line); }
+  .ssum-item:last-child{ border-bottom:none; }
+  .ssum-item .pn{ font-family:'JetBrains Mono',monospace; font-size:.8vw; color:var(--muted); margin-left:.5vw; }
+  .ssum-item .age{ color:var(--red); font-weight:800; white-space:nowrap; }
+  .ssum-item .mono{ font-family:'JetBrains Mono',monospace; font-weight:700; }
+  .ssum-empty{ color:var(--muted); font-size:1.05vw; }
+  .sw-stuck{ color:var(--red); font-weight:800; }
   #diagPanel{ display:none; position:fixed; inset:8vh 6vw; z-index:30; background:oklch(0.12 0.03 292 / .97); border:1px solid var(--purple);
     border-radius:14px; padding:3vh 2.4vw; overflow:auto; font-size:1vw; }
   #diagPanel h3{ margin:0 0 1.6vh; font-size:1.5vw; }
@@ -469,6 +492,21 @@
       <div style="display:flex; flex-direction:column; min-height:0;">
         <div class="week-lab">Headsets finished per day, by shift</div>
         <div class="week-cal" id="weekCal" style="flex:1;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide" data-slide="summary">
+    <div class="slide-head">
+      <div class="slide-title">Shift Summary</div>
+      <div class="slide-sub" id="ssSub"></div>
+    </div>
+    <div class="ssum-wrap">
+      <div class="ssum-kpis" id="ssKpis"></div>
+      <div class="ssum-mid">
+        <div class="panel ssum-panel"><div class="panel-lab">This shift by station</div><div id="ssStations" class="ssum-stations"></div></div>
+        <div class="panel ssum-panel"><div class="panel-lab">Parts scrapped this shift</div><div id="ssParts" class="ssum-list"></div></div>
+        <div class="panel ssum-panel"><div class="panel-lab" id="ssStuckLab">Stuck units</div><div id="ssStuck" class="ssum-list"></div></div>
       </div>
     </div>
   </div>
@@ -1238,7 +1276,9 @@ function renderStationSlide(stuck, pingStations){
     if(!row) return;
     row.classList.remove('ping'); void row.offsetWidth; row.classList.add('ping');
   });
-  document.getElementById('swFoot').innerHTML = '<span><b>' + fmtNum(total) + '</b> units on the floor</span><span>Updates as builders sign units in and out</span>';
+  const stuckN = tvStuck.length;
+  document.getElementById('swFoot').innerHTML = '<span><b>' + fmtNum(total) + '</b> units on the floor</span>' +
+    (stuckN ? '<span class="sw-stuck">\u26a0 ' + stuckN + ' unit' + (stuckN > 1 ? 's' : '') + ' stuck over ' + TV_STUCK_HOURS + ' hours</span>' : '<span>Updates as builders sign units in and out</span>');
 }
 
 let feedEvents = [];
@@ -1574,6 +1614,90 @@ function renderSalesSlide(orders){
   ).join('') || '<div class="dash-msg">No open orders.</div>';
 }
 
+
+// ==================== Stuck units + shift summary ====================
+// Same shift times and stuck limit as the tracker — keep the two in step if you change them.
+const TV_SHIFT_DEFS = [
+  {name: 'Shift 1', start: '06:00', end: '14:30'},
+  {name: 'Shift 2', start: '14:30', end: '23:00'}
+];
+const TV_STUCK_HOURS = 4;
+let tvStuck = [];      // [{serial, stationNum, person, t}]
+let tvSideCache = null; // {at, scrap, holds}
+async function loadSideTabs(){
+  if(tvSideCache && Date.now() - tvSideCache.at < 3 * 60000) return tvSideCache;
+  const get = name => sheetPost({action: 'getFullSheet', sheet: name}).then(j => j.rows || []).catch(() => []);
+  const [scrap, holds] = await Promise.all([get('Part Scrap'), get('Holds')]);
+  tvSideCache = {at: Date.now(), scrap: scrap, holds: holds};
+  return tvSideCache;
+}
+function tvShiftWindow(){
+  const now = new Date();
+  const at = (d, hm) => { const [h, m] = hm.split(':').map(Number); return new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m); };
+  for(const def of TV_SHIFT_DEFS){
+    for(const back of [0, 1]){   // a shift that started yesterday may still be running
+      const d = new Date(now); d.setDate(d.getDate() - back);
+      const from = at(d, def.start); let to = at(d, def.end);
+      if(to <= from) to = new Date(to.getTime() + 86400000);
+      if(now >= from && now < to) return {from: from, to: to, label: def.name + ' (' + def.start + '\u2013' + def.end + ')', live: true};
+    }
+  }
+  // between shifts: show the whole day so far
+  const from = new Date(now); from.setHours(0, 0, 0, 0);
+  return {from: from, to: new Date(from.getTime() + 86400000), label: 'Today', live: false};
+}
+function tvCell(v){ return String(v === null || v === undefined ? '' : v).trim(); }
+function tvDate(v){ if(!v) return null; const t = Date.parse(String(v)); return isNaN(t) ? null : new Date(t); }
+function computeStuck(logEvents, holdRows){
+  const held = new Set(holdRows.slice(1).filter(r => /on hold/i.test(tvCell(r[8]))).map(r => tvCell(r[1]).toUpperCase()));
+  const latest = {};
+  logEvents.forEach(e => { if(!latest[e.serial] || e.t >= latest[e.serial].t) latest[e.serial] = e; });
+  return Object.values(latest).filter(e => e.event === 'MoveIn' && !held.has(e.serial.toUpperCase()) && Date.now() - e.t > TV_STUCK_HOURS * 3600000)
+    .sort((a, b) => a.t - b.t);
+}
+function renderSummarySlide(logEvents, side){
+  const win = tvShiftWindow();
+  const inWin = t => t >= win.from.getTime() && t < win.to.getTime();
+  document.getElementById('ssSub').textContent = win.label + (win.live ? ' \u00b7 in progress' : '') + ' \u00b7 ' + new Date().toLocaleDateString(undefined, {weekday:'long', month:'short', day:'numeric'});
+  const w = logEvents.filter(e => inWin(e.t));
+  const finished = w.filter(e => e.stationNum === '6' && e.event === 'MoveOut');
+  // median time at station for sign-outs in this shift
+  const openIn = {}, dur = {};
+  logEvents.forEach(e => {
+    const k = e.serial + '|' + e.stationNum;
+    if(e.event === 'MoveIn') openIn[k] = e.t;
+    else if(e.event === 'MoveOut' && openIn[k]){ if(inWin(e.t)) (dur[e.stationNum] = dur[e.stationNum] || []).push(e.t - openIn[k]); delete openIn[k]; }
+  });
+  const scraps = side.scrap.slice(1).map(r => ({t: tvDate(r[1]), part: tvCell(r[5]), qty: Number(r[6]) || 1, pn: tvCell(r[11])})).filter(x => x.t && inWin(x.t.getTime()));
+  const parts = scraps.reduce((a, x) => a + x.qty, 0);
+  const openHolds = side.holds.slice(1).filter(r => /on hold/i.test(tvCell(r[8]))).length;
+  const kpis = [
+    {v: finished.length, l: 'Headsets finished', s: 'Signed out of Station 6', c: 'var(--green)'},
+    {v: w.length, l: 'Sign ins and outs', s: 'Across all 6 stations', c: 'var(--purple)'},
+    {v: parts, l: 'Parts scrapped', s: scraps.length ? 'On ' + new Set(scraps.map(x => x.part)).size + ' part type(s)' : 'None this shift', c: 'var(--amber)'},
+    {v: openHolds, l: 'Units on hold', s: tvStuck.length + ' stuck over ' + TV_STUCK_HOURS + 'h', c: openHolds || tvStuck.length ? 'var(--red)' : 'var(--cyan)'}
+  ];
+  document.getElementById('ssKpis').innerHTML = kpis.map((k, i) =>
+    '<div class="panel ssum-kpi"><div class="v" id="ss-kpi-' + i + '" style="color:' + k.c + ';">0</div><div class="l">' + k.l + '</div><div class="s">' + k.s + '</div></div>').join('');
+  kpis.forEach((k, i) => animateCountUp(document.getElementById('ss-kpi-' + i), k.v));
+  document.getElementById('ssStations').innerHTML = '<div class="ssum-st head"><span></span><span>Station</span><span>Signed in</span><span>Signed out</span><span>Median time</span></div>' +
+    ['1','2','3','4','5','6'].map(n => {
+      const ins = w.filter(e => e.stationNum === n && e.event === 'MoveIn').length;
+      const outs = w.filter(e => e.stationNum === n && e.event === 'MoveOut').length;
+      const d = (dur[n] || []).slice().sort((a, b) => a - b);
+      return '<div class="ssum-st"><span class="n">' + n + '</span><span class="nm">' + (STATION_LABELS[n] || '') + '</span><b>' + ins + '</b><b>' + outs + '</b><span>' + (d.length ? formatDuration(d[Math.floor(d.length / 2)]) : '\u2014') + '</span></div>';
+    }).join('');
+  const byPart = {};
+  scraps.forEach(x => { byPart[x.part] = byPart[x.part] || {qty: 0, pn: x.pn}; byPart[x.part].qty += x.qty; });
+  const partList = Object.entries(byPart).sort((a, b) => b[1].qty - a[1].qty).slice(0, 6);
+  document.getElementById('ssParts').innerHTML = partList.length ? partList.map(([k, v]) =>
+    '<div class="ssum-item"><span>' + k + (v.pn ? '<span class="pn">' + v.pn + '</span>' : '') + '</span><b>' + v.qty + '</b></div>').join('') : '<div class="ssum-empty">No parts scrapped this shift.</div>';
+  document.getElementById('ssStuckLab').textContent = 'Stuck over ' + TV_STUCK_HOURS + ' hours' + (tvStuck.length ? ' (' + tvStuck.length + ')' : '');
+  document.getElementById('ssStuck').innerHTML = tvStuck.length ? tvStuck.slice(0, 6).map(e =>
+    '<div class="ssum-item"><span><span class="mono">' + e.serial + '</span><span class="pn">Stn ' + e.stationNum + '</span></span><span class="age">' + formatDuration(Date.now() - e.t) + '</span></div>').join('') +
+    (tvStuck.length > 6 ? '<div class="ssum-empty">+ ' + (tvStuck.length - 6) + ' more</div>' : '') : '<div class="ssum-empty">Nothing stuck. Line is moving.</div>';
+}
+
 // ==================== Refresh cycle ====================
 async function refreshAllData(){
   try{
@@ -1584,6 +1708,8 @@ async function refreshAllData(){
     const allTimeUnits = Object.values(totalsDaily(feed, hist)).reduce((a,o) => a + o.total, 0);
     const weekFinished = countDaily.length ? countDaily.filter(r => r.day >= dayOffsetKey(-6)).reduce((a,r) => a + r.total, 0) : undefined;
     const orders = await loadCustomerOrders(feed);
+    const side = await loadSideTabs();
+    tvStuck = computeStuck(logEvents, side.holds);
     let stuck = loadStuckAtStations(countRows);
     currentStuck = stuck;
     lastCountFetch = Date.now();
@@ -1599,6 +1725,7 @@ async function refreshAllData(){
     renderLineStatus(feed, stuck, cycleData, {allTime: allTimeUnits, weekTotal: weekFinished});
     renderShiftSlide(feed, countDaily);
     renderSalesSlide(orders);
+    renderSummarySlide(logEvents, side);
     hideErrorBanner();
     document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
   }catch(e){
@@ -1616,7 +1743,7 @@ function hideErrorBanner(){
 }
 
 // ==================== Slide rotation + remote/keyboard navigation ====================
-const SLIDES = ['overview','output','station','cycle','shift','sales'];
+const SLIDES = ['overview','output','station','cycle','shift','summary','sales'];
 let currentSlideIdx = 0;
 let autoAdvanceTimer = null;
 const AUTO_ADVANCE_MS = 18000;
