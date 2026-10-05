@@ -1574,7 +1574,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
   <div class="panel" id="shiftSummaryPanel">
     <h2>End-of-shift summary</h2>
-    <p class="hint">Station activity, headsets finished, parts scrapped and holds for one shift, from the Log, Part Scrap and Holds tabs. Covers about the last two weeks.</p>
+    <p class="hint">Station activity, headsets finished, parts scrapped and holds for one shift, from the Log, Part Scrap and Holds tabs. Works for any day, including history moved to the Log Archive.</p>
     <div class="row3">
       <label class="field"><span>Day</span><input type="date" id="ssDay"></label>
       <label class="field"><span>Shift</span><select id="ssShift"></select></label>
@@ -5441,6 +5441,22 @@ function localDayKeyLoc(d){ return d.getFullYear() + '-' + String(d.getMonth() +
   document.getElementById('btnSsCsv').addEventListener('click', downloadShiftSummaryCsv);
 })();
 
+// Log rows for the chosen shift, looked up by date by the sheet's script (works for any day, Log or
+// Log Archive). The 24 hours before the shift come too, so units signed in earlier still get a
+// time-at-station. Falls back to the recent end of the Log if the script hasn't been updated yet.
+let logFetchFellBack = false;
+async function fetchLogRowsForWindow(win){
+  logFetchFellBack = false;
+  try{
+    const j = await sheetPost({action: 'getLogRowsBetween', from: win.from.getTime() - 86400000, to: win.to.getTime()});
+    if(j.status === 'error') throw new Error(j.message);
+    return j.rows || [];
+  }catch(e){
+    if(!/unknown action/i.test(e.message)) throw e;
+    logFetchFellBack = true;
+    return (await sheetPost({action: 'getRecentLogRows', maxRows: 20000})).rows || [];
+  }
+}
 async function buildShiftSummary(){
   const msg = document.getElementById('ssMsg'), body = document.getElementById('ssBody');
   const cfg = sheetConfig();
@@ -5452,7 +5468,7 @@ async function buildShiftSummary(){
   let logRows, scrapRows, holdRows;
   try{
     [logRows, scrapRows, holdRows] = await Promise.all([
-      sheetPost({action: 'getRecentLogRows', maxRows: 20000}).then(j => j.rows || []),
+      fetchLogRowsForWindow(win),
       sheetPost({action: 'getFullSheet', sheet: PART_SCRAP_TAB}).then(j => j.rows || []).catch(() => []),
       sheetPost({action: 'getFullSheet', sheet: HOLDS_TAB}).then(j => j.rows || []).catch(() => [])
     ]);
@@ -5460,7 +5476,7 @@ async function buildShiftSummary(){
   const inWin = t => t && t >= win.from && t < win.to;
   const events = logRows.map(r => ({sn: locCell(r[1]).toUpperCase(), event: locCell(r[2]), person: locCell(r[3]), station: String(stationNumberFromLabel(locCell(r[4])) || ''), t: locDate(r[5])}))
     .filter(e => e.sn && e.t).sort((a, b) => a.t - b.t);
-  if(events.length && events[0].t > win.from) msg.textContent = 'Note: the Log window only reaches back to ' + locFmt(events[0].t) + ', so earlier activity isn\u2019t included.';
+  if(logFetchFellBack && events.length && events[0].t > win.from) msg.textContent = 'Note: the sheet\u2019s script needs the latest Code.gs to look up older days, so this only reaches back to ' + locFmt(events[0].t) + '.';
   else msg.textContent = '';
   // time at station: pair each sign-out with that unit's previous sign-in at the same station
   const openIn = {}, durByStation = {};
