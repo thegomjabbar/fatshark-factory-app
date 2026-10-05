@@ -159,15 +159,15 @@
   body.is-fs.idle{ cursor:none; }
   /* ---- shift summary slide ---- */
   .ssum-wrap{ flex:1; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:1.6vh; }
-  .ssum-kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:1.2vw; }
+  .ssum-kpis{ display:grid; grid-template-columns:repeat(5,1fr); gap:1.1vw; }
   .ssum-kpi{ padding:2vh 1.6vw; }
-  .ssum-kpi .v{ font-size:4.4vw; font-weight:800; line-height:1; }
+  .ssum-kpi .v{ font-size:3.9vw; font-weight:800; line-height:1; }
   .ssum-kpi .l{ font-size:1.05vw; color:var(--muted); margin-top:1vh; font-weight:600; }
   .ssum-kpi .s{ font-size:.9vw; color:var(--muted); margin-top:.5vh; }
   .ssum-mid{ display:grid; grid-template-columns:1.5fr 1fr 1fr; gap:1.2vw; min-height:0; }
   .ssum-panel{ display:flex; flex-direction:column; min-height:0; padding:1.8vh 1.4vw; }
   .ssum-stations{ flex:1; display:flex; flex-direction:column; justify-content:space-evenly; }
-  .ssum-st{ display:grid; grid-template-columns:2vw 9vw 1fr 1fr 1fr; align-items:center; gap:.8vw; font-size:1.15vw; }
+  .ssum-st{ display:grid; grid-template-columns:2vw 8.5vw 1fr 1fr 1fr 1fr; align-items:center; gap:.7vw; font-size:1.1vw; }
   .ssum-st.head{ font-size:.8vw; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
   .ssum-st .n{ font-weight:800; color:var(--cyan); font-size:1.4vw; }
   .ssum-st .nm{ color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -1618,8 +1618,8 @@ function renderSalesSlide(orders){
 // ==================== Stuck units + shift summary ====================
 // Same shift times and stuck limit as the tracker — keep the two in step if you change them.
 const TV_SHIFT_DEFS = [
-  {name: 'Shift 1', start: '06:00', end: '14:30'},
-  {name: 'Shift 2', start: '14:30', end: '23:00'}
+  {name: 'Shift 1', start: '07:00', end: '15:30'},
+  {name: 'Shift 2', start: '15:00', end: '23:30'}   // overlaps Shift 1 by 30 minutes (handover)
 ];
 const TV_STUCK_HOURS = 4;
 let tvStuck = [];      // [{serial, stationNum, person, t}]
@@ -1669,23 +1669,36 @@ function renderSummarySlide(logEvents, side){
     else if(e.event === 'MoveOut' && openIn[k]){ if(inWin(e.t)) (dur[e.stationNum] = dur[e.stationNum] || []).push(e.t - openIn[k]); delete openIn[k]; }
   });
   const scraps = side.scrap.slice(1).map(r => ({t: tvDate(r[1]), part: tvCell(r[5]), qty: Number(r[6]) || 1, pn: tvCell(r[11])})).filter(x => x.t && inWin(x.t.getTime()));
+  // first pass: got through (a station / the whole line) with no part replaced
+  const scrappedAt = {};
+  side.scrap.slice(1).forEach(r => { const sn = tvCell(r[2]).toUpperCase(); const m = tvCell(r[4]).match(/(\d+)/); if(!sn) return; scrappedAt[sn] = scrappedAt[sn] || {}; if(m) scrappedAt[sn][m[1]] = true; scrappedAt[sn].any = true; });
+  const fpyOf = (units, st) => units.length ? Math.round(units.filter(sn => !(scrappedAt[sn] && (st ? scrappedAt[sn][st] : scrappedAt[sn].any))).length / units.length * 100) : null;
+  const finishedUnits = [...new Set(finished.map(e => e.serial.toUpperCase()))];
+  const fpy = fpyOf(finishedUnits, null);
   const parts = scraps.reduce((a, x) => a + x.qty, 0);
   const openHolds = side.holds.slice(1).filter(r => /on hold/i.test(tvCell(r[8]))).length;
   const kpis = [
     {v: finished.length, l: 'Headsets finished', s: 'Signed out of Station 6', c: 'var(--green)'},
+    {v: fpy === null ? '\u2014' : fpy, suffix: fpy === null ? '' : '%', l: 'First pass', s: 'Finished with no parts replaced', c: fpy === null ? 'var(--muted)' : fpy >= 95 ? 'var(--green)' : fpy >= 85 ? 'var(--amber)' : 'var(--red)'},
     {v: w.length, l: 'Sign ins and outs', s: 'Across all 6 stations', c: 'var(--purple)'},
     {v: parts, l: 'Parts scrapped', s: scraps.length ? 'On ' + new Set(scraps.map(x => x.part)).size + ' part type(s)' : 'None this shift', c: 'var(--amber)'},
     {v: openHolds, l: 'Units on hold', s: tvStuck.length + ' stuck over ' + TV_STUCK_HOURS + 'h', c: openHolds || tvStuck.length ? 'var(--red)' : 'var(--cyan)'}
   ];
   document.getElementById('ssKpis').innerHTML = kpis.map((k, i) =>
     '<div class="panel ssum-kpi"><div class="v" id="ss-kpi-' + i + '" style="color:' + k.c + ';">0</div><div class="l">' + k.l + '</div><div class="s">' + k.s + '</div></div>').join('');
-  kpis.forEach((k, i) => animateCountUp(document.getElementById('ss-kpi-' + i), k.v));
-  document.getElementById('ssStations').innerHTML = '<div class="ssum-st head"><span></span><span>Station</span><span>Signed in</span><span>Signed out</span><span>Median time</span></div>' +
+  kpis.forEach((k, i) => {
+    const el = document.getElementById('ss-kpi-' + i);
+    if(typeof k.v !== 'number'){ el.textContent = k.v; return; }
+    if(k.suffix){ el.textContent = k.v + k.suffix; return; }
+    animateCountUp(el, k.v);
+  });
+  document.getElementById('ssStations').innerHTML = '<div class="ssum-st head"><span></span><span>Station</span><span>Signed in</span><span>Signed out</span><span>First pass</span><span>Median time</span></div>' +
     ['1','2','3','4','5','6'].map(n => {
       const ins = w.filter(e => e.stationNum === n && e.event === 'MoveIn').length;
       const outs = w.filter(e => e.stationNum === n && e.event === 'MoveOut').length;
       const d = (dur[n] || []).slice().sort((a, b) => a - b);
-      return '<div class="ssum-st"><span class="n">' + n + '</span><span class="nm">' + (STATION_LABELS[n] || '') + '</span><b>' + ins + '</b><b>' + outs + '</b><span>' + (d.length ? formatDuration(d[Math.floor(d.length / 2)]) : '\u2014') + '</span></div>';
+      const sf = fpyOf([...new Set(w.filter(e => e.stationNum === n && e.event === 'MoveOut').map(e => e.serial.toUpperCase()))], n);
+      return '<div class="ssum-st"><span class="n">' + n + '</span><span class="nm">' + (STATION_LABELS[n] || '') + '</span><b>' + ins + '</b><b>' + outs + '</b><span' + (sf !== null && sf < 90 ? ' style="color:var(--amber); font-weight:800;"' : '') + '>' + (sf === null ? '\u2014' : sf + '%') + '</span><span>' + (d.length ? formatDuration(d[Math.floor(d.length / 2)]) : '\u2014') + '</span></div>';
     }).join('');
   const byPart = {};
   scraps.forEach(x => { byPart[x.part] = byPart[x.part] || {qty: 0, pn: x.pn}; byPart[x.part].qty += x.qty; });
