@@ -5413,8 +5413,8 @@ async function refreshStuckUnits(useCached){
 // Shift times — edit these to match the floor's real shifts.
 // =====================================================================
 const SHIFT_DEFS = [
-  {name: 'Shift 1', start: '06:00', end: '14:30'},
-  {name: 'Shift 2', start: '14:30', end: '23:00'}
+  {name: 'Shift 1', start: '07:00', end: '15:30'},
+  {name: 'Shift 2', start: '15:00', end: '23:30'}   // overlaps Shift 1 by 30 minutes (handover)
 ];
 let ssLast = null;   // last built summary, for print / CSV
 function shiftWindow(dayStr, shiftName){
