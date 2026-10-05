@@ -1233,10 +1233,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 <div id="releaseOverlay" class="ps-overlay">
   <div class="ps-box" style="border-top-color:#1d7a3f; width:min(560px,100%);">
     <div class="ps-head"><h2>Release from hold</h2><button class="secondary" id="btnCloseRelease">Close</button></div>
+    <label class="field" id="rlSerialWrap"><span>Headset serial</span><input type="text" id="rlSerial" placeholder="Scan the unit on hold" autocomplete="off"></label>
     <p class="hint" id="rlInfo"></p>
-    <label class="field"><span>What was done</span><input type="text" id="rlNote" placeholder="e.g. replaced DVR board, passed retest" autocomplete="off"></label>
+    <label class="field"><span>What was done (optional)</span><input type="text" id="rlNote" placeholder="e.g. replaced DVR board, passed retest" autocomplete="off"></label>
     <label class="field"><span>Your initials</span><input type="text" id="rlPerson" autocomplete="off"></label>
-    <div class="btnrow"><button class="accent" id="btnSubmitRelease">Release</button></div>
+    <p class="hint">Releasing takes the unit off hold and moves it on to its next step straight away: signed out of the station it was in, or into the next station if it was between stations.</p>
+    <div class="btnrow"><button class="accent" id="btnSubmitRelease">Release hold</button></div>
     <div class="hint" id="rlMsg"></div>
   </div>
 </div>
@@ -1343,6 +1345,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div class="btnrow" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
       <button class="secondary" id="btnStationRefresh">Refresh station status</button>
       <button class="danger" id="btnOpenPartScrap">Scrap a part</button>
+      <button class="secondary" id="btnOpenHoldFloor">Put on hold</button>
       <span class="hint" id="partScrapQueueNote" style="align-self:center;"></span>
       <label class="quick-loc" title="Hover, then scan or type a serial">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
@@ -1545,7 +1548,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
   <div class="panel" id="holdsPanel">
     <h2>On hold <span class="count" id="holdsCount"></span></h2>
-    <p class="hint">Units that can't be fixed on the line right away. A unit on hold can't be signed in or out at any station until it's released.</p>
+    <p class="hint">Units that can't be fixed on the line right away. Anyone can put a unit on hold from Station Sign In/Out; releasing is done here. A unit on hold can't be signed in or out at any station until it's released.</p>
     <div class="btnrow" style="margin-bottom:10px;"><button class="secondary" id="btnOpenHold">Put a unit on hold</button></div>
     <div id="holdsBody"><div class="hint">Checking&hellip;</div></div>
   </div>
@@ -2185,6 +2188,7 @@ async function handleStationScan(serialRaw){
   // inside a lock, using its own fresh read — so it's correct even if this local guess is stale.
   const cachedGuess = stationSerialCache[serial];
   const guessIn = cachedGuess && cachedGuess.latest && cachedGuess.latest.event === 'MoveIn';
+  stationLastAttempt = serial; updateHoldButton();
   msg.textContent = (guessIn ? 'Signing OUT ' : 'Signing IN ') + serial + '\u2026';
   try{
     const opticalSerial = (selectedStation === '1' || autoMode) ? opticalSerialRaw : '';
@@ -2213,7 +2217,7 @@ async function handleStationScan(serialRaw){
       if(result.reason === 'signedInElsewhere'){
         msg.textContent = serial + ' is currently signed IN at Station ' + result.station + ' \u2014 sign it out there first before moving it anywhere else.';
       }else if(result.reason === 'onHold'){
-        msg.textContent = serial + ' is ON HOLD (' + (result.holdReason || 'no reason given') + (result.heldBy ? ', put on hold by ' + result.heldBy : '') + '). Release it under "On hold" below before signing it in or out.';
+        msg.textContent = serial + ' is ON HOLD (' + (result.holdReason || 'no reason given') + (result.heldBy ? ', put on hold by ' + result.heldBy : '') + '). Press Release hold when it is fixed \u2014 that releases it and moves it on.';
       }else if(result.reason === 'omLinkedElsewhere'){
         msg.textContent = 'Optical module ' + result.opticalSerial + ' is already linked to headset ' + result.linkedTo + '. Each module can only go in one headset \u2014 scan a different optical module. If that headset\u2019s module was swapped out, log it with Scrap a part first.';
       }else if(result.reason === 'wrongStation'){
@@ -5104,16 +5108,25 @@ async function refreshHolds(){
       (h.details ? ': ' + locEsc(h.details) : '') + '</td><td>' + locEsc(h.by) + '</td><td>' + (h.at ? formatDuration(Date.now() - h.at) : '') + '</td><td><button class="secondary" data-release="' + h.id + '" style="padding:4px 12px;">Release</button></td></tr>').join('') +
     '</tbody></table></div>' : '<div class="hint">No units on hold.</div>';
   refreshStuckUnits(true);   // held units drop off the stuck list
+  updateHoldButton();
 }
-function openHoldModal(){
+function openHoldModal(prefill){
   const last = stationRecentScans[0];
-  document.getElementById('hdSerial').value = last ? last.serial : '';
+  const sn = typeof prefill === 'string' ? prefill : (last ? last.serial : '');
+  document.getElementById('hdSerial').value = sn;
   if(last && last.station) document.getElementById('hdStation').value = String(last.station).replace(/\D/g, '') || '2';
   document.getElementById('hdPerson').value = localStorage.getItem(HOLD_PERSON_KEY) || document.getElementById('stationPerson').value.trim();
   document.getElementById('hdDetails').value = '';
   document.getElementById('hdMsg').textContent = '';
   document.getElementById('holdOverlay').classList.add('open');
-  setTimeout(() => document.getElementById(last ? 'hdReason' : 'hdSerial').focus(), 50);
+  setTimeout(() => document.getElementById(sn ? 'hdReason' : 'hdSerial').focus(), 50);
+}
+function holdSerialChanged(){
+  const sn = document.getElementById('hdSerial').value.trim().toUpperCase();
+  if(sn && openHolds.some(h => h.sn === sn)){
+    document.getElementById('holdOverlay').classList.remove('open');
+    openReleaseFor(sn);   // it's already on hold, so this is a release
+  }
 }
 async function submitHold(){
   const msg = document.getElementById('hdMsg');
@@ -5139,35 +5152,131 @@ async function submitHold(){
     msg.textContent = 'Could not save the hold: ' + e.message;
   }finally{ btn.disabled = false; btn.textContent = 'Put on hold'; }
 }
-function openReleaseModal(holdId){
-  releasingHold = openHolds.find(h => h.id === holdId);
-  if(!releasingHold) return;
-  document.getElementById('rlInfo').textContent = releasingHold.sn + ', on hold for ' + (releasingHold.at ? formatDuration(Date.now() - releasingHold.at) : '?') + ': ' + releasingHold.reason + (releasingHold.details ? ' (' + releasingHold.details + ')' : '');
+function showReleaseInfo(){
+  const info = document.getElementById('rlInfo');
+  if(!releasingHold){ info.textContent = ''; return; }
+  info.textContent = releasingHold.sn + ', on hold for ' + (releasingHold.at ? formatDuration(Date.now() - releasingHold.at) : '?') + ': ' + releasingHold.reason + (releasingHold.details ? ' (' + releasingHold.details + ')' : '');
+}
+function resetReleaseForm(){
   document.getElementById('rlNote').value = '';
   document.getElementById('rlPerson').value = localStorage.getItem(HOLD_PERSON_KEY) || document.getElementById('stationPerson').value.trim();
   document.getElementById('rlMsg').textContent = '';
+}
+// from the engineering list: the hold is already known
+function openReleaseModal(holdId){
+  releasingHold = openHolds.find(h => h.id === holdId);
+  if(!releasingHold) return;
+  resetReleaseForm();
+  document.getElementById('rlSerialWrap').style.display = 'none';
+  showReleaseInfo();
   document.getElementById('releaseOverlay').classList.add('open');
   setTimeout(() => document.getElementById('rlNote').focus(), 50);
+}
+// The station tab has ONE hold button. It follows the unit in front of the builder (the serial in
+// the scan box, or the last one scanned) and reads "Release hold" when that unit is on hold.
+let stationLastAttempt = '';
+function holdTargetSerial(){
+  const box = document.getElementById('stationScanInput').value.trim().toUpperCase();
+  if(/^H2[B-F][A-Z0-9]{6,}$/.test(box)) return box;
+  return stationLastAttempt || (stationRecentScans[0] ? stationRecentScans[0].serial : '');
+}
+function updateHoldButton(){
+  const sn = holdTargetSerial();
+  const held = !!sn && openHolds.some(h => h.sn === sn);
+  const b = document.getElementById('btnOpenHoldFloor');
+  b.textContent = held ? 'Release hold' : 'Put on hold';
+  b.classList.toggle('accent', held);
+  b.classList.toggle('secondary', !held);
+  b.title = sn ? (held ? sn + ' is on hold' : 'Put ' + sn + ' on hold') : '';
+}
+function openHoldToggle(){
+  const sn = holdTargetSerial();
+  if(sn && openHolds.some(h => h.sn === sn)) openReleaseFor(sn);
+  else openHoldModal(sn);
+}
+function openReleaseFor(sn){
+  releasingHold = null;
+  resetReleaseForm();
+  document.getElementById('rlSerialWrap').style.display = '';
+  document.getElementById('rlSerial').value = sn || '';
+  document.getElementById('releaseOverlay').classList.add('open');
+  if(sn) findHoldForRelease(sn);
+  setTimeout(() => document.getElementById(sn ? 'rlPerson' : 'rlSerial').focus(), 50);
+}
+async function findHoldForRelease(raw){
+  const sn = String(raw || '').trim().toUpperCase();
+  const info = document.getElementById('rlInfo');
+  releasingHold = null;
+  if(!sn){ info.textContent = ''; return; }
+  document.getElementById('rlSerial').value = sn;
+  info.textContent = 'Checking ' + sn + '\u2026';
+  await refreshHolds();
+  releasingHold = openHolds.find(h => h.sn === sn) || null;
+  if(releasingHold) showReleaseInfo();
+  else{
+    // not on hold, so this is a hold instead
+    document.getElementById('releaseOverlay').classList.remove('open');
+    openHoldModal(sn);
+  }
 }
 async function submitRelease(){
   const msg = document.getElementById('rlMsg');
   const note = document.getElementById('rlNote').value.trim();
   const person = document.getElementById('rlPerson').value.trim();
-  if(!note){ msg.textContent = 'Say what was done to the unit.'; return; }
-  if(!person){ msg.textContent = 'Enter your initials.'; return; }
+  if(!releasingHold){ msg.textContent = 'Scan a unit that is on hold first.'; return; }
+  if(!person){ msg.textContent = 'Enter your initials.'; document.getElementById('rlPerson').focus(); return; }
+  localStorage.setItem(HOLD_PERSON_KEY, person);
   const btn = document.getElementById('btnSubmitRelease');
   btn.disabled = true; btn.textContent = 'Saving\u2026';
   try{
+    const sn = releasingHold.sn;
     const res = await sheetPost({action: 'releaseHold', holdId: releasingHold.id, person: person, note: note});
     if(res && res.status === 'error') throw new Error(res.message || 'release failed');
-    document.getElementById('releaseOverlay').classList.remove('open');
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + sn + ' released.</b> Moving it on\u2026';
+    const moved = await advanceAfterRelease(sn, person);
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + sn + ' released' + (moved ? ' and ' + moved : '') + '.</b>';
+    setTimeout(() => document.getElementById('releaseOverlay').classList.remove('open'), 1600);
     refreshHolds();
   }catch(e){
     msg.textContent = 'Could not release: ' + e.message;
-  }finally{ btn.disabled = false; btn.textContent = 'Release'; }
+  }finally{ btn.disabled = false; btn.textContent = 'Release hold'; }
+}
+// After a release, make the move the unit was waiting for, exactly like an auto-detect scan:
+// signed in at a station -> sign it out; between stations -> sign it into the next one.
+async function advanceAfterRelease(sn, person){
+  try{
+    const r = await sheetPost({action: 'stationScanAction', serial: sn, autoMode: true, selectedStation: '', person: person, opticalSerial: ''});
+    if(r.status === 'ok'){
+      const stationLabel = 'Station #' + r.targetStation;
+      if(!stationSerialCache[sn]) stationSerialCache[sn] = {latest: null, completed: new Set()};
+      stationSerialCache[sn].latest = {event: r.event, station: stationLabel, dt: Date.now()};
+      if(r.event === 'MoveOut') stationSerialCache[sn].completed.add(r.targetStation);
+      saveStationLocalCache();
+      const duration = r.duration !== null && r.duration !== undefined ? formatDuration(r.duration) : null;
+      stationRecentScans.unshift({time: r.dateTime, serial: sn, station: r.targetStation, event: r.event, person: person, duration: duration});
+      renderStationRecent();
+      renderStationCurrentlyHere();
+      updateHoldButton();
+      return (r.event === 'MoveOut' ? 'signed out of ' : 'signed into ') + (STATION_LABELS[r.targetStation] || 'Station ' + r.targetStation);
+    }
+    if(r.status === 'complete') return 'it has already finished all 6 stations';
+    if(r.status === 'ignored') return 'left at ' + (STATION_LABELS[r.station] || 'its station') + ' (it was only just signed in)';
+    return 'left where it is (' + (r.message || r.reason || 'no move made') + ')';
+  }catch(e){
+    return 'left where it is (could not move it: ' + e.message + ')';
+  }
 }
 (function initHolds(){
   document.getElementById('btnOpenHold').addEventListener('click', openHoldModal);
+  document.getElementById('btnOpenHoldFloor').addEventListener('click', openHoldToggle);
+  const hdSerial = document.getElementById('hdSerial');
+  hdSerial.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); holdSerialChanged(); } });
+  hdSerial.addEventListener('change', holdSerialChanged);
+  document.getElementById('stationScanInput').addEventListener('input', updateHoldButton);
+  const rlSerial = document.getElementById('rlSerial');
+  rlSerial.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); findHoldForRelease(rlSerial.value); } });
+  rlSerial.addEventListener('change', () => findHoldForRelease(rlSerial.value));
+  document.getElementById('rlPerson').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); submitRelease(); } });
   document.getElementById('btnCloseHold').addEventListener('click', () => document.getElementById('holdOverlay').classList.remove('open'));
   document.getElementById('btnSubmitHold').addEventListener('click', submitHold);
   document.getElementById('btnCloseRelease').addEventListener('click', () => document.getElementById('releaseOverlay').classList.remove('open'));
@@ -5527,7 +5636,7 @@ async function runLocate(query){
       items.push({t: locDate(r[7]), c: '#c7851a', tag: 'hold', tagText: 'ON HOLD', h: 'Put on hold at ' + locStationName(r[3]),
         d: '<span>Reason</span> ' + locEsc(r[4]) + (locCell(r[5]) ? ': ' + locEsc(r[5]) : '') + ' &nbsp;<span>By</span> ' + locEsc(r[6] || 'unknown')});
       if(/released/i.test(locCell(r[8]))) items.push({t: locDate(r[10]), c: '#1d7a3f', tag: 'in', tagText: 'RELEASED', h: 'Released from hold',
-        d: '<span>By</span> ' + locEsc(r[9] || 'unknown') + (locCell(r[11]) ? ' &nbsp;<span>What was done</span> ' + locEsc(r[11]) : '') +
+        d: '<span>By</span> ' + locEsc(r[9] || 'unknown') + (locCell(r[12]) ? ' &nbsp;<span>Approved by</span> ' + locEsc(r[12]) : '') + (locCell(r[11]) ? ' &nbsp;<span>What was done</span> ' + locEsc(r[11]) : '') +
            (locDate(r[7]) && locDate(r[10]) ? ' &nbsp;<span>On hold for</span> ' + formatDuration(locDate(r[10]) - locDate(r[7])) : '')});
     });
     const openHold = myHolds.find(r => /on hold/i.test(locCell(r[8])));
