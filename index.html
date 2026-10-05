@@ -50,12 +50,26 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
   nav.tabs button.active{background:var(--accent); color:#fff;}
   .tabpanel{display:none;}
+  /* ---- shift summary email recipients ---- */
+  .em-list{ display:flex; flex-direction:column; gap:6px; margin:4px 0 8px; min-height:34px; }
+  .em-chip{ display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:var(--accent-soft); font-family:var(--mono); font-size:13px; }
+  .em-chip button{ border:none; background:none; color:#a13636; font-weight:800; cursor:pointer; padding:0 4px; font-size:15px; }
+  .em-add{ display:flex; gap:6px; }
+  .em-add input{ flex:1; }
+  .em-dirty{ color:#8a5a0b; font-weight:700; }
+  /* ---- connection warning on the station tab ---- */
+  .conn-banner{ display:none; position:sticky; top:0; z-index:40; margin:0 0 12px; padding:14px 18px; border-radius:8px;
+    background:#c0392b; color:#fff; font-size:15px; box-shadow:0 6px 18px rgba(192,57,43,.35); animation:connPulse 1.4s ease-in-out infinite; }
+  .conn-banner b{ font-size:17px; display:block; margin-bottom:2px; }
+  .conn-banner.show{ display:block; }
+  .conn-banner.back{ display:block; background:#1d7a3f; animation:none; box-shadow:none; }
+  @keyframes connPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(192,57,43,.5); } 50%{ box-shadow:0 0 0 8px rgba(192,57,43,0); } }
   /* ---- stuck units, holds, shift summary ---- */
   .nav-badge{ display:none; margin-left:6px; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#c0392b; color:#fff;
     font-size:11px; font-weight:800; line-height:18px; text-align:center; vertical-align:1px; }
   .nav-badge.show{ display:inline-block; }
   .stuck-age{ font-weight:800; color:#a13636; }
-  .ss-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin:12px 0 14px; }
+  .ss-grid{ display:grid; grid-template-columns:repeat(5, 1fr); gap:10px; margin:12px 0 14px; }
   .ss-stat{ background:var(--accent-soft); border-radius:8px; padding:10px 12px; }
   .ss-stat .v{ font-size:22px; font-weight:800; }
   .ss-stat .k{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
@@ -1299,6 +1313,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <label class="field"><span>To</span><input type="date" id="srTo"></label>
       <label class="field"><span>Style</span><select id="srStyle"><option value="">All styles</option></select></label>
     </div>
+    <label class="field" style="max-width:260px;"><span>Headsets planned (for the parts forecast)</span><input type="number" id="srPlanned" value="1000" min="1" step="50"></label>
     <div class="btnrow">
       <button class="accent" id="btnSrLoad">Load report</button>
       <button class="secondary" id="btnSrCsv" disabled>Download full list (CSV)</button>
@@ -1311,6 +1326,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </div><!-- /tab-return -->
 
 <div id="tab-stations" class="tabpanel">
+  <div id="connBanner" class="conn-banner" role="alert">
+    <b>Connection lost &mdash; scans are NOT being saved.</b>
+    <span id="connBannerSub">Stop scanning and check the Wi-Fi. This clears by itself when the sheet can be reached again.</span>
+  </div>
 
   <div class="panel">
     <h2>Station sign in / sign out</h2>
@@ -1567,6 +1586,28 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     </div>
     <div class="hint" id="ssMsg"></div>
     <div id="ssBody"></div>
+  </div>
+
+  <div class="panel" id="summaryEmailPanel">
+    <h2>Shift summary emails</h2>
+    <p class="hint">Who gets the automatic end-of-shift summary, sent about 15 minutes after each shift ends. Supervisors go under <b>To</b>; anyone else who should see it goes under <b>CC</b>. Changes take effect from the next email.</p>
+    <div class="row2">
+      <div class="field">
+        <span class="om-live-fieldlab">To (supervisors)</span>
+        <div class="em-list" id="emTo"></div>
+        <div class="em-add"><input type="email" id="emToInput" placeholder="name@unusualmachines.com" autocomplete="off"><button class="secondary" id="btnEmToAdd">Add</button></div>
+      </div>
+      <div class="field">
+        <span class="om-live-fieldlab">CC</span>
+        <div class="em-list" id="emCc"></div>
+        <div class="em-add"><input type="email" id="emCcInput" placeholder="name@unusualmachines.com" autocomplete="off"><button class="secondary" id="btnEmCcAdd">Add</button></div>
+      </div>
+    </div>
+    <div class="btnrow" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="accent" id="btnEmSave">Save recipients</button>
+      <button class="secondary" id="btnEmTest">Send test email now</button>
+    </div>
+    <div class="hint" id="emMsg"></div>
   </div>
 
   <div class="settings-eng-head">
@@ -2253,6 +2294,7 @@ async function handleStationScan(serialRaw){
     }
   }catch(e){
     msg.textContent = 'Could not log this scan: ' + e.message;
+    connectionProblem(e.message);   // a failed scan is the clearest sign the link is down
   }finally{
     scanInFlight = false;
     inputEl.disabled = false;
@@ -5012,12 +5054,43 @@ async function loadScrapReport(){
       smallTable('By station', byStation) +
       smallTable('By reason', byReason) +
     '</div>' +
+    '<div id="srForecast"></div>' +
     '<h3>Every scrapped part, newest first</h3>' +
     '<div class="tablewrap" style="max-height:420px;"><table><thead><tr><th>When</th><th>Headset serial</th><th>Style</th><th>Station</th><th>Part #</th><th>Part</th><th>Qty</th><th>Reason</th><th>Details</th><th>By</th><th>New OM</th></tr></thead><tbody>' +
       srRows.map(r => '<tr><td>' + (r.date ? locFmt(r.date) : '') + '</td><td><span class="loc-link loc-mono" data-sr-sn="' + r.sn + '">' + r.sn + '</span></td><td>' + r.style + '</td><td>' + locEsc(locStationName(r.station)) +
         '</td><td class="loc-mono">' + locEsc(r.pn) + '</td><td><b>' + locEsc(r.part) + '</b></td><td>' + r.qty + '</td><td>' + locEsc(r.reason) + '</td><td>' + locEsc(r.details) + '</td><td>' + locEsc(r.person) + '</td><td class="loc-mono">' + locEsc(r.replacement) + '</td></tr>').join('') +
     '</tbody></table></div>';
+  renderScrapForecast();
 }
+// Parts forecast: scrap rate per headset built in the chosen range, scaled to the planned build
+let srForecastRows = [];
+async function renderScrapForecast(){
+  const el = document.getElementById('srForecast');
+  if(!el || !srRows.length) return;
+  const planned = Math.max(1, parseInt(document.getElementById('srPlanned').value, 10) || 1000);
+  el.innerHTML = '<h3>Parts forecast</h3><div class="hint">Counting headsets built in this range\u2026</div>';
+  let built = 0;
+  try{
+    const days = await headsetsBuiltByDay();
+    const from = document.getElementById('srFrom').value, to = document.getElementById('srTo').value;
+    Object.keys(days).forEach(k => { if((!from || k >= from) && (!to || k <= to)) built += days[k]; });
+  }catch(e){
+    el.innerHTML = '<h3>Parts forecast</h3><div class="hint">Could not read the Monthly Archive for headsets built (' + locEsc(e.message) + ').</div>';
+    return;
+  }
+  if(!built){ el.innerHTML = '<h3>Parts forecast</h3><div class="hint">No headsets recorded as built in this date range, so there is no rate to forecast from.</div>'; return; }
+  const m = {};
+  srRows.forEach(r => { m[r.part] = m[r.part] || {pn: r.pn, qty: 0}; m[r.part].qty += r.qty; });
+  srForecastRows = Object.entries(m).map(([part, v]) => ({part: part, pn: v.pn, qty: v.qty, per1000: v.qty / built * 1000, expected: Math.ceil(v.qty / built * planned)}))
+    .sort((a, b) => b.expected - a.expected);
+  el.innerHTML = '<h3>Parts forecast</h3>' +
+    '<div class="hint" style="margin-bottom:6px;">' + built.toLocaleString() + ' headsets were built in this range. At the same scrap rate, building <b>' + planned.toLocaleString() + '</b> more headsets would need these extra parts on top of the build kit:</div>' +
+    '<div class="tablewrap"><table><thead><tr><th>Part #</th><th>Part</th><th>Scrapped in range</th><th>Per 1,000 built</th><th>Expected for ' + planned.toLocaleString() + '</th></tr></thead><tbody>' +
+    srForecastRows.map(f => '<tr><td class="loc-mono">' + locEsc(f.pn) + '</td><td><b>' + locEsc(f.part) + '</b></td><td>' + f.qty + '</td><td>' + f.per1000.toFixed(1) + '</td><td><b>' + f.expected + '</b></td></tr>').join('') +
+    '</tbody></table></div>';
+}
+document.getElementById('srPlanned').addEventListener('change', renderScrapForecast);
+
 // clicking a serial in the report opens its full history in Locate
 document.getElementById('scrapReportPanel').addEventListener('click', e => {
   const t = e.target.closest('[data-sr-sn]');
@@ -5046,8 +5119,10 @@ function downloadScrapCsv(summary){
       const st = locStationName(r.station); m[k].stations[st] = (m[k].stations[st] || 0) + r.qty;
     });
     const fmt = o => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' (' + v + ')').join('; ');
-    lines = [['Part number', 'Part', 'Qty to replace', 'Units affected', 'Reasons', 'Stations', 'Headset serials']]
-      .concat(Object.entries(m).sort((a, b) => b[1].qty - a[1].qty).map(([k, v]) => [v.pn, k, v.qty, v.units.size, fmt(v.reasons), fmt(v.stations), [...v.units].join(' ')]));
+    const planned = Math.max(1, parseInt(document.getElementById('srPlanned').value, 10) || 1000);
+    const fc = {}; srForecastRows.forEach(f => { fc[f.part] = f; });
+    lines = [['Part number', 'Part', 'Qty to replace', 'Units affected', 'Per 1,000 headsets built', 'Expected for ' + planned + ' planned', 'Reasons', 'Stations', 'Headset serials']]
+      .concat(Object.entries(m).sort((a, b) => b[1].qty - a[1].qty).map(([k, v]) => [v.pn, k, v.qty, v.units.size, fc[k] ? fc[k].per1000.toFixed(1) : '', fc[k] ? fc[k].expected : '', fmt(v.reasons), fmt(v.stations), [...v.units].join(' ')]));
   }
   const csv = '\ufeff' + lines.map(row => row.map(csvCell).join(',')).join('\r\n');   // BOM so Excel reads it as UTF-8
   const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
@@ -5406,26 +5481,36 @@ async function buildShiftSummary(){
   finished.forEach(e => { const st = (e.sn.match(/^H2[A-Z]/) || ['Other'])[0]; byStyle[st] = (byStyle[st] || 0) + 1; });
   const byOp = {};
   w.forEach(e => { const k = e.person || 'unknown'; byOp[k] = byOp[k] || {ins: 0, outs: 0}; if(/movein/i.test(e.event)) byOp[k].ins++; else byOp[k].outs++; });
+  // first pass = a unit got through (the station / the whole line) with no part replaced
+  const scrappedAt = {};
+  scrapRows.slice(1).forEach(r => { const sn = locCell(r[2]).toUpperCase(); if(!sn) return; scrappedAt[sn] = scrappedAt[sn] || {}; scrappedAt[sn][String(stationNumberFromLabel(locCell(r[4])) || '')] = true; scrappedAt[sn].any = true; });
+  stations.forEach(st => {
+    const units = [...new Set(w.filter(e => e.station === st.n && /moveout/i.test(e.event)).map(e => e.sn))];
+    st.fpy = units.length ? Math.round(units.filter(sn => !(scrappedAt[sn] && scrappedAt[sn][st.n])).length / units.length * 100) : null;
+  });
+  const finishedUnits = [...new Set(finished.map(e => e.sn))];
+  const fpy = finishedUnits.length ? Math.round(finishedUnits.filter(sn => !(scrappedAt[sn] && scrappedAt[sn].any)).length / finishedUnits.length * 100) : null;
   const scraps = scrapRows.slice(1).map(r => ({t: locDate(r[1]), sn: locCell(r[2]).toUpperCase(), part: locCell(r[5]), qty: Number(r[6]) || 1, reason: locCell(r[7]), pn: partNumberFor(r[5], locCell(r[11]))})).filter(x => inWin(x.t));
   const byPart = {};
   scraps.forEach(x => { const k = x.part; byPart[k] = byPart[k] || {pn: x.pn, qty: 0}; byPart[k].qty += x.qty; });
   const holdsPlaced = holdRows.slice(1).filter(r => inWin(locDate(r[7])));
   const holdsReleased = holdRows.slice(1).filter(r => /released/i.test(locCell(r[8])) && inWin(locDate(r[10])));
   const isNow = new Date() >= win.from && new Date() < win.to;
-  ssLast = {day: day, win: win, stations: stations, finished: finished.length, byStyle: byStyle, byOp: byOp, scraps: scraps, byPart: byPart,
+  ssLast = {day: day, win: win, stations: stations, finished: finished.length, fpy: fpy, byStyle: byStyle, byOp: byOp, scraps: scraps, byPart: byPart,
     holdsPlaced: holdsPlaced.length, holdsReleased: holdsReleased.length, openHolds: openHolds.length, moves: w.length};
   const scrapParts = scraps.reduce((a, x) => a + x.qty, 0);
   body.innerHTML =
     '<h3 style="margin-top:4px;">' + locEsc(new Date(day + 'T12:00:00').toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric'})) + ' \u00b7 ' + locEsc(win.label) + (isNow ? ' \u00b7 in progress' : '') + '</h3>' +
     '<div class="ss-grid">' +
       '<div class="ss-stat"><div class="v">' + finished.length + '</div><div class="k">Headsets finished (out of Station 6)</div></div>' +
+      '<div class="ss-stat"><div class="v">' + (fpy === null ? '\u2014' : fpy + '%') + '</div><div class="k">First pass (no parts replaced)</div></div>' +
       '<div class="ss-stat"><div class="v">' + w.length + '</div><div class="k">Sign ins and outs</div></div>' +
       '<div class="ss-stat"><div class="v">' + scrapParts + '</div><div class="k">Parts scrapped</div></div>' +
       '<div class="ss-stat"><div class="v">' + holdsPlaced.length + ' / ' + holdsReleased.length + '</div><div class="k">Holds placed / released</div></div>' +
     '</div>' +
     '<div class="ss-cols"><div>' +
-      '<h3>By station</h3><div class="tablewrap"><table><thead><tr><th>Station</th><th>Signed in</th><th>Signed out</th><th>Median time</th></tr></thead><tbody>' +
-      stations.map(st => '<tr><td>' + locEsc(st.name) + '</td><td>' + st.ins + '</td><td>' + st.outs + '</td><td>' + (st.median ? formatDuration(st.median) : '\u2014') + '</td></tr>').join('') + '</tbody></table></div>' +
+      '<h3>By station</h3><div class="tablewrap"><table><thead><tr><th>Station</th><th>Signed in</th><th>Signed out</th><th>First pass</th><th>Median time</th></tr></thead><tbody>' +
+      stations.map(st => '<tr><td>' + locEsc(st.name) + '</td><td>' + st.ins + '</td><td>' + st.outs + '</td><td>' + (st.fpy === null ? '\u2014' : st.fpy + '%') + '</td><td>' + (st.median ? formatDuration(st.median) : '\u2014') + '</td></tr>').join('') + '</tbody></table></div>' +
       '<h3>Finished by style</h3><div class="hint" style="font-size:14px;">' + (Object.keys(byStyle).sort().map(k => '<b>' + k + '</b> ' + byStyle[k]).join(' &nbsp; ') || 'None') + '</div>' +
     '</div><div>' +
       '<h3>By operator</h3><div class="tablewrap"><table><thead><tr><th>Operator</th><th>Sign ins</th><th>Sign outs</th></tr></thead><tbody>' +
@@ -5444,7 +5529,7 @@ function printShiftSummary(){
   if(!w){ document.getElementById('ssMsg').textContent = 'The print window was blocked. Allow pop-ups for this page and try again.'; return; }
   w.document.write('<!doctype html><html><head><title>Shift summary ' + ssLast.day + '</title><style>' +
     'body{font-family:Inter,system-ui,sans-serif;color:#1c1830;margin:24px;} h1{font-size:18px;margin:0 0 4px;} h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8b3fe0;margin:14px 0 6px;}' +
-    '.ss-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;} .ss-stat{border:1px solid #ddd6ee;border-radius:6px;padding:8px 10px;} .ss-stat .v{font-size:20px;font-weight:800;} .ss-stat .k{font-size:10px;text-transform:uppercase;color:#6c6584;}' +
+    '.ss-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;} .ss-stat{border:1px solid #ddd6ee;border-radius:6px;padding:8px 10px;} .ss-stat .v{font-size:20px;font-weight:800;} .ss-stat .k{font-size:10px;text-transform:uppercase;color:#6c6584;}' +
     '.ss-cols{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;} table{border-collapse:collapse;width:100%;font-size:12px;} th,td{border-bottom:1px solid #ddd6ee;padding:4px 6px;text-align:left;} th{color:#6c6584;font-size:10px;text-transform:uppercase;}' +
     '.hint{color:#1c1830;} .loc-mono{font-family:monospace;}</style></head><body><h1>Fat Shark headset line \u00b7 end-of-shift summary</h1>' + html +
     '<p style="margin-top:18px;color:#6c6584;font-size:11px;">Printed ' + new Date().toLocaleString() + '</p></body></html>');
@@ -5458,6 +5543,7 @@ function downloadShiftSummaryCsv(){
   L.push(['End-of-shift summary', ssLast.day, ssLast.win.label]);
   L.push([]);
   L.push(['Headsets finished (out of Station 6)', ssLast.finished]);
+  L.push(['First pass yield (no parts replaced)', ssLast.fpy === null ? '' : ssLast.fpy + '%']);
   Object.keys(ssLast.byStyle).sort().forEach(k => L.push(['  ' + k, ssLast.byStyle[k]]));
   L.push(['Sign ins and outs', ssLast.moves]);
   L.push(['Parts scrapped', ssLast.scraps.reduce((a, x) => a + x.qty, 0)]);
@@ -5465,8 +5551,8 @@ function downloadShiftSummaryCsv(){
   L.push(['Holds released', ssLast.holdsReleased]);
   L.push(['Units on hold now', ssLast.openHolds]);
   L.push([]);
-  L.push(['Station', 'Signed in', 'Signed out', 'Median time at station']);
-  ssLast.stations.forEach(st => L.push([st.name, st.ins, st.outs, st.median ? formatDuration(st.median) : '']));
+  L.push(['Station', 'Signed in', 'Signed out', 'First pass', 'Median time at station']);
+  ssLast.stations.forEach(st => L.push([st.name, st.ins, st.outs, st.fpy === null ? '' : st.fpy + '%', st.median ? formatDuration(st.median) : '']));
   L.push([]);
   L.push(['Operator', 'Sign ins', 'Sign outs']);
   Object.keys(ssLast.byOp).forEach(k => L.push([k, ssLast.byOp[k].ins, ssLast.byOp[k].outs]));
@@ -5479,6 +5565,166 @@ function downloadShiftSummaryCsv(){
   a.download = 'shift-summary-' + ssLast.day + '-' + ssLast.win.label.split(' (')[0].replace(/\s+/g, '-').toLowerCase() + '.csv';
   document.body.appendChild(a); a.click(); a.remove();
 }
+
+
+// =====================================================================
+// CONNECTION WARNING — a red banner on the station tab when the sheet can't
+// be reached, with a warning tone, so builders don't keep scanning into nothing.
+// =====================================================================
+let connDown = false, connPingTimer = null;
+function connBeep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.35].forEach(off => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'square'; o.frequency.value = 520;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + off);
+      g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + off + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + off + 0.25);
+      o.connect(g); g.connect(ctx.destination); o.start(ctx.currentTime + off); o.stop(ctx.currentTime + off + 0.3);
+    });
+  }catch(e){}
+}
+function connectionProblem(reason){
+  const b = document.getElementById('connBanner');
+  if(!connDown){ connDown = true; connBeep(); }
+  b.classList.remove('back'); b.classList.add('show');
+  b.querySelector('b').textContent = 'Connection lost \u2014 scans are NOT being saved.';
+  document.getElementById('connBannerSub').textContent = 'Stop scanning and check the Wi-Fi.' + (reason ? ' (' + reason + ')' : '') + ' This clears by itself when the sheet can be reached again.';
+  startConnPing(10000);   // check more often until it's back
+}
+function connectionOk(){
+  if(!connDown) return;
+  connDown = false;
+  const b = document.getElementById('connBanner');
+  b.classList.remove('show'); b.classList.add('back');
+  b.querySelector('b').textContent = 'Back online.';
+  document.getElementById('connBannerSub').textContent = 'Scans are saving again. Re-scan any unit you scanned while the banner was red.';
+  setTimeout(() => { if(!connDown) b.classList.remove('back'); }, 8000);
+  startConnPing(30000);
+  if(typeof flushPartScrapQueue === 'function') flushPartScrapQueue();
+}
+async function connPing(){
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token) return;
+  if(!navigator.onLine){ connectionProblem('this computer is offline'); return; }
+  try{ await sheetPostOnce({action: 'getRecentLogRows', maxRows: 1}); connectionOk(); }
+  catch(e){ connectionProblem(e.message); }
+}
+function startConnPing(ms){ clearInterval(connPingTimer); connPingTimer = setInterval(connPing, ms); }
+window.addEventListener('offline', () => connectionProblem('this computer is offline'));
+window.addEventListener('online', connPing);
+startConnPing(30000);
+setTimeout(connPing, 4000);
+
+// =====================================================================
+// HEADSETS BUILT IN A DATE RANGE (Monthly Archive) — the base for the parts
+// forecast in the scrap report.
+// =====================================================================
+const MONTHLY_ARCHIVE_TAB_NAME = 'Monthly Archive';
+const MONTHS_LC = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+let archiveBuiltCache = null;   // {at, days: {yyyy-mm-dd: headsets}}
+async function headsetsBuiltByDay(){
+  if(archiveBuiltCache && Date.now() - archiveBuiltCache.at < 10 * 60000) return archiveBuiltCache.days;
+  const rows = (await sheetPost({action: 'getFullSheet', sheet: MONTHLY_ARCHIVE_TAB_NAME})).rows || [];
+  const days = {};
+  const header = rows[0] || [];
+  for(let c = 0; c < header.length; c++){
+    let year, mi;
+    const iso = String(header[c] || '').match(/^(\d{4})-(\d{2})-\d{2}T/);
+    if(iso){ year = +iso[1]; mi = +iso[2] - 1; }
+    else{ const m = String(header[c] || '').trim().toLowerCase().match(/([a-z]+)\s+(\d{4})/); if(!m || MONTHS_LC.indexOf(m[1]) < 0) continue; year = +m[2]; mi = MONTHS_LC.indexOf(m[1]); }
+    const seen = new Set();
+    for(let r = 2; r < rows.length; r++){
+      const cell = String((rows[r] || [])[c] || '');
+      const parts = cell.split('|'); if(parts.length < 2) continue;
+      const sn = parts[0].trim().toUpperCase();
+      if(!/^H2[A-Z]/.test(sn) || seen.has(sn)) continue;      // headsets only, no optical modules
+      seen.add(sn);
+      const dm = parts[1].trim().match(/^(\d+)\/(\d+)/); if(!dm) continue;
+      const k = localDayKeyLoc(new Date(year, +dm[1] - 1, +dm[2], 12));
+      days[k] = (days[k] || 0) + 1;
+    }
+  }
+  archiveBuiltCache = {at: Date.now(), days: days};
+  return days;
+}
+
+
+// =====================================================================
+// SHIFT SUMMARY EMAIL RECIPIENTS — stored by the sheet's script, edited here
+// =====================================================================
+let emRec = {to: [], cc: []}, emLoaded = false;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function renderEmailLists(dirty){
+  ['to', 'cc'].forEach(k => {
+    const el = document.getElementById(k === 'to' ? 'emTo' : 'emCc');
+    el.innerHTML = emRec[k].length ? emRec[k].map((e, i) => '<div class="em-chip"><span>' + locEsc(e) + '</span><button title="Remove" data-em-remove="' + k + ':' + i + '">\u00d7</button></div>').join('')
+      : '<div class="hint">' + (k === 'to' ? 'Nobody yet.' : 'Nobody.') + '</div>';
+  });
+  if(dirty) document.getElementById('emMsg').innerHTML = '<span class="em-dirty">Unsaved changes \u2014 press Save recipients.</span>';
+}
+async function loadEmailRecipients(){
+  const msg = document.getElementById('emMsg');
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token){ msg.textContent = 'No sheet connection.'; return; }
+  try{
+    const r = await sheetPost({action: 'getSummaryRecipients'});
+    emRec = {to: r.to || [], cc: r.cc || []}; emLoaded = true;
+    renderEmailLists(false);
+    msg.textContent = r.defaults ? 'Showing the starting list. Press Save recipients to keep it, or change it first.' : '';
+  }catch(e){
+    msg.textContent = /unknown action/i.test(e.message) ? 'The sheet\u2019s script needs the latest Code.gs deployed before recipients can be managed here.' : 'Could not load recipients: ' + e.message;
+  }
+}
+function addEmail(k){
+  const input = document.getElementById(k === 'to' ? 'emToInput' : 'emCcInput');
+  const v = input.value.trim().toLowerCase();
+  if(!EMAIL_RE.test(v)){ document.getElementById('emMsg').textContent = '"' + input.value.trim() + '" doesn\u2019t look like an email address.'; return; }
+  const other = k === 'to' ? 'cc' : 'to';
+  emRec[other] = emRec[other].filter(e => e !== v);     // someone is either To or CC, not both
+  if(emRec[k].indexOf(v) < 0) emRec[k].push(v);
+  input.value = '';
+  renderEmailLists(true);
+}
+async function saveEmailRecipients(){
+  const msg = document.getElementById('emMsg');
+  const btn = document.getElementById('btnEmSave');
+  btn.disabled = true;
+  try{
+    const r = await sheetPost({action: 'setSummaryRecipients', to: emRec.to, cc: emRec.cc});
+    if(r.status === 'error') throw new Error(r.message);
+    emRec = {to: r.to, cc: r.cc}; renderEmailLists(false);
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Saved.</b> ' + r.to.length + ' To, ' + r.cc.length + ' CC.';
+  }catch(e){ msg.textContent = 'Could not save: ' + e.message; }
+  finally{ btn.disabled = false; }
+}
+async function sendTestSummary(){
+  const msg = document.getElementById('emMsg');
+  const btn = document.getElementById('btnEmTest');
+  btn.disabled = true; msg.textContent = 'Sending\u2026';
+  try{
+    const r = await sheetPost({action: 'sendSummaryNow'});
+    if(r.status === 'error') throw new Error(r.message);
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Test email sent</b> for ' + locEsc(r.shift || 'the last shift') + ' to ' + locEsc((r.to || []).join(', ')) + ((r.cc || []).length ? ', CC ' + locEsc(r.cc.join(', ')) : '') + '.';
+  }catch(e){ msg.textContent = 'Could not send: ' + e.message; }
+  finally{ btn.disabled = false; }
+}
+(function initEmailRecipients(){
+  document.getElementById('btnEmToAdd').addEventListener('click', () => addEmail('to'));
+  document.getElementById('btnEmCcAdd').addEventListener('click', () => addEmail('cc'));
+  document.getElementById('emToInput').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); addEmail('to'); } });
+  document.getElementById('emCcInput').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); addEmail('cc'); } });
+  document.getElementById('btnEmSave').addEventListener('click', saveEmailRecipients);
+  document.getElementById('btnEmTest').addEventListener('click', sendTestSummary);
+  document.getElementById('summaryEmailPanel').addEventListener('click', e => {
+    const b = e.target.closest('[data-em-remove]');
+    if(!b) return;
+    const [k, i] = b.getAttribute('data-em-remove').split(':');
+    emRec[k].splice(Number(i), 1);
+    renderEmailLists(true);
+  });
+})();
 
 // =====================================================================
 // LOCATE — full history of one serial, read straight from the sheet tabs.
@@ -5901,6 +6147,7 @@ function openSettings(){
   document.getElementById('tab-stations').classList.remove('active');
   // The rework generator lives in here now, so make sure its dedupe list is current
   if(!opticalHistoryPulled){ const c = sheetConfig(); if(c.url && c.token) refreshOpticalHistory(); }
+  if(typeof loadEmailRecipients === 'function' && !emLoaded) loadEmailRecipients();
   document.getElementById('tab-return').classList.remove('active');
   document.getElementById('view-settings').classList.add('active');
   document.querySelector('nav.tabs').style.display = 'none';
