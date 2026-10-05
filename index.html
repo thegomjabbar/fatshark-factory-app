@@ -50,6 +50,18 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
   nav.tabs button.active{background:var(--accent); color:#fff;}
   .tabpanel{display:none;}
+  /* ---- stuck units, holds, shift summary ---- */
+  .nav-badge{ display:none; margin-left:6px; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#c0392b; color:#fff;
+    font-size:11px; font-weight:800; line-height:18px; text-align:center; vertical-align:1px; }
+  .nav-badge.show{ display:inline-block; }
+  .stuck-age{ font-weight:800; color:#a13636; }
+  .ss-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin:12px 0 14px; }
+  .ss-stat{ background:var(--accent-soft); border-radius:8px; padding:10px 12px; }
+  .ss-stat .v{ font-size:22px; font-weight:800; }
+  .ss-stat .k{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .ss-cols{ display:grid; grid-template-columns:1.3fr 1fr; gap:14px; }
+  #ssBody h3{ font-size:12px; text-transform:uppercase; letter-spacing:.05em; margin:12px 0 6px; color:var(--accent); }
+  @media (max-width:900px){ .ss-grid{ grid-template-columns:repeat(2,1fr); } .ss-cols{ grid-template-columns:1fr; } }
   /* ---- merged Shipping & Warehouse tab ---- */
   .subtabs{ display:inline-flex; gap:0; margin:0 0 14px; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--panel); }
   .subtabs button{ border:none; border-radius:0; background:transparent; color:var(--muted); padding:9px 18px; font-weight:700; }
@@ -1190,6 +1202,45 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
 </div><!-- /tab-omlive -->
 
+  <div id="holdOverlay" class="ps-overlay">
+  <div class="ps-box" style="border-top-color:#c7851a;">
+    <div class="ps-head"><h2>Put a unit on hold</h2><button class="secondary" id="btnCloseHold">Close</button></div>
+    <p class="hint">For a unit that can't be repaired on the line right now. It stays where it is, but can't be signed in or out anywhere until it's released.</p>
+    <div class="row2">
+      <label class="field"><span>Headset serial</span><input type="text" id="hdSerial" placeholder="Scan the headset serial" autocomplete="off"></label>
+      <label class="field"><span>Station</span>
+        <select id="hdStation">
+          <option value="1">Station 1 — Laser Mark + OM Link</option><option value="2">Station 2 — Build</option><option value="3">Station 3 — Testing</option>
+          <option value="4">Station 4 — Final Assembly</option><option value="5">Station 5 — QC</option><option value="6">Station 6 — Packing</option>
+        </select>
+      </label>
+    </div>
+    <div class="row2">
+      <label class="field"><span>Reason</span>
+        <select id="hdReason">
+          <option>Waiting on parts</option><option>Needs engineering review</option><option>Failed test, investigating</option>
+          <option>Cosmetic, needs a decision</option><option>Other</option>
+        </select>
+      </label>
+      <label class="field"><span>Your initials</span><input type="text" id="hdPerson" autocomplete="off"></label>
+    </div>
+    <label class="field"><span>Details &mdash; required for "Other"</span><input type="text" id="hdDetails" placeholder="What's wrong, what it's waiting on" autocomplete="off"></label>
+    <div class="btnrow"><button class="accent" id="btnSubmitHold">Put on hold</button></div>
+    <div class="hint" id="hdMsg"></div>
+  </div>
+</div>
+
+<div id="releaseOverlay" class="ps-overlay">
+  <div class="ps-box" style="border-top-color:#1d7a3f; width:min(560px,100%);">
+    <div class="ps-head"><h2>Release from hold</h2><button class="secondary" id="btnCloseRelease">Close</button></div>
+    <p class="hint" id="rlInfo"></p>
+    <label class="field"><span>What was done</span><input type="text" id="rlNote" placeholder="e.g. replaced DVR board, passed retest" autocomplete="off"></label>
+    <label class="field"><span>Your initials</span><input type="text" id="rlPerson" autocomplete="off"></label>
+    <div class="btnrow"><button class="accent" id="btnSubmitRelease">Release</button></div>
+    <div class="hint" id="rlMsg"></div>
+  </div>
+</div>
+
 <div id="locOverlay" class="ps-overlay">
 <div id="tab-locate" class="loc-box">
   <div class="panel">
@@ -1476,6 +1527,43 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <p class="hint">Replaces the small icon in the top-left corner of the app. Square image works best. Stored in this browser only.</p>
       <div class="hint" id="headerIconMsg"></div>
     </div>
+  </div>
+
+  <div class="settings-eng-head">
+    <h2>Engineering &middot; Line monitoring</h2>
+    <p class="hint">Stuck units, holds and the end-of-shift summary. These stay here in Settings so the floor screens stay clean.</p>
+  </div>
+  <div class="panel" id="stuckPanel">
+    <h2>Stuck units <span class="count" id="stuckCount"></span></h2>
+    <p class="hint">Units signed in at a station for longer than
+      <select id="stuckHours" style="width:auto; display:inline-block; padding:2px 6px;">
+        <option value="2">2 hours</option><option value="4">4 hours</option><option value="8">8 hours</option><option value="24">24 hours</option>
+      </select>
+      with no sign-out. Units on hold are listed under On hold instead. Checks every 3 minutes.</p>
+    <div id="stuckBody"><div class="hint">Checking&hellip;</div></div>
+  </div>
+
+  <div class="panel" id="holdsPanel">
+    <h2>On hold <span class="count" id="holdsCount"></span></h2>
+    <p class="hint">Units that can't be fixed on the line right away. A unit on hold can't be signed in or out at any station until it's released.</p>
+    <div class="btnrow" style="margin-bottom:10px;"><button class="secondary" id="btnOpenHold">Put a unit on hold</button></div>
+    <div id="holdsBody"><div class="hint">Checking&hellip;</div></div>
+  </div>
+
+  <div class="panel" id="shiftSummaryPanel">
+    <h2>End-of-shift summary</h2>
+    <p class="hint">Station activity, headsets finished, parts scrapped and holds for one shift, from the Log, Part Scrap and Holds tabs. Covers about the last two weeks.</p>
+    <div class="row3">
+      <label class="field"><span>Day</span><input type="date" id="ssDay"></label>
+      <label class="field"><span>Shift</span><select id="ssShift"></select></label>
+      <div class="field"><span class="om-live-fieldlab">&nbsp;</span><button class="accent" id="btnSsRun" style="width:100%;">Build summary</button></div>
+    </div>
+    <div class="btnrow" style="display:flex; gap:8px;">
+      <button class="secondary" id="btnSsPrint" disabled>Print</button>
+      <button class="secondary" id="btnSsCsv" disabled>Download CSV</button>
+    </div>
+    <div class="hint" id="ssMsg"></div>
+    <div id="ssBody"></div>
   </div>
 
   <div class="settings-eng-head">
@@ -2124,6 +2212,10 @@ async function handleStationScan(serialRaw){
     if(result.status === 'error'){
       if(result.reason === 'signedInElsewhere'){
         msg.textContent = serial + ' is currently signed IN at Station ' + result.station + ' \u2014 sign it out there first before moving it anywhere else.';
+      }else if(result.reason === 'onHold'){
+        msg.textContent = serial + ' is ON HOLD (' + (result.holdReason || 'no reason given') + (result.heldBy ? ', put on hold by ' + result.heldBy : '') + '). Release it under "On hold" below before signing it in or out.';
+      }else if(result.reason === 'omLinkedElsewhere'){
+        msg.textContent = 'Optical module ' + result.opticalSerial + ' is already linked to headset ' + result.linkedTo + '. Each module can only go in one headset \u2014 scan a different optical module. If that headset\u2019s module was swapped out, log it with Scrap a part first.';
       }else if(result.reason === 'wrongStation'){
         msg.textContent = serial + ' already completed Station ' + result.highestCompleted + ' \u2014 it needs to go to Station ' + result.expectedNext + ' next, not Station ' + selectedStation + '. Select Station ' + result.expectedNext + ' and scan again.';
       }else{
@@ -4962,6 +5054,323 @@ function downloadScrapCsv(summary){
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+
+// =====================================================================
+// SCRAP QUEUE AUTO-RETRY — entries that couldn't save are re-sent every
+// few minutes, when the tracker opens, and when the network comes back,
+// not just with that computer's next scrap. The script skips any it already has.
+// =====================================================================
+let partScrapFlushing = false;
+async function flushPartScrapQueue(){
+  const q = partScrapQueue();
+  const cfg = sheetConfig();
+  if(!q.length || !cfg.url || !cfg.token || partScrapFlushing) return;
+  partScrapFlushing = true;
+  try{
+    await sheetPost({action: 'appendPartScrap', rows: q});
+    const sent = new Set(q.map(r => r[0]));
+    setPartScrapQueue(partScrapQueue().filter(r => !sent.has(r[0])));   // keep anything added while sending
+    partScrapCache = null;
+  }catch(e){ /* still offline; next try in a few minutes */ }
+  finally{ partScrapFlushing = false; }
+}
+setInterval(flushPartScrapQueue, 3 * 60 * 1000);
+setTimeout(flushPartScrapQueue, 5000);
+window.addEventListener('online', flushPartScrapQueue);
+
+// =====================================================================
+// HOLDS — units that can't be fixed on the line right now. Stored in the
+// "Holds" tab. The script refuses station scans for a unit with an open hold.
+// Holds columns: HoldID | HeadsetSN | Style | Station | Reason | Details | HeldBy | HeldAt | Status | ReleasedBy | ReleasedAt | ReleaseNote
+// =====================================================================
+const HOLDS_TAB = 'Holds';
+const HOLD_PERSON_KEY = 'hold-person-v1';
+let openHolds = [];          // [{id, sn, station, reason, details, by, at}]
+let releasingHold = null;
+async function refreshHolds(){
+  const cfg = sheetConfig();
+  const body = document.getElementById('holdsBody');
+  if(!cfg.url || !cfg.token){ body.innerHTML = '<div class="hint">No sheet connection.</div>'; return; }
+  let rows = [];
+  try{ rows = (await sheetPost({action: 'getFullSheet', sheet: HOLDS_TAB})).rows || []; }
+  catch(e){ rows = []; }   // tab is created with the first hold
+  openHolds = rows.slice(1).filter(r => /on hold/i.test(locCell(r[8]))).map(r => ({
+    id: locCell(r[0]), sn: locCell(r[1]).toUpperCase(), station: locCell(r[3]), reason: locCell(r[4]), details: locCell(r[5]), by: locCell(r[6]), at: locDate(r[7])
+  })).sort((a, b) => (a.at ? a.at.getTime() : 0) - (b.at ? b.at.getTime() : 0));
+  document.getElementById('holdsCount').textContent = openHolds.length ? openHolds.length + ' units' : '';
+  body.innerHTML = openHolds.length ?
+    '<div class="tablewrap" style="max-height:320px;"><table><thead><tr><th>Headset serial</th><th>Station</th><th>Reason</th><th>Put on hold by</th><th>On hold for</th><th></th></tr></thead><tbody>' +
+    openHolds.map(h => '<tr><td><span class="loc-link loc-mono" data-open-loc="' + h.sn + '">' + h.sn + '</span></td><td>' + locEsc(locStationName(h.station)) + '</td><td>' + locEsc(h.reason) +
+      (h.details ? ': ' + locEsc(h.details) : '') + '</td><td>' + locEsc(h.by) + '</td><td>' + (h.at ? formatDuration(Date.now() - h.at) : '') + '</td><td><button class="secondary" data-release="' + h.id + '" style="padding:4px 12px;">Release</button></td></tr>').join('') +
+    '</tbody></table></div>' : '<div class="hint">No units on hold.</div>';
+  refreshStuckUnits(true);   // held units drop off the stuck list
+}
+function openHoldModal(){
+  const last = stationRecentScans[0];
+  document.getElementById('hdSerial').value = last ? last.serial : '';
+  if(last && last.station) document.getElementById('hdStation').value = String(last.station).replace(/\D/g, '') || '2';
+  document.getElementById('hdPerson').value = localStorage.getItem(HOLD_PERSON_KEY) || document.getElementById('stationPerson').value.trim();
+  document.getElementById('hdDetails').value = '';
+  document.getElementById('hdMsg').textContent = '';
+  document.getElementById('holdOverlay').classList.add('open');
+  setTimeout(() => document.getElementById(last ? 'hdReason' : 'hdSerial').focus(), 50);
+}
+async function submitHold(){
+  const msg = document.getElementById('hdMsg');
+  const sn = document.getElementById('hdSerial').value.trim().toUpperCase();
+  const station = document.getElementById('hdStation').value;
+  const reason = document.getElementById('hdReason').value;
+  const details = document.getElementById('hdDetails').value.trim();
+  const person = document.getElementById('hdPerson').value.trim();
+  if(!/^H2[B-F]/.test(sn)){ msg.textContent = 'Scan the headset serial (starts with H2).'; return; }
+  if(!person){ msg.textContent = 'Enter your initials.'; return; }
+  if(reason === 'Other' && !details){ msg.textContent = 'Describe the problem when the reason is "Other".'; return; }
+  localStorage.setItem(HOLD_PERSON_KEY, person);
+  const btn = document.getElementById('btnSubmitHold');
+  btn.disabled = true; btn.textContent = 'Saving\u2026';
+  try{
+    const res = await sheetPost({action: 'appendHold', row: [genUniqID(), sn, (sn.match(/^H2[A-Z]/) || [''])[0], 'Station #' + station, reason, details, person, new Date().toLocaleString(), 'On Hold', '', '', '']});
+    if(res && res.status === 'error' && res.reason === 'alreadyOnHold'){ msg.textContent = sn + ' is already on hold.'; return; }
+    if(res && res.status === 'error') throw new Error(res.message || 'hold failed');
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + sn + ' is on hold.</b>';
+    setTimeout(() => document.getElementById('holdOverlay').classList.remove('open'), 900);
+    refreshHolds();
+  }catch(e){
+    msg.textContent = 'Could not save the hold: ' + e.message;
+  }finally{ btn.disabled = false; btn.textContent = 'Put on hold'; }
+}
+function openReleaseModal(holdId){
+  releasingHold = openHolds.find(h => h.id === holdId);
+  if(!releasingHold) return;
+  document.getElementById('rlInfo').textContent = releasingHold.sn + ', on hold for ' + (releasingHold.at ? formatDuration(Date.now() - releasingHold.at) : '?') + ': ' + releasingHold.reason + (releasingHold.details ? ' (' + releasingHold.details + ')' : '');
+  document.getElementById('rlNote').value = '';
+  document.getElementById('rlPerson').value = localStorage.getItem(HOLD_PERSON_KEY) || document.getElementById('stationPerson').value.trim();
+  document.getElementById('rlMsg').textContent = '';
+  document.getElementById('releaseOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('rlNote').focus(), 50);
+}
+async function submitRelease(){
+  const msg = document.getElementById('rlMsg');
+  const note = document.getElementById('rlNote').value.trim();
+  const person = document.getElementById('rlPerson').value.trim();
+  if(!note){ msg.textContent = 'Say what was done to the unit.'; return; }
+  if(!person){ msg.textContent = 'Enter your initials.'; return; }
+  const btn = document.getElementById('btnSubmitRelease');
+  btn.disabled = true; btn.textContent = 'Saving\u2026';
+  try{
+    const res = await sheetPost({action: 'releaseHold', holdId: releasingHold.id, person: person, note: note});
+    if(res && res.status === 'error') throw new Error(res.message || 'release failed');
+    document.getElementById('releaseOverlay').classList.remove('open');
+    refreshHolds();
+  }catch(e){
+    msg.textContent = 'Could not release: ' + e.message;
+  }finally{ btn.disabled = false; btn.textContent = 'Release'; }
+}
+(function initHolds(){
+  document.getElementById('btnOpenHold').addEventListener('click', openHoldModal);
+  document.getElementById('btnCloseHold').addEventListener('click', () => document.getElementById('holdOverlay').classList.remove('open'));
+  document.getElementById('btnSubmitHold').addEventListener('click', submitHold);
+  document.getElementById('btnCloseRelease').addEventListener('click', () => document.getElementById('releaseOverlay').classList.remove('open'));
+  document.getElementById('btnSubmitRelease').addEventListener('click', submitRelease);
+  document.getElementById('view-settings').addEventListener('click', e => {
+    const rel = e.target.closest('[data-release]');
+    if(rel) openReleaseModal(rel.getAttribute('data-release'));
+    const loc = e.target.closest('[data-open-loc]');
+    if(loc) openLocate(loc.getAttribute('data-open-loc'));
+  });
+  ['holdOverlay', 'releaseOverlay'].forEach(id => document.getElementById(id).addEventListener('click', e => { if(e.target.id === id) e.target.classList.remove('open'); }));
+})();
+
+// =====================================================================
+// STUCK UNITS — signed in at a station longer than the chosen limit with
+// no sign-out. Read from the recent end of the Log (bounded, stays fast).
+// =====================================================================
+const STUCK_HOURS_KEY = 'stuck-hours-v1';
+let stuckCheckedAt = 0, stuckLatest = null;
+async function refreshStuckUnits(useCached){
+  const cfg = sheetConfig();
+  const body = document.getElementById('stuckBody');
+  if(!cfg.url || !cfg.token){ body.innerHTML = '<div class="hint">No sheet connection.</div>'; return; }
+  if(!useCached || !stuckLatest){
+    try{
+      const rows = (await sheetPost({action: 'getRecentLogRows', maxRows: 15000})).rows || [];
+      stuckLatest = {};
+      rows.forEach(r => {
+        const sn = locCell(r[1]).toUpperCase(); const t = locDate(r[5]);
+        if(!sn || !t) return;
+        if(!stuckLatest[sn] || t >= stuckLatest[sn].t) stuckLatest[sn] = {event: locCell(r[2]), person: locCell(r[3]), station: locCell(r[4]), t: t};
+      });
+      stuckCheckedAt = Date.now();
+    }catch(e){ body.innerHTML = '<div class="hint">Could not check: ' + locEsc(e.message) + '</div>'; return; }
+  }
+  const hours = Number(document.getElementById('stuckHours').value) || 4;
+  const held = new Set(openHolds.map(h => h.sn));
+  const stuck = Object.keys(stuckLatest).map(sn => Object.assign({sn: sn}, stuckLatest[sn]))
+    .filter(u => /movein/i.test(u.event) && !held.has(u.sn) && Date.now() - u.t > hours * 3600000)
+    .sort((a, b) => a.t - b.t);
+  document.getElementById('stuckCount').textContent = stuck.length ? stuck.length + ' units' : '';
+  body.innerHTML = stuck.length ?
+    '<div class="tablewrap" style="max-height:320px;"><table><thead><tr><th>Headset serial</th><th>Station</th><th>Signed in by</th><th>Signed in</th><th>Stuck for</th></tr></thead><tbody>' +
+    stuck.map(u => '<tr><td><span class="loc-link loc-mono" data-open-loc="' + u.sn + '">' + u.sn + '</span></td><td>' + locEsc(locStationName(u.station)) + '</td><td>' + locEsc(u.person) +
+      '</td><td>' + locFmt(u.t) + '</td><td class="stuck-age">' + formatDuration(Date.now() - u.t) + '</td></tr>').join('') + '</tbody></table></div>' :
+    '<div class="hint">Nothing stuck longer than ' + hours + ' hours.</div>';
+}
+(function initStuck(){
+  const sel = document.getElementById('stuckHours');
+  sel.value = localStorage.getItem(STUCK_HOURS_KEY) || '4';
+  sel.addEventListener('change', () => { localStorage.setItem(STUCK_HOURS_KEY, sel.value); refreshStuckUnits(true); });
+  setInterval(() => { refreshHolds(); }, 3 * 60 * 1000);   // holds first, then stuck (refreshHolds triggers it)
+  setTimeout(refreshHolds, 3000);   // loads holds, then the stuck list
+  setInterval(() => refreshStuckUnits(false), 3 * 60 * 1000);
+})();
+
+// =====================================================================
+// END-OF-SHIFT SUMMARY
+// Shift times — edit these to match the floor's real shifts.
+// =====================================================================
+const SHIFT_DEFS = [
+  {name: 'Shift 1', start: '06:00', end: '14:30'},
+  {name: 'Shift 2', start: '14:30', end: '23:00'}
+];
+let ssLast = null;   // last built summary, for print / CSV
+function shiftWindow(dayStr, shiftName){
+  const base = new Date(dayStr + 'T00:00:00');
+  const def = SHIFT_DEFS.find(d => d.name === shiftName);
+  if(!def) return {from: base, to: new Date(base.getTime() + 86400000), label: 'Whole day'};
+  const at = hm => { const [h, m] = hm.split(':').map(Number); return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m); };
+  const from = at(def.start); let to = at(def.end);
+  if(to <= from) to = new Date(to.getTime() + 86400000);   // shift that runs past midnight
+  return {from: from, to: to, label: def.name + ' (' + def.start + '\u2013' + def.end + ')'};
+}
+function currentShiftName(){
+  const now = new Date(), today = localDayKeyLoc(now);
+  const hit = SHIFT_DEFS.find(d => { const w = shiftWindow(today, d.name); return now >= w.from && now < w.to; });
+  return hit ? hit.name : 'all';
+}
+function localDayKeyLoc(d){ return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+(function initShiftSummary(){
+  document.getElementById('ssDay').value = localDayKeyLoc(new Date());
+  document.getElementById('ssShift').innerHTML = SHIFT_DEFS.map(d => '<option value="' + d.name + '">' + d.name + ' (' + d.start + '\u2013' + d.end + ')</option>').join('') + '<option value="all">Whole day</option>';
+  document.getElementById('ssShift').value = currentShiftName();
+  document.getElementById('btnSsRun').addEventListener('click', buildShiftSummary);
+  document.getElementById('btnSsPrint').addEventListener('click', printShiftSummary);
+  document.getElementById('btnSsCsv').addEventListener('click', downloadShiftSummaryCsv);
+})();
+
+async function buildShiftSummary(){
+  const msg = document.getElementById('ssMsg'), body = document.getElementById('ssBody');
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token){ msg.textContent = 'No sheet connection.'; return; }
+  const day = document.getElementById('ssDay').value;
+  if(!day){ msg.textContent = 'Pick a day.'; return; }
+  const win = shiftWindow(day, document.getElementById('ssShift').value);
+  msg.textContent = 'Building\u2026'; body.innerHTML = '';
+  let logRows, scrapRows, holdRows;
+  try{
+    [logRows, scrapRows, holdRows] = await Promise.all([
+      sheetPost({action: 'getRecentLogRows', maxRows: 20000}).then(j => j.rows || []),
+      sheetPost({action: 'getFullSheet', sheet: PART_SCRAP_TAB}).then(j => j.rows || []).catch(() => []),
+      sheetPost({action: 'getFullSheet', sheet: HOLDS_TAB}).then(j => j.rows || []).catch(() => [])
+    ]);
+  }catch(e){ msg.textContent = 'Could not build the summary: ' + e.message; return; }
+  const inWin = t => t && t >= win.from && t < win.to;
+  const events = logRows.map(r => ({sn: locCell(r[1]).toUpperCase(), event: locCell(r[2]), person: locCell(r[3]), station: String(stationNumberFromLabel(locCell(r[4])) || ''), t: locDate(r[5])}))
+    .filter(e => e.sn && e.t).sort((a, b) => a.t - b.t);
+  if(events.length && events[0].t > win.from) msg.textContent = 'Note: the Log window only reaches back to ' + locFmt(events[0].t) + ', so earlier activity isn\u2019t included.';
+  else msg.textContent = '';
+  // time at station: pair each sign-out with that unit's previous sign-in at the same station
+  const openIn = {}, durByStation = {};
+  events.forEach(e => {
+    const k = e.sn + '|' + e.station;
+    if(/movein/i.test(e.event)) openIn[k] = e.t;
+    else if(/moveout/i.test(e.event) && openIn[k]){ if(inWin(e.t)) (durByStation[e.station] = durByStation[e.station] || []).push(e.t - openIn[k]); delete openIn[k]; }
+  });
+  const w = events.filter(e => inWin(e.t));
+  const stations = ['1','2','3','4','5','6'].map(n => {
+    const ins = w.filter(e => e.station === n && /movein/i.test(e.event)).length;
+    const outs = w.filter(e => e.station === n && /moveout/i.test(e.event)).length;
+    const d = (durByStation[n] || []).slice().sort((a, b) => a - b);
+    return {n: n, name: STATION_LABELS[n] || ('Station ' + n), ins: ins, outs: outs, median: d.length ? d[Math.floor(d.length / 2)] : null};
+  });
+  const finished = w.filter(e => e.station === '6' && /moveout/i.test(e.event));
+  const byStyle = {};
+  finished.forEach(e => { const st = (e.sn.match(/^H2[A-Z]/) || ['Other'])[0]; byStyle[st] = (byStyle[st] || 0) + 1; });
+  const byOp = {};
+  w.forEach(e => { const k = e.person || 'unknown'; byOp[k] = byOp[k] || {ins: 0, outs: 0}; if(/movein/i.test(e.event)) byOp[k].ins++; else byOp[k].outs++; });
+  const scraps = scrapRows.slice(1).map(r => ({t: locDate(r[1]), sn: locCell(r[2]).toUpperCase(), part: locCell(r[5]), qty: Number(r[6]) || 1, reason: locCell(r[7]), pn: partNumberFor(r[5], locCell(r[11]))})).filter(x => inWin(x.t));
+  const byPart = {};
+  scraps.forEach(x => { const k = x.part; byPart[k] = byPart[k] || {pn: x.pn, qty: 0}; byPart[k].qty += x.qty; });
+  const holdsPlaced = holdRows.slice(1).filter(r => inWin(locDate(r[7])));
+  const holdsReleased = holdRows.slice(1).filter(r => /released/i.test(locCell(r[8])) && inWin(locDate(r[10])));
+  const isNow = new Date() >= win.from && new Date() < win.to;
+  ssLast = {day: day, win: win, stations: stations, finished: finished.length, byStyle: byStyle, byOp: byOp, scraps: scraps, byPart: byPart,
+    holdsPlaced: holdsPlaced.length, holdsReleased: holdsReleased.length, openHolds: openHolds.length, moves: w.length};
+  const scrapParts = scraps.reduce((a, x) => a + x.qty, 0);
+  body.innerHTML =
+    '<h3 style="margin-top:4px;">' + locEsc(new Date(day + 'T12:00:00').toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric'})) + ' \u00b7 ' + locEsc(win.label) + (isNow ? ' \u00b7 in progress' : '') + '</h3>' +
+    '<div class="ss-grid">' +
+      '<div class="ss-stat"><div class="v">' + finished.length + '</div><div class="k">Headsets finished (out of Station 6)</div></div>' +
+      '<div class="ss-stat"><div class="v">' + w.length + '</div><div class="k">Sign ins and outs</div></div>' +
+      '<div class="ss-stat"><div class="v">' + scrapParts + '</div><div class="k">Parts scrapped</div></div>' +
+      '<div class="ss-stat"><div class="v">' + holdsPlaced.length + ' / ' + holdsReleased.length + '</div><div class="k">Holds placed / released</div></div>' +
+    '</div>' +
+    '<div class="ss-cols"><div>' +
+      '<h3>By station</h3><div class="tablewrap"><table><thead><tr><th>Station</th><th>Signed in</th><th>Signed out</th><th>Median time</th></tr></thead><tbody>' +
+      stations.map(st => '<tr><td>' + locEsc(st.name) + '</td><td>' + st.ins + '</td><td>' + st.outs + '</td><td>' + (st.median ? formatDuration(st.median) : '\u2014') + '</td></tr>').join('') + '</tbody></table></div>' +
+      '<h3>Finished by style</h3><div class="hint" style="font-size:14px;">' + (Object.keys(byStyle).sort().map(k => '<b>' + k + '</b> ' + byStyle[k]).join(' &nbsp; ') || 'None') + '</div>' +
+    '</div><div>' +
+      '<h3>By operator</h3><div class="tablewrap"><table><thead><tr><th>Operator</th><th>Sign ins</th><th>Sign outs</th></tr></thead><tbody>' +
+      (Object.keys(byOp).sort((a, b) => (byOp[b].ins + byOp[b].outs) - (byOp[a].ins + byOp[a].outs)).map(k => '<tr><td>' + locEsc(k) + '</td><td>' + byOp[k].ins + '</td><td>' + byOp[k].outs + '</td></tr>').join('') || '<tr><td colspan="3">No activity</td></tr>') + '</tbody></table></div>' +
+      '<h3>Parts scrapped</h3><div class="tablewrap"><table><thead><tr><th>Part #</th><th>Part</th><th>Qty</th></tr></thead><tbody>' +
+      (Object.keys(byPart).sort((a, b) => byPart[b].qty - byPart[a].qty).map(k => '<tr><td class="loc-mono">' + locEsc(byPart[k].pn) + '</td><td>' + locEsc(k) + '</td><td>' + byPart[k].qty + '</td></tr>').join('') || '<tr><td colspan="3">None</td></tr>') + '</tbody></table></div>' +
+    '</div></div>' +
+    '<h3>Right now</h3><div class="hint" style="font-size:14px;">' + openHolds.length + ' unit(s) on hold &nbsp;\u00b7&nbsp; ' + (document.getElementById('stuckCount').textContent || '0 units') + ' stuck</div>';
+  document.getElementById('btnSsPrint').disabled = false;
+  document.getElementById('btnSsCsv').disabled = false;
+}
+function printShiftSummary(){
+  if(!ssLast) return;
+  const html = document.getElementById('ssBody').innerHTML;
+  const w = window.open('', '_blank');
+  if(!w){ document.getElementById('ssMsg').textContent = 'The print window was blocked. Allow pop-ups for this page and try again.'; return; }
+  w.document.write('<!doctype html><html><head><title>Shift summary ' + ssLast.day + '</title><style>' +
+    'body{font-family:Inter,system-ui,sans-serif;color:#1c1830;margin:24px;} h1{font-size:18px;margin:0 0 4px;} h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8b3fe0;margin:14px 0 6px;}' +
+    '.ss-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;} .ss-stat{border:1px solid #ddd6ee;border-radius:6px;padding:8px 10px;} .ss-stat .v{font-size:20px;font-weight:800;} .ss-stat .k{font-size:10px;text-transform:uppercase;color:#6c6584;}' +
+    '.ss-cols{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;} table{border-collapse:collapse;width:100%;font-size:12px;} th,td{border-bottom:1px solid #ddd6ee;padding:4px 6px;text-align:left;} th{color:#6c6584;font-size:10px;text-transform:uppercase;}' +
+    '.hint{color:#1c1830;} .loc-mono{font-family:monospace;}</style></head><body><h1>Fat Shark headset line \u00b7 end-of-shift summary</h1>' + html +
+    '<p style="margin-top:18px;color:#6c6584;font-size:11px;">Printed ' + new Date().toLocaleString() + '</p></body></html>');
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+}
+function downloadShiftSummaryCsv(){
+  if(!ssLast) return;
+  const L = [];
+  L.push(['End-of-shift summary', ssLast.day, ssLast.win.label]);
+  L.push([]);
+  L.push(['Headsets finished (out of Station 6)', ssLast.finished]);
+  Object.keys(ssLast.byStyle).sort().forEach(k => L.push(['  ' + k, ssLast.byStyle[k]]));
+  L.push(['Sign ins and outs', ssLast.moves]);
+  L.push(['Parts scrapped', ssLast.scraps.reduce((a, x) => a + x.qty, 0)]);
+  L.push(['Holds placed', ssLast.holdsPlaced]);
+  L.push(['Holds released', ssLast.holdsReleased]);
+  L.push(['Units on hold now', ssLast.openHolds]);
+  L.push([]);
+  L.push(['Station', 'Signed in', 'Signed out', 'Median time at station']);
+  ssLast.stations.forEach(st => L.push([st.name, st.ins, st.outs, st.median ? formatDuration(st.median) : '']));
+  L.push([]);
+  L.push(['Operator', 'Sign ins', 'Sign outs']);
+  Object.keys(ssLast.byOp).forEach(k => L.push([k, ssLast.byOp[k].ins, ssLast.byOp[k].outs]));
+  L.push([]);
+  L.push(['Part number', 'Part', 'Qty scrapped']);
+  Object.keys(ssLast.byPart).forEach(k => L.push([ssLast.byPart[k].pn, k, ssLast.byPart[k].qty]));
+  const csv = '\ufeff' + L.map(r => r.map(csvCell).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));
+  a.download = 'shift-summary-' + ssLast.day + '-' + ssLast.win.label.split(' (')[0].replace(/\s+/g, '-').toLowerCase() + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
 // =====================================================================
 // LOCATE — full history of one serial, read straight from the sheet tabs.
 // Headset: SerialNumbers row (generation), OpticalModelSN (linked module),
@@ -4971,7 +5380,9 @@ function downloadScrapCsv(summary){
 // Tabs are cached for 2 minutes, so repeat lookups are instant.
 // =====================================================================
 const LOCATE_CACHE_MS = 2 * 60 * 1000;
-const LOCATE_TABS = {serials: 'SerialNumbers', optical: 'OpticalModelSN', log: 'Log', sent: 'SentToWH', holdArchive: 'Hold Archive', count: 'Count', partScrap: 'Part Scrap'};
+// The Log is NOT read in full here: it grows by ~25k rows a month, so a unit's events come from the
+// script's per-serial search (getSerialStationEvents) instead, which stays fast however big it gets.
+const LOCATE_TABS = {serials: 'SerialNumbers', optical: 'OpticalModelSN', sent: 'SentToWH', holdArchive: 'Hold Archive', count: 'Count', partScrap: 'Part Scrap', holds: 'Holds'};
 const locateCache = {};
 async function locateTab(key){
   const c = locateCache[key];
@@ -5035,8 +5446,8 @@ async function runLocate(query){
   const btn = document.getElementById('btnLocate');
   btn.disabled = true;
   try{
-    const [serialRows, opticalRows, logRows, sentRows, holdRows, countRows, scrapRows] = await Promise.all(
-      ['serials','optical','log','sent','holdArchive','count','partScrap'].map(k => locateTab(k)));
+    const [serialRows, opticalRows, sentRows, holdRows, countRows, scrapRows, holdsRows] = await Promise.all(
+      ['serials','optical','sent','holdArchive','count','partScrap','holds'].map(k => locateTab(k)));
 
     // ---- is it a headset or an optical module? ----
     const omIdx = {sn: OPTICAL_COLUMNS.indexOf('opticalSN'), link: OPTICAL_COLUMNS.indexOf('linkedHeadsetSN'), person: OPTICAL_COLUMNS.indexOf('person'), dt: OPTICAL_COLUMNS.indexOf('dateTime'), btn: OPTICAL_COLUMNS.indexOf('buttonPressed'), marked: OPTICAL_COLUMNS.indexOf('marked')};
@@ -5054,8 +5465,12 @@ async function runLocate(query){
       }
     }
     const searchedOM = !!omRow && serial === locCell(omRow[omIdx.sn]).toUpperCase();
-    const logFor = sn => logRows.slice(1).filter(r => locCell(r[1]).toUpperCase() === sn);
-    const hsLog = headsetSN ? logFor(headsetSN) : [];
+    // station events for just this unit, shaped like Log rows: [id, sn, event, person, station, dateTime, comment]
+    let hsLog = [];
+    if(headsetSN){
+      const evJson = await sheetPost({action: 'getSerialStationEvents', serial: headsetSN});
+      hsLog = (evJson.events || []).map(e => ['', headsetSN, e.event, e.person, e.station, e.dateTime, e.comment]);
+    }
 
     if(!hsRow && !omRow && !hsLog.length){
       // nothing exact: offer close matches from both serial lists
@@ -5106,8 +5521,18 @@ async function runLocate(query){
     const holdPast = headsetSN ? locMatchRows(holdRows, headsetSN) : [];
     holdPast.forEach(pairs => items.push({t: locRowTime(pairs), c: '#a13636', tag: 'hold', tagText: 'HOLD (ARCHIVED)', h: 'Put on hold, since cleared',
       d: pairs.filter(p => !p.d).map(p => '<span>' + locEsc(p.h) + '</span> ' + locEsc(p.v)).join(' &nbsp;')}));
-    let holdNow = '';
-    if(headsetSN && countRows.length){
+    // holds placed from this tracker (Holds tab)
+    const myHolds = headsetSN ? holdsRows.slice(1).filter(r => locCell(r[1]).toUpperCase() === headsetSN) : [];
+    myHolds.forEach(r => {
+      items.push({t: locDate(r[7]), c: '#c7851a', tag: 'hold', tagText: 'ON HOLD', h: 'Put on hold at ' + locStationName(r[3]),
+        d: '<span>Reason</span> ' + locEsc(r[4]) + (locCell(r[5]) ? ': ' + locEsc(r[5]) : '') + ' &nbsp;<span>By</span> ' + locEsc(r[6] || 'unknown')});
+      if(/released/i.test(locCell(r[8]))) items.push({t: locDate(r[10]), c: '#1d7a3f', tag: 'in', tagText: 'RELEASED', h: 'Released from hold',
+        d: '<span>By</span> ' + locEsc(r[9] || 'unknown') + (locCell(r[11]) ? ' &nbsp;<span>What was done</span> ' + locEsc(r[11]) : '') +
+           (locDate(r[7]) && locDate(r[10]) ? ' &nbsp;<span>On hold for</span> ' + formatDuration(locDate(r[10]) - locDate(r[7])) : '')});
+    });
+    const openHold = myHolds.find(r => /on hold/i.test(locCell(r[8])));
+    let holdNow = openHold ? (locCell(openHold[4]) + (locCell(openHold[5]) ? ': ' + locCell(openHold[5]) : '') + ' (by ' + (locCell(openHold[6]) || 'unknown') + (locDate(openHold[7]) ? ', ' + formatDuration(Date.now() - locDate(openHold[7])) + ' ago' : '') + ')') : '';
+    if(!holdNow && headsetSN && countRows.length){
       const hi = countRows[0].findIndex(h => /on hold/i.test(locCell(h)));
       if(hi > -1){
         const hit = countRows.slice(1).map(r => locCell(r[hi])).find(v => v.toUpperCase().indexOf(headsetSN) > -1);
@@ -5169,7 +5594,7 @@ async function runLocate(query){
           '<div class="h"><span class="loc-tag ' + i.tag + '">' + i.tagText + '</span>' + i.h + '</div>' +
           (i.d ? '<div class="d">' + i.d + '</div>' : '') + '</div>').join('') + '</div>'
         : '<div class="hint">No history recorded yet.</div>') + '</div>';
-    const missing = Object.keys(LOCATE_TABS).filter(k => k !== 'partScrap' && locateCache[k] && locateCache[k].error).map(k => LOCATE_TABS[k]);
+    const missing = Object.keys(LOCATE_TABS).filter(k => k !== 'partScrap' && k !== 'holds' && locateCache[k] && locateCache[k].error).map(k => LOCATE_TABS[k]);
     msg.textContent = missing.length ? 'Could not read: ' + missing.join(', ') + '. History from those tabs is missing.' : '';
   }catch(e){
     msg.textContent = 'Lookup failed: ' + e.message;
@@ -5233,6 +5658,7 @@ document.addEventListener('keydown', e => {
   if(e.key !== 'Escape') return;
   if(document.getElementById('locOverlay').classList.contains('open')) closeLocate();
   else if(document.getElementById('partScrapOverlay').classList.contains('open')) closePartScrap();
+  else ['holdOverlay', 'releaseOverlay'].forEach(id => document.getElementById(id).classList.remove('open'));
 });
 document.getElementById('btnLocate').addEventListener('click', () => runLocate(document.getElementById('locInput').value));
 document.getElementById('locInput').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); runLocate(e.target.value); } });
