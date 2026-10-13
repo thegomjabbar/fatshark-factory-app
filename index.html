@@ -1567,7 +1567,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
   <div class="panel" id="holdsPanel">
     <h2>On hold <span class="count" id="holdsCount"></span></h2>
-    <p class="hint">Units that can't be fixed on the line right away. Anyone can put a unit on hold from Station Sign In/Out; releasing is done here. A unit on hold can't be signed in or out at any station until it's released.</p>
+    <p class="hint">Units that can't be fixed on the line right away. Builders put units on hold and release them from Station Sign In/Out with the same button; this list shows every held unit and can release them too. A unit on hold can't be signed in or out at any station until it's released.</p>
     <div class="btnrow" style="margin-bottom:10px;"><button class="secondary" id="btnOpenHold">Put a unit on hold</button></div>
     <div id="holdsBody"><div class="hint">Checking&hellip;</div></div>
   </div>
@@ -6192,6 +6192,29 @@ function loadSkuMap(){
   STYLES.forEach(s => { if(!(s in skuMap)) skuMap[s] = ''; });
   renderSkuTable();
   populateShipStyleSelect();
+  setTimeout(syncSkuMapFromSheet, 1500);   // after start-up has loaded the sheet connection
+}
+// The SKU map is shared through the sheet's script, so every computer gets the same SKUs and an
+// edit on one shows up on all. This browser keeps a copy only as a fallback for when the sheet
+// can't be reached. The first computer that already has SKUs saved uploads them automatically.
+async function syncSkuMapFromSheet(){
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token) return;
+  try{
+    const r = await sheetPost({action: 'getSkuMap'});
+    const shared = (r && r.map) || {};
+    const hasShared = Object.values(shared).some(v => String(v).trim());
+    const hasLocal = Object.values(skuMap).some(v => String(v).trim());
+    if(hasShared){
+      skuMap = shared;
+      STYLES.forEach(st => { if(!(st in skuMap)) skuMap[st] = ''; });
+      try{ localStorage.setItem(SKU_KEY, JSON.stringify(skuMap)); }catch(e){}
+      renderSkuTable();
+      populateShipStyleSelect();
+    }else if(hasLocal){
+      await sheetPost({action: 'setSkuMap', map: skuMap});   // seed the sheet from this computer
+    }
+  }catch(e){ /* sheet unreachable or script not updated yet: keep this computer's copy */ }
 }
 function saveSkuMap(){
   // pull current values from the table into skuMap before saving
@@ -6203,12 +6226,12 @@ function saveSkuMap(){
     if(style) next[style] = sku;
   });
   skuMap = next;
-  try{
-    localStorage.setItem(SKU_KEY, JSON.stringify(skuMap));
-    document.getElementById('skuMsg').textContent = 'Saved.';
-  }catch(e){
-    document.getElementById('skuMsg').textContent = 'Could not save: ' + e;
-  }
+  try{ localStorage.setItem(SKU_KEY, JSON.stringify(skuMap)); }catch(e){}
+  const msgEl = document.getElementById('skuMsg');
+  msgEl.textContent = 'Saving\u2026';
+  sheetPost({action: 'setSkuMap', map: skuMap})
+    .then(r => { if(r && r.status === 'error') throw new Error(r.message); msgEl.textContent = 'Saved for every computer.'; })
+    .catch(e => { msgEl.textContent = /unknown action/i.test(e.message) ? 'Saved on this computer only. Deploy the latest Code.gs to share SKUs with every computer.' : 'Saved on this computer only (could not reach the sheet: ' + e.message + ').'; });
   populateShipStyleSelect();
   document.getElementById('skuCount').textContent = Object.keys(skuMap).length + ' styles';
 }
