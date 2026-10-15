@@ -1706,7 +1706,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <select id="stuckHours" style="width:auto; display:inline-block; padding:2px 6px;">
         <option value="2">2 hours</option><option value="4">4 hours</option><option value="8">8 hours</option><option value="24">24 hours</option>
       </select>
-      with no sign-out. Units on hold are listed under On hold instead. Checks every 3 minutes.</p>
+      with no sign-out, and still listed on the Count tab (so units scrapped or taken off the line don't show here). Units on hold are listed under On hold instead. Checks every 3 minutes.</p>
     <div id="stuckBody"><div class="hint">Checking&hellip;</div></div>
   </div>
 
@@ -5344,7 +5344,7 @@ async function refreshHolds(){
   body.innerHTML = openHolds.length ?
     '<div class="tablewrap" style="max-height:320px;"><table><thead><tr><th>Headset serial</th><th>Station</th><th>Reason</th><th>Put on hold by</th><th>On hold for</th><th></th></tr></thead><tbody>' +
     openHolds.map(h => '<tr><td><span class="loc-link loc-mono" data-open-loc="' + h.sn + '">' + h.sn + '</span></td><td>' + locEsc(locStationName(h.station)) + '</td><td>' + locEsc(h.reason) +
-      (h.details ? ': ' + locEsc(h.details) : '') + '</td><td>' + locEsc(h.by) + '</td><td>' + (h.at ? formatDuration(Date.now() - h.at) : '') + '</td><td><button class="secondary" data-release="' + h.id + '" style="padding:4px 12px;">Release</button></td></tr>').join('') +
+      (h.details ? ': ' + locEsc(h.details) : '') + '</td><td>' + locEsc(h.by) + '</td><td>' + (h.at ? formatDuration(Date.now() - h.at) : '') + '</td><td style="white-space:nowrap;"><button class="secondary" data-release="' + h.id + '" style="padding:4px 12px;">Release</button><button class="danger" data-remove-hold="' + h.id + '" style="padding:4px 12px;" title="Take the unit off hold without moving it (scrapped, entered by mistake, test)">Remove</button></td></tr>').join('') +
     '</tbody></table></div>' : '<div class="hint">No units on hold.</div>';
   refreshStuckUnits(true);   // held units drop off the stuck list
   updateHoldButton();
@@ -5505,6 +5505,21 @@ async function advanceAfterRelease(sn, person){
     return 'left where it is (could not move it: ' + e.message + ')';
   }
 }
+// Engineer-only: take a unit off the hold list WITHOUT moving it on (for example it was scrapped,
+// put on hold by mistake, or was a test). The hold row stays in the Holds tab, marked Removed.
+async function removeHoldEntry(holdId){
+  const h = openHolds.find(x => x.id === holdId); if(!h) return;
+  const reason = prompt('Remove ' + h.sn + ' from the hold list without moving it on?\n\nWhy? (for example: unit scrapped, put on hold by mistake, test entry)');
+  if(reason === null) return;
+  if(!reason.trim()){ alert('Please give a reason so the Holds tab shows why it was removed.'); return; }
+  const person = localStorage.getItem(HOLD_PERSON_KEY) || prompt('Your initials:') || '';
+  if(!person.trim()) return;
+  try{
+    const r = await sheetPost({action: 'removeHold', holdId: holdId, person: person.trim(), reason: reason.trim()});
+    if(r && r.status === 'error') throw new Error(r.message || 'could not remove');
+    refreshHolds();
+  }catch(e){ alert(/unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Could not remove: ' + e.message); }
+}
 (function initHolds(){
   document.getElementById('btnOpenHold').addEventListener('click', openHoldModal);
   document.getElementById('btnOpenHoldFloor').addEventListener('click', openHoldToggle);
@@ -5523,6 +5538,8 @@ async function advanceAfterRelease(sn, person){
   document.getElementById('view-settings').addEventListener('click', e => {
     const rel = e.target.closest('[data-release]');
     if(rel) openReleaseModal(rel.getAttribute('data-release'));
+    const rem = e.target.closest('[data-remove-hold]');
+    if(rem) removeHoldEntry(rem.getAttribute('data-remove-hold'));
     const loc = e.target.closest('[data-open-loc]');
     if(loc) openLocate(loc.getAttribute('data-open-loc'));
   });
@@ -5535,6 +5552,7 @@ async function advanceAfterRelease(sn, person){
 // =====================================================================
 const STUCK_HOURS_KEY = 'stuck-hours-v1';
 let stuckCheckedAt = 0, stuckLatest = null;
+let stuckOnFloor = null;   // serials in the Count tab's "Stuck at" lists
 async function refreshStuckUnits(useCached){
   const cfg = sheetConfig();
   const body = document.getElementById('stuckBody');
@@ -5549,12 +5567,17 @@ async function refreshStuckUnits(useCached){
         if(!stuckLatest[sn] || t >= stuckLatest[sn].t) stuckLatest[sn] = {event: locCell(r[2]), person: locCell(r[3]), station: locCell(r[4]), t: t};
       });
       stuckCheckedAt = Date.now();
+      // The Count tab's "Stuck at" lists are the record of what is really on the floor. A unit
+      // scrapped as a whole unit (or otherwise taken off the line) never gets a Log sign-out, so
+      // only units that are still in those lists can count as stuck.
+      const lists = await loadStuckAtStations(true);
+      stuckOnFloor = new Set(Object.values(lists).flat().map(x => String(x).trim().toUpperCase()));
     }catch(e){ body.innerHTML = '<div class="hint">Could not check: ' + locEsc(e.message) + '</div>'; return; }
   }
   const hours = Number(document.getElementById('stuckHours').value) || 4;
   const held = new Set(openHolds.map(h => h.sn));
   const stuck = Object.keys(stuckLatest).map(sn => Object.assign({sn: sn}, stuckLatest[sn]))
-    .filter(u => /movein/i.test(u.event) && !held.has(u.sn) && Date.now() - u.t > hours * 3600000)
+    .filter(u => /movein/i.test(u.event) && !held.has(u.sn) && (!stuckOnFloor || stuckOnFloor.has(u.sn)) && Date.now() - u.t > hours * 3600000)
     .sort((a, b) => a.t - b.t);
   document.getElementById('stuckCount').textContent = stuck.length ? stuck.length + ' units' : '';
   body.innerHTML = stuck.length ?
@@ -6613,6 +6636,8 @@ async function runLocate(query){
     myHolds.forEach(r => {
       items.push({t: locDate(r[7]), c: '#c7851a', tag: 'hold', tagText: 'ON HOLD', h: 'Put on hold at ' + locStationName(r[3]),
         d: '<span>Reason</span> ' + locEsc(r[4]) + (locCell(r[5]) ? ': ' + locEsc(r[5]) : '') + ' &nbsp;<span>By</span> ' + locEsc(r[6] || 'unknown')});
+      if(/removed/i.test(locCell(r[8]))) items.push({t: locDate(r[10]), c: 'var(--muted)', tag: 'hold', tagText: 'HOLD REMOVED', h: 'Taken off the hold list (not moved on)',
+        d: '<span>By</span> ' + locEsc(r[9] || 'unknown') + (locCell(r[11]) ? ' &nbsp;<span>Reason</span> ' + locEsc(String(r[11]).replace(/^Removed:\s*/i, '')) : '')});
       if(/released/i.test(locCell(r[8]))) items.push({t: locDate(r[10]), c: '#1d7a3f', tag: 'in', tagText: 'RELEASED', h: 'Released from hold',
         d: '<span>By</span> ' + locEsc(r[9] || 'unknown') + (locCell(r[12]) ? ' &nbsp;<span>Approved by</span> ' + locEsc(r[12]) : '') + (locCell(r[11]) ? ' &nbsp;<span>What was done</span> ' + locEsc(r[11]) : '') +
            (locDate(r[7]) && locDate(r[10]) ? ' &nbsp;<span>On hold for</span> ' + formatDuration(locDate(r[10]) - locDate(r[7])) : '')});
