@@ -1706,7 +1706,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <select id="stuckHours" style="width:auto; display:inline-block; padding:2px 6px;">
         <option value="2">2 hours</option><option value="4">4 hours</option><option value="8">8 hours</option><option value="24">24 hours</option>
       </select>
-      with no sign-out, and still listed on the Count tab (so units scrapped or taken off the line don't show here). Units on hold are listed under On hold instead. Checks every 3 minutes.</p>
+      with no sign-out. A unit stuck for a day or more is usually lost, scrapped without being logged, or never existed: <b>Remove</b> takes it off the floor with one "Removed" entry in the Log (nothing is deleted; if it turns up, scanning it signs it back in). "On Count tab: No" means the Count tab already dropped it. Units on hold are listed under On hold instead. Checks every 3 minutes.</p>
     <div id="stuckBody"><div class="hint">Checking&hellip;</div></div>
   </div>
 
@@ -5577,15 +5577,38 @@ async function refreshStuckUnits(useCached){
   const hours = Number(document.getElementById('stuckHours').value) || 4;
   const held = new Set(openHolds.map(h => h.sn));
   const stuck = Object.keys(stuckLatest).map(sn => Object.assign({sn: sn}, stuckLatest[sn]))
-    .filter(u => /movein/i.test(u.event) && !held.has(u.sn) && (!stuckOnFloor || stuckOnFloor.has(u.sn)) && Date.now() - u.t > hours * 3600000)
+    .filter(u => /movein/i.test(u.event) && !held.has(u.sn) && Date.now() - u.t > hours * 3600000)
     .sort((a, b) => a.t - b.t);
   document.getElementById('stuckCount').textContent = stuck.length ? stuck.length + ' units' : '';
+  const onCount = sn => !stuckOnFloor ? '\u2014' : (stuckOnFloor.has(sn) ? 'Yes' : '<span class="stuck-age">No</span>');
   body.innerHTML = stuck.length ?
-    '<div class="tablewrap" style="max-height:320px;"><table><thead><tr><th>Headset serial</th><th>Station</th><th>Signed in by</th><th>Signed in</th><th>Stuck for</th></tr></thead><tbody>' +
-    stuck.map(u => '<tr><td><span class="loc-link loc-mono" data-open-loc="' + u.sn + '">' + u.sn + '</span></td><td>' + locEsc(locStationName(u.station)) + '</td><td>' + locEsc(u.person) +
-      '</td><td>' + locFmt(u.t) + '</td><td class="stuck-age">' + formatDuration(Date.now() - u.t) + '</td></tr>').join('') + '</tbody></table></div>' :
+    '<div class="tablewrap" style="max-height:340px;"><table><thead><tr><th><input type="checkbox" id="stuckAll" title="Select all"></th><th>Headset serial</th><th>Station</th><th>Signed in by</th><th>Signed in</th><th>Stuck for</th><th>On Count tab</th><th></th></tr></thead><tbody>' +
+    stuck.map(u => '<tr><td><input type="checkbox" class="stuck-pick" value="' + u.sn + '"></td><td><span class="loc-link loc-mono" data-open-loc="' + u.sn + '">' + u.sn + '</span></td><td>' + locEsc(locStationName(u.station)) + '</td><td>' + locEsc(u.person) +
+      '</td><td>' + locFmt(u.t) + '</td><td class="stuck-age">' + formatDuration(Date.now() - u.t) + '</td><td>' + onCount(u.sn) + '</td><td><button class="danger" data-floor-remove="' + u.sn + '" style="padding:4px 12px;">Remove</button></td></tr>').join('') +
+    '</tbody></table></div><div class="btnrow"><button class="danger" id="btnStuckRemoveSel">Remove selected from the floor</button></div>' :
     '<div class="hint">Nothing stuck longer than ' + hours + ' hours.</div>';
 }
+// Take lost / non-existent units off the floor: one "Removed" Log entry each, nothing deleted
+async function removeFromFloor(serials){
+  if(!serials.length) return;
+  const choice = prompt('Take ' + serials.length + ' unit(s) off the floor?\n\n' + serials.slice(0, 8).join('\n') + (serials.length > 8 ? '\n\u2026' : '') +
+    '\n\nWhy? Type one: lost, does not exist, scrapped, or another reason.', 'lost');
+  if(choice === null) return;
+  if(!choice.trim()){ alert('Please give a reason so the Log shows why.'); return; }
+  const person = localStorage.getItem(HOLD_PERSON_KEY) || prompt('Your initials:') || '';
+  if(!person.trim()) return;
+  try{
+    const r = await sheetPost({action: 'removeFromFloor', serials: serials, person: person.trim(), reason: choice.trim()});
+    if(r && r.status === 'error') throw new Error(r.message);
+    alert('Removed from the floor: ' + (r.removed || []).length + (r.skipped && r.skipped.length ? '\nSkipped (no longer signed in): ' + r.skipped.join(', ') : ''));
+    refreshStuckUnits(false);
+  }catch(e){ alert(/unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Could not remove: ' + e.message); }
+}
+document.getElementById('stuckBody').addEventListener('click', e => {
+  const one = e.target.closest('[data-floor-remove]'); if(one){ removeFromFloor([one.getAttribute('data-floor-remove')]); return; }
+  if(e.target.id === 'btnStuckRemoveSel'){ removeFromFloor([...document.querySelectorAll('.stuck-pick:checked')].map(c => c.value)); return; }
+  if(e.target.id === 'stuckAll'){ document.querySelectorAll('.stuck-pick').forEach(c => { c.checked = e.target.checked; }); }
+});
 (function initStuck(){
   const sel = document.getElementById('stuckHours');
   sel.value = localStorage.getItem(STUCK_HOURS_KEY) || '4';
@@ -6670,6 +6693,8 @@ async function runLocate(query){
     if(sent.length){
       const t = locRowTime(sent[sent.length - 1]);
       status = {c: 'var(--cyan)', big: 'Sent to warehouse', sub: t ? 'On ' + locFmt(t) : 'Found on the SentToWH tab.'};
+    }else if(lastEv && /removed/i.test(lastEv.event)){
+      status = {c: 'var(--muted)', big: 'Removed from the floor', sub: (lastEv.comment || 'Removed') + ' (by ' + (lastEv.person || 'unknown') + (lastEv.t ? ', ' + locFmt(lastEv.t) : '') + ')'};
     }else if(holdNow){
       status = {c: '#a13636', big: 'On hold', sub: holdNow};
     }else if(lastEv && /movein/i.test(lastEv.event)){
