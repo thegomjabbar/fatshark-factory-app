@@ -190,6 +190,23 @@
   .gg-row b{ text-align:right; font-size:1.5vw; }
   .gg-bar{ height:1vh; border-radius:99px; background:oklch(1 0 0 / .07); overflow:hidden; margin-top:.5vh; }
   .gg-bar div{ height:100%; background:var(--purple); border-radius:99px; }
+  /* ---- daily schedule slide ---- */
+  .sched-wrap{ flex:1; min-height:0; display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:1.4vw; }
+  .sched-panel{ display:flex; flex-direction:column; min-height:0; padding:1.6vh 1.2vw; }
+  .sched-table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+  .sched-table th{ font-size:.85vw; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.05em; text-align:center; padding:.6vh .3vw; border-bottom:1px solid var(--line); }
+  .sched-table th:first-child{ text-align:left; width:16%; }
+  .sched-table td{ padding:.45vh .3vw; border-bottom:1px solid var(--line); text-align:center; vertical-align:middle; }
+  .sched-table td:first-child{ text-align:left; font-weight:800; font-size:1.15vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sched-chip{ display:inline-block; min-width:70%; padding:.45vh .5vw; border-radius:7px; font-weight:800; font-size:1vw; color:#0b0716; }
+  .sched-chip.off{ background:transparent; color:var(--muted); font-weight:600; }
+  .sched-chip.other{ background:oklch(0.8 0.08 300); }
+  .sched-note{ display:block; font-size:.7vw; color:var(--amber); margin-top:.2vh; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sched-empty{ color:var(--muted); font-size:1.2vw; margin:auto; }
+  .sched-wrap.single .sched-table td{ padding:1.15vh .4vw; }
+  .sched-wrap.single .sched-table td:first-child{ font-size:1.45vw; }
+  .sched-wrap.single .sched-chip{ font-size:1.3vw; padding:.7vh .6vw; }
+  .sched-wrap.single .sched-table th{ font-size:1vw; }
   #diagPanel{ display:none; position:fixed; inset:8vh 6vw; z-index:30; background:oklch(0.12 0.03 292 / .97); border:1px solid var(--purple);
     border-radius:14px; padding:3vh 2.4vw; overflow:auto; font-size:1vw; }
   #diagPanel h3{ margin:0 0 1.6vh; font-size:1.5vw; }
@@ -432,6 +449,14 @@
       <div class="slide-sub" id="overviewSub"></div>
     </div>
     <div class="kgrid" id="kgrid"></div>
+  </div>
+
+  <div class="slide" data-slide="schedule">
+    <div class="slide-head">
+      <div class="slide-title">Today's Stations</div>
+      <div class="slide-sub" id="schedSub">From the Daily Schedule tab</div>
+    </div>
+    <div class="sched-wrap" id="schedWrap"></div>
   </div>
 
   <div class="slide" data-slide="output">
@@ -1794,6 +1819,45 @@ function renderGimbalSlide(g){
   }).join('') : '<div class="ssum-empty">No gimbal orders yet.</div>';
 }
 
+
+// ==================== Today's stations (Daily Schedule tab) ====================
+// Columns: A part of the day (Morning Shift, Break 1 Shift, After Lunch, Final Stretch …), B operator,
+// C station, D override / notes. Parts of the day whose name marks second shift (2nd, Second,
+// Shift 2, Night) are shown in a separate Second shift grid next to First shift.
+const SCHED_TAB = 'Daily Schedule';
+const SCHED_COLORS = {'1':'oklch(0.80 0.13 300)','2':'oklch(0.82 0.13 220)','3':'oklch(0.84 0.14 160)','4':'oklch(0.86 0.13 85)','5':'oklch(0.80 0.14 25)','6':'oklch(0.82 0.11 340)'};
+async function loadSchedule(){
+  try{ return (await sheetPost({action: 'getFullSheet', sheet: SCHED_TAB})).rows || []; }catch(e){ return null; }
+}
+function schedCell(station, note){
+  const st = tvCell(station), nt = tvCell(note);
+  if(!st || /^[~\-–—]+$/.test(st)) return '<span class="sched-chip off">' + (nt ? '' : '\u2014') + '</span>' + (nt ? '<span class="sched-note">' + nt + '</span>' : '');
+  const nums = st.match(/\d+/g) || [];
+  const color = nums.length ? SCHED_COLORS[nums[0]] : null;
+  const label = st.replace(/Station\s*/ig, 'Stn ').replace(/\s+and\s+/ig, ' + ');
+  return '<span class="sched-chip' + (color ? '' : ' other') + '"' + (color ? ' style="background:' + color + ';"' : '') + '>' + label + '</span>' + (nt ? '<span class="sched-note">' + nt + '</span>' : '');
+}
+function renderScheduleSlide(rows){
+  const wrap = document.getElementById('schedWrap');
+  if(!rows){ wrap.innerHTML = '<div class="sched-empty">Could not read the Daily Schedule tab.</div>'; return; }
+  const data = rows.slice(1).map(r => ({part: tvCell(r[0]), op: tvCell(r[1]), st: r[2], note: r[3]})).filter(r => r.part && r.op);
+  if(!data.length){ wrap.innerHTML = '<div class="sched-empty">No schedule entered for today.</div>'; return; }
+  const isSecond = p => /(2nd|second|shift\s*2|night)/i.test(p);
+  const groups = [{name: 'First shift', rows: data.filter(r => !isSecond(r.part))}, {name: 'Second shift', rows: data.filter(r => isSecond(r.part))}].filter(g => g.rows.length);
+  wrap.classList.toggle('single', groups.length === 1);
+  wrap.innerHTML = groups.map(g => {
+    const parts = [...new Set(g.rows.map(r => r.part))];
+    const ops = [...new Set(g.rows.map(r => r.op))];
+    const cell = {}; g.rows.forEach(r => { cell[r.op + '|' + r.part] = r; });
+    const short = p => groups.length > 1 ? p.replace(/(2nd|second)\s*shift\s*[-–:]?\s*/i, '').replace(/\s*shift$/i, '') : p.replace(/\s*shift$/i, '');
+    return '<div class="panel sched-panel"><div class="panel-lab">' + g.name + '</div><table class="sched-table"><thead><tr><th>Operator</th>' +
+      parts.map(p => '<th>' + short(p) + '</th>').join('') + '</tr></thead><tbody>' +
+      ops.map(o => '<tr><td>' + o + '</td>' + parts.map(p => { const c = cell[o + '|' + p]; return '<td>' + (c ? schedCell(c.st, c.note) : '<span class="sched-chip off">\u2014</span>') + '</td>'; }).join('') + '</tr>').join('') +
+      '</tbody></table></div>';
+  }).join('');
+  document.getElementById('schedSub').textContent = new Date().toLocaleDateString(undefined, {weekday: 'long', month: 'long', day: 'numeric'}) + ' \u00b7 from the Daily Schedule tab';
+}
+
 // ==================== Refresh cycle ====================
 async function refreshAllData(){
   try{
@@ -1825,6 +1889,7 @@ async function refreshAllData(){
     renderSalesSlide(orders);
     renderSummarySlide(logEvents, side);
     renderGimbalSlide(gimbal);
+    renderScheduleSlide(await loadSchedule());
     hideErrorBanner();
     document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
   }catch(e){
@@ -1842,7 +1907,7 @@ function hideErrorBanner(){
 }
 
 // ==================== Slide rotation + remote/keyboard navigation ====================
-const SLIDES = ['overview','output','station','cycle','shift','summary','gimbal','sales'];
+const SLIDES = ['overview','schedule','output','station','cycle','shift','summary','gimbal','sales'];
 let currentSlideIdx = 0;
 let autoAdvanceTimer = null;
 const AUTO_ADVANCE_MS = 18000;
