@@ -1871,8 +1871,11 @@ async function refreshAllData(){
     await loadCustomerAliases();   // display names chosen in the tracker's Settings
     const side = await loadSideTabs();
     const gimbal = await loadGimbal();
-    tvStuck = computeStuck(logEvents, side.holds);
     let stuck = loadStuckAtStations(countRows);
+    // only units still on the Count tab's "Stuck at" lists can be stuck: a unit scrapped as a whole
+    // unit (or otherwise taken off the line) never gets a Log sign-out, but Count drops it
+    const onFloor = new Set(Object.values(stuck).flat().map(x => String(x).trim().toUpperCase()));
+    tvStuck = computeStuck(logEvents, side.holds).filter(e => onFloor.size === 0 || onFloor.has(String(e.serial).trim().toUpperCase()));
     currentStuck = stuck;
     lastCountFetch = Date.now();
     const cycleData = computeCycleTimes(logEvents);
