@@ -1381,14 +1381,8 @@ async function pollFeed(){
 }
 
 // ==================== Line Status & Cycle Times slide ====================
-// ---- Targets shown as gauges. Edit these as work orders open and close. ----
-// style: the headset style the WO builds (matches "Style/Metric Name" in Looker_TV_Feed).
-// since: the WO start date (YYYY-MM-DD). Progress = that style's Daily Production since then.
-//        Leave it blank and the gauge counts every unit of that style on record instead.
-const WORK_ORDERS = [
-  {label: 'WO # 530-534', style: 'H2E', target: 2000, since: ''},
-  {label: 'WO # 502-505', style: 'H2C', target: 1000, since: ''}
-];
+// The two order gauges come from the live customer orders in the sheet (the same order data as the
+// Customer Orders slide): the two OPEN orders with the most left to ship. Completed orders drop off.
 const WEEKLY_GOAL = 1000;          // headsets per rolling 7 days
 const ALL_TIME_STEP = 5000;        // all-time gauge fills toward the next multiple of this
 const STATION_LABELS = {'1':'Laser Mark + OM Link','2':'Build','3':'Testing','4':'Final Assembly','5':'QC','6':'Packing'};
@@ -1448,7 +1442,6 @@ function renderLineStatus(feed, stuck, cycleData, extras){
 
   // ---- WIP / shelf split by headset style ----
   const byStyle = {};
-  WORK_ORDERS.forEach(w => { byStyle[w.style] = byStyle[w.style] || {wip:0, shelf:0}; });
   activeSerials.forEach(s => { const k = styleFromSerial(s); (byStyle[k] = byStyle[k] || {wip:0, shelf:0}).wip++; });
   shelfSerials.forEach(s => { const k = styleFromSerial(s); (byStyle[k] = byStyle[k] || {wip:0, shelf:0}).shelf++; });
   const styleNames = Object.keys(byStyle).sort((a,b) => a === 'Other' ? 1 : b === 'Other' ? -1 : b.localeCompare(a)).slice(0, 5);
@@ -1469,14 +1462,14 @@ function renderLineStatus(feed, stuck, cycleData, extras){
   const allTime = extras && extras.allTime ? extras.allTime : headsetRows.reduce((s,r) => s + val(r), 0);
   const weekTotal = extras && extras.weekTotal !== undefined ? extras.weekTotal : headsetRows.filter(r => new Date(r.timestamp) >= weekAgo).reduce((s,r) => s + val(r), 0);
 
-  const gauges = WORK_ORDERS.slice(0, 2).map((w, i) => {
-    const since = w.since ? new Date(w.since + 'T00:00:00') : null;
-    const done = headsetRows.filter(r => r.metric.toUpperCase() === w.style.toUpperCase() && (!since || new Date(r.timestamp) >= since)).reduce((s,r) => s + val(r), 0);
-    return gaugeHtml({
-      label: w.label + ' \u00b7 ' + w.style, value: Math.min(done, w.target), max: w.target,
-      sub: fmtNum(Math.max(0, w.target - done)) + ' to go' + (since ? ' \u00b7 since ' + since.toLocaleDateString(undefined,{month:'short', day:'numeric'}) : ''),
-      c1: i === 0 ? 'oklch(0.55 0.22 290)' : 'oklch(0.6 0.2 330)', c2: i === 0 ? 'oklch(0.75 0.2 305)' : 'oklch(0.78 0.18 345)'
-    });
+  const openOrders = ((extras && extras.orders) || []).filter(o => o.goal > 0 && o.shipped < o.goal)
+    .sort((a, b) => (b.goal - b.shipped) - (a.goal - a.shipped)).slice(0, 2);
+  const gauges = [0, 1].map(i => {
+    const c1 = i === 0 ? 'oklch(0.55 0.22 290)' : 'oklch(0.6 0.2 330)', c2 = i === 0 ? 'oklch(0.75 0.2 305)' : 'oklch(0.78 0.18 345)';
+    const o = openOrders[i];
+    if(!o) return gaugeHtml({label: i === 0 ? 'No open orders' : '\u2014', value: 0, max: 1, sub: 'All customer orders are shipped', c1: c1, c2: c2});
+    return gaugeHtml({label: customerAlias(o.name), value: o.shipped, max: o.goal,
+      sub: fmtNum(o.goal - o.shipped) + ' left to ship', c1: c1, c2: c2});
   });
   const nextMilestone = Math.max(ALL_TIME_STEP, Math.ceil((allTime + 1) / ALL_TIME_STEP) * ALL_TIME_STEP);
   gauges.push(gaugeHtml({label: 'All time counter', value: allTime, max: nextMilestone,
@@ -1890,7 +1883,7 @@ async function refreshAllData(){
     renderWeekCalendar(feed, countDaily);
     renderStationSlide(stuck);
     renderFeed();
-    renderLineStatus(feed, stuck, cycleData, {allTime: allTimeUnits, weekTotal: weekFinished});
+    renderLineStatus(feed, stuck, cycleData, {allTime: allTimeUnits, weekTotal: weekFinished, orders: orders});
     renderShiftSlide(feed, countDaily);
     renderSalesSlide(orders);
     renderSummarySlide(logEvents, side);
