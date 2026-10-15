@@ -1679,7 +1679,7 @@ const TV_SHIFT_DEFS = [
   {name: 'Shift 1', start: '07:00', end: '15:30'},
   {name: 'Shift 2', start: '15:00', end: '23:30'}   // overlaps Shift 1 by 30 minutes (handover)
 ];
-const TV_STUCK_HOURS = 4;
+const TV_STUCK_HOURS = 24;   // overnight WIP is normal; a day or more without a sign-out means a unit needs looking at
 let tvStuck = [];      // [{serial, stationNum, person, t}]
 let tvSideCache = null; // {at, scrap, holds}
 async function loadSideTabs(){
@@ -1875,7 +1875,10 @@ async function refreshAllData(){
     // only units still on the Count tab's "Stuck at" lists can be stuck: a unit scrapped as a whole
     // unit (or otherwise taken off the line) never gets a Log sign-out, but Count drops it
     const onFloor = new Set(Object.values(stuck).flat().map(x => String(x).trim().toUpperCase()));
-    tvStuck = computeStuck(logEvents, side.holds).filter(e => onFloor.size === 0 || onFloor.has(String(e.serial).trim().toUpperCase()));
+    // fall back to the Log alone only if the Count tab couldn't be read (no "Stuck at" columns found);
+    // an empty floor means nothing is stuck
+    const countReadable = Object.keys(stuck).length > 0;
+    tvStuck = computeStuck(logEvents, side.holds).filter(e => !countReadable || onFloor.has(String(e.serial).trim().toUpperCase()));
     currentStuck = stuck;
     lastCountFetch = Date.now();
     const cycleData = computeCycleTimes(logEvents);
