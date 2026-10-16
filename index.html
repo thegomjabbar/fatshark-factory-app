@@ -389,6 +389,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .label .cut-zone{position:relative; padding:6mm; flex:none;}
   .label .qr-row{display:flex; flex-direction:column; align-items:center; gap:4mm;}
   .label .qr-block{text-align:center;}
+  .label .extra-qr{flex:none; align-self:center; text-align:center; margin:0 2mm 0 0;}
+  .label .extra-qr .extra-cap{font-size:5pt; margin-top:.5mm;}
   .label .qr-block .qr-img-wrap{line-height:0;}
   .label .qr-caption{font-size:9px; line-height:1.15; font-weight:700; margin-top:0.7mm; letter-spacing:.06em;}
   .label .style-letter{
@@ -1572,7 +1574,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <div class="hint">Auto-increments after each batch, continuing from the highest gimbal work order in the sheet (shared by every computer). Override if needed.</div></label>
         <label class="field"><span>Person</span><input type="text" id="ggGenPerson" autocomplete="off"></label>
       </div>
-      <label class="field"><span>Date generated</span><input type="date" id="ggDate"></label>
+      <div class="row2">
+        <label class="field"><span>Date generated</span><input type="date" id="ggDate"></label>
+        <label class="field"><span>Third small QR size (mm, 0 = off)</span><input type="number" id="ggExtraQrMm" value="6" min="0" max="20" step="0.5">
+          <div class="hint">Printed beside the two main QR codes, outside the laser cut-zone. Same serial.</div></label>
+      </div>
       <div class="hint">Serial format: <b>[Code][YY][WW][6 random A-Z0-9]</b> &mdash; YY/WW are derived from the date above (ISO week). Example: <span id="ggFmtExample" style="font-weight:700"></span></div>
       <div class="btnrow" style="margin-top:14px;">
         <button class="accent" id="btnGgGenerate">Generate batch</button>
@@ -3226,6 +3232,21 @@ function buildLabelEl(r, wIn, hIn, dual, idPrefix, qrMm, fiducials){
 
   contentRow.appendChild(cutZone);
 
+  // optional third, smaller QR (gimbal labels): beside the cut-zone, outside the fiducials, so the
+  // laser/camera area stays exactly as it was
+  if(r.extraQrMm > 0){
+    const ex = document.createElement('div');
+    ex.className = 'extra-qr';
+    const exDiv = document.createElement('div');
+    exDiv.id = idPrefix + '-qrx';
+    ex.appendChild(exDiv);
+    const exCap = document.createElement('div');
+    exCap.className = 'qr-caption extra-cap';
+    exCap.textContent = r.serial.slice(-5);
+    ex.appendChild(exCap);
+    contentRow.appendChild(ex);
+  }
+
   // big single letter identifying the style, e.g. H2E -> "E" (sized to roughly half the
   // previous scale — enough to read across a room without dominating the whole label),
   // with the full serial printed smaller underneath it for a quick visual+text cross-check.
@@ -3273,9 +3294,12 @@ function buildLabelEl(r, wIn, hIn, dual, idPrefix, qrMm, fiducials){
   // sometimes falls back to an <img> — size BOTH so whichever one is actually shown is correct.
   const RENDER_PX = 300;
   setTimeout(() => {
-    for(let c=0;c<copies;c++){
-      const target = document.getElementById(idPrefix + '-qr-' + c);
+    const targets = [];
+    for(let c=0;c<copies;c++) targets.push([document.getElementById(idPrefix + '-qr-' + c), qrMm]);
+    if(r.extraQrMm > 0) targets.push([document.getElementById(idPrefix + '-qrx'), r.extraQrMm]);
+    for(const [target, mmSize] of targets){
       if(!target) continue;
+      const qrMm = mmSize;
       try{
         if(typeof QRCode === 'undefined') throw new Error('QRCode library not loaded');
         new QRCode(target, {text: r.serial, width: RENDER_PX, height: RENDER_PX, correctLevel: QRCode.CorrectLevel.M});
@@ -6367,6 +6391,11 @@ async function ggSerialsOnOpen(){
 }
 document.getElementById('ggWo').addEventListener('input', e => { e.target.dataset.touched = '1'; });
 document.getElementById('ggStyle').addEventListener('change', ggUpdateFmtExample);
+(function(){
+  const f = document.getElementById('ggExtraQrMm');
+  const saved = localStorage.getItem('gg-extra-qr-mm-v1'); if(saved !== null) f.value = saved;
+  f.addEventListener('change', () => { localStorage.setItem('gg-extra-qr-mm-v1', f.value); if(ggBatch.length) ggRenderLabelPreview(); });
+})();
 document.getElementById('ggDate').addEventListener('change', ggUpdateFmtExample);
 function ggRenderBatch(){
   document.getElementById('ggBatchCount').textContent = ggBatch.length + ' rows';
@@ -6450,7 +6479,8 @@ document.getElementById('btnGgTsv').addEventListener('click', async () => {
 // Gimbal traveler labels use the SAME builder and print path as the headset serial labels
 // (buildLabelEl + #printArea), so size, QR size, dual QR and fiducials match exactly.
 function ggLabelRows(){
-  return ggBatch.map(x => ({workOrder: x.wo || '\u2014', quantity: ggBatch.length, dateGenerated: x.date, person: x.person, serial: x.sn,
+  const extra = Math.max(0, parseFloat(document.getElementById('ggExtraQrMm').value) || 0);
+  return ggBatch.map(x => ({extraQrMm: extra, workOrder: x.wo || '\u2014', quantity: ggBatch.length, dateGenerated: x.date, person: x.person, serial: x.sn,
     productCode: x.style, serialLabel: 'Gimbal Serial Number', bigMark: x.style.replace(/^GG/, 'G')}));
 }
 function ggLabelSettings(){
