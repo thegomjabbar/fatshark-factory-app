@@ -62,6 +62,9 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .gg-station-btn b{ display:block; font-size:20px; font-weight:800; color:var(--ink); }
   .gg-station-btn span{ display:block; font-size:10.5px; color:var(--muted); margin-top:2px; line-height:1.3; text-transform:uppercase; }
   .gg-station-btn:hover{ border-color:var(--accent-soft); }
+  .gg-station-btn .gg-stage{ font-size:9.5px !important; letter-spacing:.06em; color:var(--accent) !important; margin-top:3px !important; }
+  .gg-station-btn.gg-stage-start{ margin-left:18px; position:relative; }
+  .gg-station-btn.gg-stage-start::before{ content:'\1F517'; position:absolute; left:-17px; top:50%; transform:translateY(-50%); font-size:12px; }
   .gg-station-btn.active{ border-color:var(--accent); background:oklch(0.96 0.02 294); }
   .gg-station-btn.active b{ color:var(--accent); }
   .gg-view{ display:none; }
@@ -1519,7 +1522,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div class="gg-view" id="gg-link">
     <div class="panel">
       <h2>Link Subassembly A + Subassembly B</h2>
-      <p class="hint">Once both are finished (signed out of the last station), scan the <b>A</b> (GG1) and the <b>B</b> (GG2) that go together. They're checked first: the right styles, both finished, neither already linked, and neither shipped. Linked pairs are saved in the <b>GimbalLinks</b> tab, and an A or B can't be shipped until it's linked. Scanning them in either order is fine.</p>
+      <p class="hint">Once both have finished the subassembly stations (signed out of <b>station 3</b>), scan the <b>A</b> (GG1) and the <b>B</b> (GG2) that go together. They're checked first: the right styles, both done with station 3, neither already linked, and neither shipped. From then on they are one unit tracked under <b>A's serial</b>: either label can be scanned at the combined stations (Build, Test, QC, Pack Up), and the pair ships together. Links are saved in the <b>GimbalLinks</b> tab and the LinkedTo column of GimbalSerials.</p>
       <div class="row3">
         <label class="field"><span>Your initials</span><input type="text" id="ggLinkPerson" autocomplete="off"></label>
         <label class="field"><span>Subassembly A (GG1)</span><input type="text" id="ggLinkA" placeholder="Scan A…" autocomplete="off"></label>
@@ -1790,6 +1793,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <h2>Gimbal stations</h2>
     <p class="hint">The gimbal line's stations, in order. The last one is "finished, ready for the warehouse". Shared by every computer. Renaming is safe at any time; adding or removing stations changes which station counts as the last one, so do that between batches.</p>
     <div id="ggStationList"></div>
+    <label class="field" style="max-width:360px; margin-top:8px;"><span>A and B are linked after station #</span><input type="number" id="ggLinkAfterInput" min="1" max="11" value="3"></label>
+    <p class="hint">Stations up to this number are done by A and B separately; the stations after it are the combined unit.</p>
     <div class="btnrow" style="display:flex; gap:8px;"><button class="secondary" id="btnGgAddStation">Add station</button><button class="accent" id="btnGgSaveStations">Save stations</button></div>
     <div class="hint" id="ggStationsMsg"></div>
   </div>
@@ -5980,17 +5985,18 @@ async function sendTestSummary(){
 // =====================================================================
 const GG_SERIAL_RE = /^GG\d+\d{4}[A-Z0-9]{6}$/;
 const GG_PERSON_KEY = 'gg-person-v1';
-let ggStations = ['Laser Mark', 'Build', 'Test', 'QC', 'Pack Up'];
+let ggStations = ['Laser Mark', 'Build', 'Test', 'Build', 'Test', 'QC', 'Pack Up'];
+let ggLinkAfter = 3;   // stations 1..3: A and B separately; then Link A + B; 4..: the combined unit (under A's serial)
 let ggSub = 'status', ggData = null, ggRecent = [], ggBox = [], ggLastShip = null, ggBatch = [], ggTimer = null;
 function ggStyleOf(sn){ const s = String(sn || '').trim().toUpperCase(); return s.length > 10 ? s.slice(0, s.length - 10) : ''; }
-function ggStationName(n){ return 'Station ' + n + ' \u2014 ' + (ggStations[Number(n) - 1] || '?'); }
+function ggStationName(n){ return 'Station ' + n + ' \u2014 ' + (ggStations[Number(n) - 1] || '?') + (Number(n) > ggLinkAfter ? ' (combined)' : ''); }
 async function ggTab(name){
   try{ return (await sheetPost({action: 'getFullSheet', sheet: name})).rows || []; }
   catch(e){ if(/not found/i.test(e.message)) return []; throw e; }   // the tab is created on first use
 }
 let ggConfigLoaded = false;
 async function ggLoadConfig(){
-  try{ const r = await sheetPost({action: 'getGimbalConfig'}); if(r.stations && r.stations.length){ ggStations = r.stations; ggConfigLoaded = true; } }catch(e){}
+  try{ const r = await sheetPost({action: 'getGimbalConfig'}); if(r.stations && r.stations.length){ ggStations = r.stations; if(r.linkAfter) ggLinkAfter = Number(r.linkAfter); ggConfigLoaded = true; } }catch(e){}
   ggRenderChips(); ggRenderStationEditor();
 }
 function ggShowSub(name){
@@ -6038,11 +6044,16 @@ async function ggRefreshStatus(){
   ev.forEach(e => { latest[e.sn] = e; });
   const now = Date.now(), weekAgo = now - 7 * 86400000, todayKey = localDayKeyLoc(new Date());
   // where every unit is
-  const inSt = {}, waiting = {}, stuck = {};
+  const inSt = {}, waiting = {}, stuck = {}, readyToLink = {GG1: 0, GG2: 0};
+  const activePair = new Set(); linkRows.slice(1).filter(r => /^linked$/i.test(locCell(r[5]))).forEach(r => { activePair.add(locCell(r[1]).toUpperCase()); activePair.add(locCell(r[2]).toUpperCase()); });
   Object.values(latest).forEach(e => {
-    const n = Number(e.st);
+    const n = Number(e.st), st = ggStyleOf(e.sn);
+    if(st === 'GG2' && activePair.has(e.sn)) return;   // a linked B is part of its A (the master) from here on
     if(e.event === 'MoveIn'){ inSt[n] = (inSt[n] || 0) + 1; if(now - e.t > 4 * 3600000) stuck[n] = (stuck[n] || 0) + 1; }
-    else if(e.event === 'MoveOut' && n < count) waiting[n + 1] = (waiting[n + 1] || 0) + 1;
+    else if(e.event === 'MoveOut' && n < count){
+      if(n === ggLinkAfter && st in readyToLink && !activePair.has(e.sn)) readyToLink[st]++;
+      else waiting[n + 1] = (waiting[n + 1] || 0) + 1;
+    }
   });
   // time at each station over the last 7 days
   const openIn = {}, dur = {}, opDur = {}, firstIn = {}, leads = [];
@@ -6060,7 +6071,7 @@ async function ggRefreshStatus(){
   });
   const finished = ev.filter(e => e.event === 'MoveOut' && Number(e.st) === count);
   const shipped = sentRows.slice(1).map(r => ({sn: locCell(r[0]).toUpperCase(), t: locDate(r[1]), order: locCell(r[3])})).filter(x => x.sn);
-  const wip = Object.values(inSt).reduce((a, b) => a + b, 0) + Object.values(waiting).reduce((a, b) => a + b, 0);
+  const wip = Object.values(inSt).reduce((a, b) => a + b, 0) + Object.values(waiting).reduce((a, b) => a + b, 0) + readyToLink.GG1 + readyToLink.GG2;
   const goals = goalRows.slice(1).map(r => ({label: locCell(r[0]), target: Number(r[1]) || 0})).filter(g => g.label);
   const shippedBy = {}; shipped.forEach(x => { if(ggCountsForOrder(x.order, x.sn)) shippedBy[x.order] = (shippedBy[x.order] || 0) + 1; });
   const openOrders = goals.filter(g => (shippedBy[g.label] || 0) < g.target);
@@ -6081,7 +6092,8 @@ async function ggRefreshStatus(){
   }).join('') : '<tr><td colspan="7">No completed station times in the last 7 days.</td></tr>';
   document.getElementById('ggStationBody').innerHTML = ggStations.map((nm, i) => {
     const n = i + 1; const d = (dur[String(n)] || []).slice().sort((a, b) => a - b);
-    return '<tr><td><b>' + n + '</b> ' + locEsc(nm) + (n === count ? ' <span class="hint">(finished)</span>' : '') + '</td><td><b>' + (inSt[n] || 0) + '</b></td><td>' + (waiting[n] || 0) + '</td><td' + (stuck[n] ? ' class="gg-bad"' : '') + '>' + (stuck[n] || 0) + '</td><td>' + (d.length ? formatDuration(d[Math.floor(d.length / 2)]) : '\u2014') + '</td></tr>';
+    const linkRow = n === ggLinkAfter + 1 ? '<tr style="background:var(--accent-soft);"><td colspan="5"><b>\u{1F517} Link A + B</b> &nbsp;\u2014&nbsp; waiting to be linked: <b>' + readyToLink.GG1 + '</b> A (GG1), <b>' + readyToLink.GG2 + '</b> B (GG2)</td></tr>' : '';
+    return linkRow + '<tr><td><b>' + n + '</b> ' + locEsc(nm) + (n > ggLinkAfter ? ' <span class="hint">(combined)</span>' : ' <span class="hint">(A / B)</span>') + (n === count ? ' <span class="hint">(finished)</span>' : '') + '</td><td><b>' + (inSt[n] || 0) + '</b></td><td>' + (waiting[n] || 0) + '</td><td' + (stuck[n] ? ' class="gg-bad"' : '') + '>' + (stuck[n] || 0) + '</td><td>' + (d.length ? formatDuration(d[Math.floor(d.length / 2)]) : '\u2014') + '</td></tr>';
   }).join('');
   // finished per working day, by shift and style
   const days = {};
@@ -6106,10 +6118,9 @@ async function ggRefreshStatus(){
   const links = linkRows.slice(1).filter(r => /^linked$/i.test(locCell(r[5])));
   const linked = new Set(); links.forEach(r => { linked.add(locCell(r[1]).toUpperCase()); linked.add(locCell(r[2]).toUpperCase()); });
   const shippedSet = new Set(shipped.map(x => x.sn));
-  const doneNow = Object.values(latest).filter(e => e.event === 'MoveOut' && Number(e.st) === count && !shippedSet.has(e.sn));
-  const waitFor = st => doneNow.filter(e => ggStyleOf(e.sn) === st && !linked.has(e.sn)).length;
+  const waitFor = st => readyToLink[st];
   document.getElementById('ggLinkKpis').innerHTML = [['Linked pairs, all time', links.length], ['Linked, last 7 days', links.filter(r => { const d = locDate(r[4]); return d && d >= weekAgo; }).length],
-    ['A finished, waiting for a B', waitFor('GG1')], ['B finished, waiting for an A', waitFor('GG2')]]
+    ['A done with station ' + ggLinkAfter + ', waiting to link', waitFor('GG1')], ['B done with station ' + ggLinkAfter + ', waiting to link', waitFor('GG2')]]
     .map(k => '<div class="ss-stat"><div class="v">' + k[1] + '</div><div class="k">' + k[0] + '</div></div>').join('');
   ggRenderChips();
 }
@@ -6128,7 +6139,7 @@ let ggSelected = 1;
 function ggRenderChips(){   // the numbered station cards + the "currently signed in here" line
   const row = document.getElementById('ggStationRow'); if(!row) return;
   if(ggSelected > ggStations.length) ggSelected = 1;
-  row.innerHTML = ggStations.map((nm, i) => '<button class="gg-station-btn' + (i + 1 === ggSelected ? ' active' : '') + '" data-ggstation="' + (i + 1) + '"><b>' + (i + 1) + '</b><span>' + locEsc(nm) + '</span></button>').join('');
+  row.innerHTML = ggStations.map((nm, i) => '<button class="gg-station-btn' + (i + 1 === ggSelected ? ' active' : '') + (i + 1 === ggLinkAfter + 1 ? ' gg-stage-start' : '') + '" data-ggstation="' + (i + 1) + '"><b>' + (i + 1) + '</b><span>' + locEsc(nm) + '</span><span class="gg-stage">' + (i + 1 > ggLinkAfter ? 'Combined' : 'A / B') + '</span></button>').join('');
   const here = document.getElementById('ggCurrentlyHere');
   const name = ggStationName(ggSelected);
   if(!ggData){ here.textContent = 'Press Refresh station status to see what is signed in at ' + name + '.'; return; }
@@ -6157,8 +6168,10 @@ async function ggScan(raw){
     const r = await sheetPost({action: 'gimbalScanAction', serial: sn, autoMode: auto, selectedStation: String(ggSelected), person: person});
     if(r.status === 'ok'){
       const dur = r.duration ? formatDuration(r.duration) : '';
-      msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + sn + (r.event === 'MoveIn' ? ' signed into ' : ' signed out of ') + locEsc(ggStationName(r.targetStation)) + '</b>' + (r.finished ? ' \u2014 finished, ready for the warehouse.' : '') + (dur ? ' (' + dur + ' at the station)' : '');
-      ggRecent.unshift({time: new Date().toLocaleTimeString(), sn: sn, st: r.targetStation, event: r.event, person: person, dur: dur});
+      const unitSn = r.serialUsed || sn, via = unitSn !== sn ? ' (scanned ' + sn + ', part of this unit)' : '';
+      msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + unitSn + (r.event === 'MoveIn' ? ' signed into ' : ' signed out of ') + locEsc(ggStationName(r.targetStation)) + '</b>' + via + (r.finished ? ' \u2014 finished, ready for the warehouse.' : '') +
+        (r.event === 'MoveOut' && Number(r.targetStation) === ggLinkAfter && ['GG1', 'GG2'].indexOf(ggStyleOf(unitSn)) > -1 ? ' Subassembly done \u2014 next: <b>Link A + B</b>.' : '') + (dur ? ' (' + dur + ' at the station)' : '');
+      ggRecent.unshift({time: new Date().toLocaleTimeString(), sn: unitSn + (via ? ' (via ' + sn + ')' : ''), st: r.targetStation, event: r.event, person: person, dur: dur});
       ggRenderRecent();
       if(ggData){
         const n = Number(r.targetStation); ggData.at = ggData.at || {}; ggData.at[n] = (ggData.at[n] || []).filter(x => x.sn !== sn);
@@ -6169,6 +6182,7 @@ async function ggScan(raw){
     }else if(r.status === 'ignored'){ msg.textContent = sn + ' was just scanned at ' + ggStationName(r.station) + '. Ignored the double scan.'; }
     else if(r.status === 'complete'){ msg.textContent = sn + ' has already finished every station.'; }
     else if(r.reason === 'wrongStation'){ msg.innerHTML = '<span class="gg-bad">' + sn + ' should go to ' + locEsc(ggStationName(r.expectedNext)) + ' next, not ' + locEsc(ggStationName(ggSelected)) + '.</span>'; }
+    else if(r.reason === 'needsLink'){ msg.innerHTML = '<span class="gg-bad">' + locEsc(r.message) + '</span>'; }
     else if(r.reason === 'signedInElsewhere'){ msg.innerHTML = '<span class="gg-bad">' + sn + ' is still signed in at ' + locEsc(ggStationName(r.station)) + '. Sign it out there first, or turn on Auto-detect.</span>'; }
     else{ msg.innerHTML = '<span class="gg-bad">' + locEsc(r.message || 'Scan not logged.') + '</span>'; }
   }catch(e){
@@ -6212,7 +6226,7 @@ async function ggTryLink(){
   try{
     const r = await sheetPost({action: 'linkGimbalPair', serialA: a, serialB: b, person: person});
     if(r.status === 'ok'){
-      msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Linked: A ' + r.serialA + ' + B ' + r.serialB + '.</b> Both can now be shipped.';
+      msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Linked: A ' + r.serialA + ' + B ' + r.serialB + '.</b> Assemble them and sign the unit into ' + locEsc(ggStationName(ggLinkAfter + 1)) + ' (either label works).';
       fa.value = ''; fb.value = ''; fa.focus(); ggLoadLinks();
     }else{ msg.innerHTML = '<span class="gg-bad">Not linked: ' + locEsc(r.message || 'check the serials') + '</span>'; }
   }catch(e){ msg.innerHTML = '<span class="gg-bad">' + (/unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Could not link: ' + locEsc(e.message)) + '</span>'; }
@@ -6468,6 +6482,7 @@ document.getElementById('btnGgPrintLabels').addEventListener('click', () => {
 // ---------- Settings: gimbal stations ----------
 function ggRenderStationEditor(){
   const el = document.getElementById('ggStationList'); if(!el) return;
+  const la = document.getElementById('ggLinkAfterInput'); if(la && document.activeElement !== la) la.value = ggLinkAfter;
   el.innerHTML = ggStations.map((nm, i) => '<div class="gg-st-row"><b>' + (i + 1) + '</b><input type="text" class="gg-st-name" value="' + locEsc(nm) + '"><button class="secondary" data-gg-del="' + i + '" style="padding:4px 10px;">\u00d7</button></div>').join('');
 }
 document.getElementById('btnGgAddStation').addEventListener('click', () => { ggStations = [...document.querySelectorAll('.gg-st-name')].map(i => i.value); ggStations.push(''); ggRenderStationEditor(); });
@@ -6479,10 +6494,10 @@ document.getElementById('btnGgSaveStations').addEventListener('click', async () 
   const msg = document.getElementById('ggStationsMsg');
   const list = [...document.querySelectorAll('.gg-st-name')].map(i => i.value.trim()).filter(Boolean);
   try{
-    const r = await sheetPost({action: 'setGimbalConfig', stations: list});
+    const r = await sheetPost({action: 'setGimbalConfig', stations: list, linkAfter: Number(document.getElementById('ggLinkAfterInput').value) || 3});
     if(r.status === 'error') throw new Error(r.message);
-    ggStations = r.stations; ggRenderStationEditor(); ggRenderChips();
-    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Saved for every computer.</b> Last station (finished): ' + locEsc(ggStations[ggStations.length - 1]) + '.';
+    ggStations = r.stations; ggLinkAfter = Number(r.linkAfter) || ggLinkAfter; ggRenderStationEditor(); ggRenderChips();
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Saved for every computer.</b> A and B are linked after station ' + ggLinkAfter + '; last station (finished): ' + locEsc(ggStations[ggStations.length - 1]) + '.';
   }catch(e){ msg.textContent = /unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Could not save: ' + e.message; }
 });
 ggRenderStationEditor();
@@ -6650,6 +6665,11 @@ async function runGimbalLocate(serial){
       const n = Number(last.st);
       status = n >= N ? {c: '#c7851a', big: 'Finished, waiting to ship to the warehouse', sub: 'Signed out of ' + ggStationName(n) + ' by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago'}
         : {c: '#c7851a', big: 'Between stations, waiting for ' + ggStationName(n + 1), sub: 'Signed out of ' + ggStationName(n) + ' by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago'};
+    }
+    // a linked B is part of its A from the combined stations on: point to the unit
+    if(activeLink && ggStyleOf(serial) === 'GG2' && !ship){
+      const master = partnerOf(activeLink);
+      status = {c: 'var(--accent)', big: 'Combined into ' + master, sub: 'Subassembly B, linked ' + (locFmt(locDate(activeLink[4])) || '') + '. The combined unit is tracked under its A: click the A serial to see where it is now.'};
     }
     const done = [...new Set(events.filter(e => /moveout/i.test(e.event)).map(e => e.st))].sort();
     const first = events.find(e => /movein/i.test(e.event) && e.st === '1'), fin = events.find(e => /moveout/i.test(e.event) && Number(e.st) === N);
