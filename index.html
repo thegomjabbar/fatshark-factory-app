@@ -62,6 +62,32 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .gg-station-btn b{ display:block; font-size:20px; font-weight:800; color:var(--ink); }
   .gg-station-btn span{ display:block; font-size:10.5px; color:var(--muted); margin-top:2px; line-height:1.3; text-transform:uppercase; }
   .gg-station-btn:hover{ border-color:var(--accent-soft); }
+  .gg-part-row{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .gg-part-btn{ border:1px solid var(--line); background:#fff; border-radius:99px; padding:6px 14px; font-weight:700; font-size:12px; cursor:pointer; font-family:inherit; }
+  .gg-part-btn + .gg-part-btn{ margin-left:0; }
+  .gg-part-btn.active{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .gg-kit{ border:2px solid var(--accent); border-radius:10px; padding:12px 14px; margin:4px 0 14px; background:oklch(0.97 0.02 294); }
+  .gg-kit h3{ margin:0 0 8px; font-size:14px; }
+  .gg-kit-need{ display:inline-block; margin:0 8px 8px 0; padding:6px 12px; border-radius:8px; font-weight:800; font-size:13px; background:#fff; border:2px solid var(--line); }
+  .gg-kit-need.done{ border-color:#1d7a3f; color:#1d7a3f; }
+  .gg-kit-need.todo{ border-color:#c7851a; color:#8a5a0b; }
+  .gg-kit table{ margin-top:6px; }
+  .gg-slot-group{ margin:6px 0 10px; }
+  .gg-slot-group .lab{ font-size:12px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+  .gg-slots{ display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:8px; }
+  .gg-slot{ border:2px dashed var(--line); border-radius:8px; padding:8px 10px; background:#fff; min-height:52px; }
+  .gg-slot .sn{ font-family:var(--mono); font-weight:800; font-size:14px; }
+  .gg-slot .why{ font-size:12px; margin-top:3px; line-height:1.35; }
+  .gg-slot .ph{ color:var(--muted); font-size:13px; }
+  .gg-slot.ready{ border-style:solid; border-color:#1d7a3f; } .gg-slot.ready .why{ color:#1d7a3f; }
+  .gg-slot.linked{ border-style:solid; border-color:#1d7a3f; background:#eef8f1; } .gg-slot.linked .why{ color:#1d7a3f; }
+  .gg-slot.notFinished{ border-style:solid; border-color:#c7851a; background:#fff8ec; } .gg-slot.notFinished .why{ color:#8a5a0b; font-weight:700; }
+  .gg-slot.bad{ border-style:solid; border-color:#c0392b; background:#fdf0ee; } .gg-slot.bad .why{ color:#a13636; font-weight:700; }
+  .gg-slot.next{ border-color:var(--accent); }
+  .gg-slot .x{ float:right; border:none; background:none; color:#a13636; font-weight:800; cursor:pointer; font-size:15px; padding:0 2px; }
+  #ggMsg{ font-size:15px; margin-top:8px; }
+  .station-warning-overlay.gg-ok .station-warning-box{ border-color:#1d7a3f; }
+  .station-warning-overlay.gg-ok .station-warning-icon{ color:#1d7a3f; }
   .gg-station-btn .gg-stage{ font-size:9.5px !important; letter-spacing:.06em; color:var(--accent) !important; margin-top:3px !important; }
   .gg-station-btn.gg-stage-start{ margin-left:18px; position:relative; }
   .gg-station-btn.gg-stage-start::before{ content:'\1F517'; position:absolute; left:-17px; top:50%; transform:translateY(-50%); font-size:12px; }
@@ -1469,25 +1495,31 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div class="subtabs">
     <button data-ggsub="status">Line status</button>
     <button data-ggsub="scan">Sign in / out</button>
-    <button data-ggsub="link">Link A + B</button>
     <button data-ggsub="ship">Ship to warehouse</button>
     <button data-ggsub="serials" id="ggSerialsSubBtn">Serials &amp; labels</button>
+  </div>
+
+  <div id="ggWarnOverlay" class="station-warning-overlay">
+    <div class="station-warning-box" id="ggWarnBox">
+      <div class="station-warning-icon" id="ggWarnIcon">&#9888;</div>
+      <div class="station-warning-text" id="ggWarnText"></div>
+      <button class="station-warning-dismiss" id="btnGgWarnOk">OK, GOT IT</button>
+    </div>
   </div>
 
   <!-- ===== Line status (the gimbal line's Count sheet) ===== -->
   <div class="gg-view" id="gg-status">
     <div class="panel">
       <h2>Gimbal line status <span class="count" id="ggUpdated"></span></h2>
-      <p class="hint">Guardian Gimbal units only (GG1, GG2 …). Kept completely separate from the headsets: none of these numbers are counted in headset totals, and the headset tabs in the sheet are never touched.</p>
+      <p class="hint">Every part has its own serial and stations; parts are linked into their <b id="ggParentName1">Subassembly D</b> at its Link station, and the D is the serial that ships. Kept completely separate from the headsets.</p>
       <div class="ss-grid" id="ggKpis" style="grid-template-columns:repeat(6, 1fr);"></div>
       <div class="btnrow" style="display:flex; gap:8px; flex-wrap:wrap;"><button class="secondary" id="btnGgRefresh">Refresh</button><button class="secondary" id="btnGgCountTab">Update the GimbalCount tab now</button></div>
       <div class="hint" id="ggCountMsg">The <b>GimbalCount</b> tab in the sheet is the gimbal line's Count sheet. It updates itself every 5 minutes.</div>
     </div>
-    <div class="panel"><h2>Stations</h2><div class="tablewrap"><table><thead><tr><th>Station</th><th>Signed in now</th><th>Waiting to start</th><th>Stuck over 4h</th><th>Median time (7 days)</th></tr></thead><tbody id="ggStationBody"></tbody></table></div></div>
-    <div class="panel"><h2>Subassembly links (A + B)</h2><div class="ss-grid" id="ggLinkKpis" style="grid-template-columns:repeat(4, 1fr);"></div></div>
+    <div class="panel"><h2>Stations, by part</h2><div class="tablewrap"><table><thead><tr><th>Part</th><th>Station</th><th>Signed in now</th><th>Waiting to start</th><th>Stuck over 24h</th><th>Median time (7 days)</th></tr></thead><tbody id="ggStationBody"></tbody></table></div></div>
     <div class="panel"><h2>Operator cycle times per station <span class="count">last 7 days</span></h2>
       <p class="hint">Time from sign-in to sign-out, credited to whoever signed the unit out of that station.</p>
-      <div class="tablewrap" style="max-height:360px;"><table><thead><tr><th>Operator</th><th>Station</th><th>Units</th><th>Median</th><th>Average</th><th>Fastest</th><th>Slowest</th></tr></thead><tbody id="ggOpBody"></tbody></table></div></div>
+      <div class="tablewrap" style="max-height:360px;"><table><thead><tr><th>Operator</th><th>Part</th><th>Station</th><th>Units</th><th>Median</th><th>Average</th><th>Fastest</th><th>Slowest</th></tr></thead><tbody id="ggOpBody"></tbody></table></div></div>
     <div class="panel"><h2>Finished per day</h2><div class="tablewrap"><table><thead id="ggDailyHead"></thead><tbody id="ggDailyBody"></tbody></table></div></div>
     <div class="panel"><h2>Customer orders</h2><div id="ggOrders"></div></div>
   </div>
@@ -1496,45 +1528,32 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div class="gg-view" id="gg-scan">
     <div class="panel">
       <h2>Gimbal sign in / sign out</h2>
-      <p class="hint">Select the station you're standing at, then scan a gimbal serial. The app checks whether that unit is already signed in here and automatically logs a sign-in or sign-out in the GimbalLog tab. Signing a unit out of the last station marks it complete and ready for warehouse scan-out. Each scan is verified and written as one locked operation, so multiple computers scanning at once can't create conflicting entries.</p>
+      <p class="hint">Scan a part when it arrives at your station and again when you're done. Each part (A, B, motor, D) follows its own stations. At the <b>Link</b> station, sign the D in, then scan each of its parts to link them; the D can't leave Link until it has all of them. After linking, scanning any of its parts works on the D.</p>
       <label class="field" style="display:flex; align-items:center; gap:8px; flex-direction:row; margin-bottom:10px;">
         <input type="checkbox" id="ggAutoDetect" checked style="width:auto;">
-        <span style="margin:0;"><b>Auto-detect station</b> from each unit's own scan history (recommended) &mdash; figures out sign-in vs sign-out and which station is next by itself, so picking a station below becomes optional. Turn off to require the selected station to match exactly (useful if a device is dedicated to one physical station).</span>
+        <span style="margin:0;"><b>Auto-detect station</b> from each unit's own scan history (recommended) &mdash; figures out sign-in vs sign-out and which station is next by itself. Turn off to require the selected station to match exactly.</span>
       </label>
+      <div class="gg-part-row" id="ggPartRow"></div>
       <div class="station-select-row" id="ggStationRow"></div>
       <div class="hint" id="ggCurrentlyHere" style="margin-bottom:10px;"></div>
+      <div class="gg-kit" id="ggKitPanel" style="display:none;"></div>
       <div class="row2">
         <label class="field"><span>Scanned by (initials)</span><input type="text" id="ggPerson" autocomplete="off"></label>
         <div></div>
       </div>
-      <label class="field"><span>Scan or type a gimbal serial number, then press Enter</span><input type="text" id="ggScanInput" placeholder="Scan here…" autocomplete="off"></label>
+      <label class="field"><span id="ggScanLabel">Scan or type a gimbal serial number, then press Enter</span><input type="text" id="ggScanInput" placeholder="Scan here…" autocomplete="off"></label>
       <div class="btnrow" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
         <button class="secondary" id="btnGgStationRefresh">Refresh station status</button>
-        <button class="accent" id="btnGgLocate" style="margin-left:auto;">&#128269; Locate a unit</button>
+        <label class="quick-loc" title="Hover, then scan or type a serial to see its history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
+          <input type="text" id="ggQuickLocate" placeholder="Unit history" autocomplete="off" spellcheck="false">
+        </label>
       </div>
       <div class="hint" id="ggMsg"></div>
     </div>
     <div class="panel">
       <h2>Recent scans this session <span class="count" id="ggRecentCount">0</span></h2>
-      <div class="tablewrap" style="max-height:360px;"><table><thead><tr><th>Time</th><th>Serial</th><th>Station</th><th>Event</th><th>By</th><th>Duration at station</th></tr></thead><tbody id="ggRecentBody"></tbody></table></div>
-    </div>
-  </div>
-
-  <!-- ===== Link Subassembly A (GG1) + Subassembly B (GG2) ===== -->
-  <div class="gg-view" id="gg-link">
-    <div class="panel">
-      <h2>Link Subassembly A + Subassembly B</h2>
-      <p class="hint">Once both have finished the subassembly stations (signed out of <b>station 3</b>), scan the <b>A</b> (GG1) and the <b>B</b> (GG2) that go together. They're checked first: the right styles, both done with station 3, neither already linked, and neither shipped. From then on they are one unit tracked under <b>A's serial</b>: either label can be scanned at the combined stations (Build, Test, QC, Pack Up), and the pair ships together. Links are saved in the <b>GimbalLinks</b> tab and the LinkedTo column of GimbalSerials.</p>
-      <div class="row3">
-        <label class="field"><span>Your initials</span><input type="text" id="ggLinkPerson" autocomplete="off"></label>
-        <label class="field"><span>Subassembly A (GG1)</span><input type="text" id="ggLinkA" placeholder="Scan A…" autocomplete="off"></label>
-        <label class="field"><span>Subassembly B (GG2)</span><input type="text" id="ggLinkB" placeholder="Scan B…" autocomplete="off"></label>
-      </div>
-      <div class="hint" id="ggLinkMsg"></div>
-    </div>
-    <div class="panel">
-      <h2>Recent links <span class="count" id="ggLinkCount"></span></h2>
-      <div class="tablewrap" style="max-height:380px;"><table><thead><tr><th>Linked</th><th>Subassembly A</th><th>Subassembly B</th><th>By</th><th>Status</th><th></th></tr></thead><tbody id="ggLinkBody"></tbody></table></div>
+      <div class="tablewrap" style="max-height:360px;"><table><thead><tr><th>Time</th><th>Serial</th><th>Part</th><th>Station</th><th>Event</th><th>By</th><th>Duration at station</th></tr></thead><tbody id="ggRecentBody"></tbody></table></div>
     </div>
   </div>
 
@@ -1542,15 +1561,15 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div class="gg-view" id="gg-ship">
     <div class="panel">
       <h2>Ship gimbals to the warehouse</h2>
-      <p class="hint">Gimbal orders come from the <b>GimbalGoals</b> tab in the sheet (Customer / Style like <code>Name_10_14 - GG1</code>, then the target quantity). Every unit is checked before the box is recorded: signed out of the last station, the right style, linked (for A and B), and not already shipped. <b>Scan either half of a linked A + B pair and both go in the box</b>; the order counts the pair once. Box numbers count up per order and are shared by every computer.</p>
+      <p class="hint">Only a finished <b id="ggParentName2">Subassembly D</b> ships, with all its parts linked. Scan the D, or any part inside it, and the D goes in the box. Orders come from the <b>GimbalGoals</b> tab (add them in Settings &rarr; Add an order). Box numbers count up per order and are shared by every computer.</p>
       <div class="row3">
         <label class="field"><span>Customer order</span><select id="ggOrder"></select></label>
-        <label class="field"><span>Box size (units; a pair is 2)</span><input type="number" id="ggBoxSize" value="20" min="1" max="200"></label>
+        <label class="field"><span>Box size (units)</span><input type="number" id="ggBoxSize" value="10" min="1" max="200"></label>
         <label class="field"><span>Packed by (initials)</span><input type="text" id="ggShipPerson" autocomplete="off"></label>
       </div>
-      <label class="field"><span>Scan each finished gimbal, then press Enter</span><input type="text" id="ggShipInput" placeholder="Scan here…" autocomplete="off"></label>
+      <label class="field"><span>Scan each finished unit (or any part inside it), then press Enter</span><input type="text" id="ggShipInput" placeholder="Scan here…" autocomplete="off"></label>
       <div class="hint" id="ggShipMsg"></div>
-      <div class="tablewrap" style="max-height:300px;"><table><thead><tr><th>#</th><th>Serial</th><th></th></tr></thead><tbody id="ggBoxBody"></tbody></table></div>
+      <div class="tablewrap" style="max-height:300px;"><table><thead><tr><th>#</th><th>Unit</th><th></th></tr></thead><tbody id="ggBoxBody"></tbody></table></div>
       <div class="btnrow" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
         <button class="accent" id="btnGgShip" disabled>Check &amp; ship this box</button>
         <button class="secondary" id="btnGgClearBox">Clear box</button>
@@ -1565,7 +1584,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <h2>Batch details</h2>
       <div class="row2">
         <label class="field"><span>Product code</span>
-          <select id="ggStyle"><option>GG1</option><option>GG2</option><option>GG3</option><option>GG4</option><option>GG5</option></select>
+          <select id="ggStyle"><option value="GG1">GG1 — Subassembly A</option><option value="GG2">GG2 — Subassembly B</option><option value="GG3">GG3 — Motor</option><option value="GG4">GG4 — Subassembly D</option></select>
         </label>
         <label class="field"><span>Quantity</span><input type="number" id="ggQty" value="20" min="1" max="500"></label>
       </div>
@@ -1793,15 +1812,46 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   </div>
 
   <div class="settings-eng-head">
-    <h2>Engineering &middot; Gimbal line stations</h2>
+    <h2>Engineering &middot; Orders</h2>
+  </div>
+  <div class="panel" id="addOrderPanel">
+    <h2>Add an order</h2>
+    <p class="hint">Adds a customer order (goal) to the sheet without opening it: headsets go to the <b>Goals</b> tab, gimbals to <b>GimbalGoals</b>. Column A is written exactly the way the sheet reads it: <code>&lt;customer or work order&gt; - &lt;style&gt;</code>, for example <code>WO-171 - H2E</code>.</p>
+    <div class="row3">
+      <label class="field"><span>Line</span><select id="goalLine"><option value="headset">Headsets (Goals tab)</option><option value="gimbal">Gimbals (GimbalGoals tab)</option></select></label>
+      <label class="field"><span>Customer or work order</span><input type="text" id="goalName" placeholder="WO-171  or  Get FPV_11_1" autocomplete="off"></label>
+      <label class="field"><span>Style</span><select id="goalStyle"></select></label>
+    </div>
+    <div class="row3">
+      <label class="field"><span>Quantity</span><input type="number" id="goalQty" min="1" placeholder="500"></label>
+      <label class="field"><span>Due date</span><input type="date" id="goalDue"></label>
+      <div class="field"><span class="om-live-fieldlab">Will be written as</span><div id="goalPreview" class="loc-mono" style="padding-top:8px; font-weight:700;"></div></div>
+    </div>
+    <div class="btnrow"><button class="accent" id="btnGoalAdd">Add order</button></div>
+    <div class="hint" id="goalMsg"></div>
+  </div>
+
+  <div class="settings-eng-head">
+    <h2>Engineering &middot; Gimbal parts and stations</h2>
   </div>
   <div class="panel" id="ggStationsPanel">
-    <h2>Gimbal stations</h2>
-    <p class="hint">The gimbal line's stations, in order. The last one is "finished, ready for the warehouse". Shared by every computer. Renaming is safe at any time; adding or removing stations changes which station counts as the last one, so do that between batches.</p>
+    <h2>Gimbal parts and stations</h2>
+    <p class="hint">Each part type has its own serial style and its own stations. The <b>parent</b> is the part the others are linked into (and the serial that ships). Pick a part to edit its name and stations; set where linking happens and how many of each part a parent needs. Shared by every computer and the TV. Renaming is safe at any time; adding or removing stations is best done between batches.</p>
+    <div class="row3">
+      <label class="field"><span>Part to edit</span><select id="ggEditPart"></select></label>
+      <label class="field"><span>Part name</span><input type="text" id="ggEditName" autocomplete="off"></label>
+      <div class="field"><span class="om-live-fieldlab">&nbsp;</span><button class="secondary" id="btnGgAddPart" style="width:100%;">Add a part type (next GG number)</button></div>
+    </div>
     <div id="ggStationList"></div>
-    <label class="field" style="max-width:360px; margin-top:8px;"><span>A and B are linked after station #</span><input type="number" id="ggLinkAfterInput" min="1" max="11" value="3"></label>
-    <p class="hint">Stations up to this number are done by A and B separately; the stations after it are the combined unit.</p>
-    <div class="btnrow" style="display:flex; gap:8px;"><button class="secondary" id="btnGgAddStation">Add station</button><button class="accent" id="btnGgSaveStations">Save stations</button></div>
+    <div class="btnrow" style="display:flex; gap:8px;"><button class="secondary" id="btnGgAddStation">Add station</button></div>
+    <h3 style="margin:14px 0 6px; font-size:13px;">Linking</h3>
+    <div class="row3">
+      <label class="field"><span>Parent (ships)</span><select id="ggParentSel"></select></label>
+      <label class="field"><span>Parts are linked at the parent's station #</span><input type="number" id="ggLinkStation" min="1" max="12" value="1"></label>
+      <div></div>
+    </div>
+    <div id="ggNeedsList" class="row3"></div>
+    <div class="btnrow" style="display:flex; gap:8px;"><button class="accent" id="btnGgSaveStations">Save parts and stations</button></div>
     <div class="hint" id="ggStationsMsg"></div>
   </div>
 
@@ -6003,40 +6053,51 @@ async function sendTestSummary(){
 
 
 // =====================================================================
-// GIMBAL LINE (Guardian Gimbal GG1, GG2 …) — its own page and its own sheet tabs
-// (GimbalSerials, GimbalLog, GimbalGoals, GimbalSentToWH). Nothing here touches the
-// headset tabs, and headset totals never include gimbals.
+// GIMBAL LINE v3 — parts with their own serials and stations, linked into a parent
+// (GG1 Subassembly A, GG2 Subassembly B, GG3 Motor x4, GG4 Subassembly D = parent that ships).
+// Its own sheet tabs (GimbalSerials, GimbalLog, GimbalLinks, GimbalGoals, GimbalSentToWH);
+// nothing here touches the headset tabs, and headset totals never include gimbals.
 // =====================================================================
 const GG_SERIAL_RE = /^GG\d+\d{4}[A-Z0-9]{6}$/;
 const GG_PERSON_KEY = 'gg-person-v1';
-let ggStations = ['Laser Mark', 'Build', 'Test', 'Build', 'Test', 'QC', 'Pack Up'];
-let ggLinkAfter = 3;   // stations 1..3: A and B separately; then Link A + B; 4..: the combined unit (under A's serial)
+let ggCfg = {parent: 'GG4', linkStation: 1, names: {GG1: 'Subassembly A', GG2: 'Subassembly B', GG3: 'Motor', GG4: 'Subassembly D'},
+  routes: {GG1: ['Laser Mark', 'Build', 'Test'], GG2: ['Laser Mark', 'Build', 'Test'], GG3: ['Laser Mark', 'Test'], GG4: ['Link', 'Assemble', 'Final Test']}, needs: {GG1: 1, GG2: 1, GG3: 4}};
+let ggConfigLoaded = false;
 let ggSub = 'status', ggData = null, ggRecent = [], ggBox = [], ggLastShip = null, ggBatch = [], ggTimer = null;
+let ggPart = 'GG1', ggSelected = 1, ggKitParent = null;
 function ggStyleOf(sn){ const s = String(sn || '').trim().toUpperCase(); return s.length > 10 ? s.slice(0, s.length - 10) : ''; }
-function ggStationName(n){ return 'Station ' + n + ' \u2014 ' + (ggStations[Number(n) - 1] || '?') + (Number(n) > ggLinkAfter ? ' (combined)' : ''); }
+function ggRoute(st){ return ggCfg.routes[st] || ggCfg.routes.GG1 || ['Station 1']; }
+function ggPartName(st){ return (ggCfg.names[st] || st) + ' (' + st + ')'; }
+function ggStationName(n, st){ st = st || ggPart; return 'Station ' + n + ' \u2014 ' + (ggRoute(st)[Number(n) - 1] || '?'); }
+function ggStyles(){ return Object.keys(ggCfg.routes).sort((a, b) => Number(a.slice(2)) - Number(b.slice(2))); }
 async function ggTab(name){
   try{ return (await sheetPost({action: 'getFullSheet', sheet: name})).rows || []; }
-  catch(e){ if(/not found/i.test(e.message)) return []; throw e; }   // the tab is created on first use
+  catch(e){ if(/not found/i.test(e.message)) return []; throw e; }
 }
-let ggConfigLoaded = false;
 async function ggLoadConfig(){
-  try{ const r = await sheetPost({action: 'getGimbalConfig'}); if(r.stations && r.stations.length){ ggStations = r.stations; if(r.linkAfter) ggLinkAfter = Number(r.linkAfter); ggConfigLoaded = true; } }catch(e){}
-  ggRenderChips(); ggRenderStationEditor();
+  try{ const r = await sheetPost({action: 'getGimbalConfig'}); if(r && r.routes){ ggCfg = {parent: r.parent, linkStation: r.linkStation, names: r.names || {}, routes: r.routes, needs: r.needs || {}}; ggConfigLoaded = true; } }catch(e){}
+  ['ggParentName1', 'ggParentName2'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = ggCfg.names[ggCfg.parent] || ggCfg.parent; });
+  ggFillStyleSelect(); ggRenderChips(); ggRenderStationEditor();
+}
+function ggFillStyleSelect(){
+  const sel = document.getElementById('ggStyle'); if(!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = ggStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggCfg.names[st] || st) + '</option>').join('');
+  if(keep && ggCfg.routes[keep]) sel.value = keep;
 }
 function ggShowSub(name){
-  if(name === 'serials' && !engineerUnlocked){ name = 'status'; }
+  if(name === 'serials' && !engineerUnlocked) name = 'status';
   ggSub = name;
   document.querySelectorAll('[data-ggsub]').forEach(b => b.classList.toggle('active', b.dataset.ggsub === name));
   document.querySelectorAll('.gg-view').forEach(v => v.classList.toggle('active', v.id === 'gg-' + name));
   if(name === 'scan'){ ggRenderChips(); if(!ggData) ggRefreshStatus(); setTimeout(() => document.getElementById('ggScanInput').focus(), 50); }
   if(name === 'serials') ggSerialsOnOpen();
-  if(name === 'link'){ const p = document.getElementById('ggLinkPerson'); if(!p.value) p.value = localStorage.getItem(GG_PERSON_KEY) || ''; ggLoadLinks(); setTimeout(() => document.getElementById(p.value ? 'ggLinkA' : 'ggLinkPerson').focus(), 50); }
   if(name === 'ship'){ ggLoadOrders(); setTimeout(() => document.getElementById('ggShipInput').focus(), 50); }
   if(name === 'status') ggRefreshStatus();
 }
 async function ggOnOpen(){
   document.getElementById('ggSerialsSubBtn').style.display = engineerUnlocked ? '' : 'none';
-  ['ggPerson', 'ggShipPerson', 'ggGenPerson'].forEach(id => { const el = document.getElementById(id); if(!el.value) el.value = localStorage.getItem(GG_PERSON_KEY) || ''; });
+  ['ggPerson', 'ggShipPerson', 'ggGenPerson'].forEach(id => { const el = document.getElementById(id); if(el && !el.value) el.value = localStorage.getItem(GG_PERSON_KEY) || ''; });
   await ggLoadConfig();
   ggShowSub(ggSub === 'serials' && !engineerUnlocked ? 'status' : ggSub);
   clearInterval(ggTimer);
@@ -6044,11 +6105,24 @@ async function ggOnOpen(){
 }
 document.getElementById('tabBtnGimbal').addEventListener('click', () => switchTab('gimbal'));
 document.querySelectorAll('[data-ggsub]').forEach(b => b.addEventListener('click', () => ggShowSub(b.dataset.ggsub)));
-['ggPerson', 'ggShipPerson', 'ggGenPerson'].forEach(id => document.getElementById(id).addEventListener('change', e => localStorage.setItem(GG_PERSON_KEY, e.target.value.trim())));
-
-// A shipped row counts toward its order only when the unit's style is the order's style, so a
-// linked A + B pair shipped on a GG1 order counts once. Same rule as the sheet's script.
+['ggPerson', 'ggShipPerson', 'ggGenPerson'].forEach(id => { const el = document.getElementById(id); if(el) el.addEventListener('change', e => localStorage.setItem(GG_PERSON_KEY, e.target.value.trim())); });
+// a shipped row counts toward its order only when it is the order's own style (the parent)
 function ggCountsForOrder(label, sn){ const st = (String(label || '').match(/(GG\d+)\s*$/i) || [])[1]; return !st || ggStyleOf(sn) === st.toUpperCase(); }
+function ggActiveLinks(linkRows){   // {parentOf, partsOf}
+  const parentOf = {}, partsOf = {};
+  (linkRows || []).slice(1).forEach(r => {
+    if(locCell(r[6]) !== 'Linked') return;
+    const p = locCell(r[1]).toUpperCase(), c = locCell(r[2]).toUpperCase();
+    parentOf[c] = p; (partsOf[p] = partsOf[p] || []).push({sn: c, style: ggStyleOf(c), linkId: locCell(r[0]), by: locCell(r[4]), t: locDate(r[5])});
+  });
+  return {parentOf, partsOf};
+}
+function ggKitOf(parts){
+  const have = {}; (parts || []).forEach(p => { have[p.style] = (have[p.style] || 0) + 1; });
+  const rows = Object.keys(ggCfg.needs).map(st => ({st, need: ggCfg.needs[st], have: have[st] || 0}));
+  return {rows, complete: rows.every(r => r.have >= r.need)};
+}
+
 // ---------- Line status ----------
 function ggShiftOf(t){
   const d = new Date(t); const day = localDayKeyLoc(d);
@@ -6058,127 +6132,201 @@ function ggShiftOf(t){
 async function ggRefreshStatus(){
   const cfg = sheetConfig();
   if(!cfg.url || !cfg.token){ document.getElementById('ggUpdated').textContent = 'no sheet connection'; return; }
+  if(!ggConfigLoaded) await ggLoadConfig();
   let logRows, sentRows, goalRows, linkRows;
   try{ [logRows, sentRows, goalRows, linkRows] = await Promise.all([ggTab('GimbalLog'), ggTab('GimbalSentToWH'), ggTab('GimbalGoals'), ggTab('GimbalLinks')]); }
   catch(e){ document.getElementById('ggUpdated').textContent = 'could not load: ' + e.message; return; }
-  const count = ggStations.length;
-  const ev = logRows.slice(1).map(r => ({sn: locCell(r[1]).toUpperCase(), event: locCell(r[2]), person: locCell(r[3]), st: String(stationNumberFromLabel(locCell(r[4])) || ''), t: locDate(r[5])}))
-    .filter(e => e.sn && e.t).sort((a, b) => a.t - b.t);
-  const latest = {};
-  ev.forEach(e => { latest[e.sn] = e; });
+  const P = ggCfg.parent, act = ggActiveLinks(linkRows);
+  const ev = logRows.slice(1).map(r => ({sn: locCell(r[1]).toUpperCase(), event: locCell(r[2]), person: locCell(r[3]) || '?', st: Number(stationNumberFromLabel(locCell(r[4])) || 0), t: locDate(r[5])}))
+    .filter(e => e.sn && e.t && e.st).sort((a, b) => a.t - b.t);
+  const latest = {}; ev.forEach(e => { latest[e.sn] = e; });
   const now = Date.now(), weekAgo = now - 7 * 86400000, todayKey = localDayKeyLoc(new Date());
-  // where every unit is
-  const inSt = {}, waiting = {}, stuck = {}, readyToLink = {GG1: 0, GG2: 0};
-  const activePair = new Set(); linkRows.slice(1).filter(r => /^linked$/i.test(locCell(r[5]))).forEach(r => { activePair.add(locCell(r[1]).toUpperCase()); activePair.add(locCell(r[2]).toUpperCase()); });
+  const at = {}, waiting = {}, ready = {}, stuck = {};
+  ggStyles().forEach(st => { at[st] = {}; waiting[st] = {}; ready[st] = 0; stuck[st] = {}; });
   Object.values(latest).forEach(e => {
-    const n = Number(e.st), st = ggStyleOf(e.sn);
-    if(st === 'GG2' && activePair.has(e.sn)) return;   // a linked B is part of its A (the master) from here on
-    if(e.event === 'MoveIn'){ inSt[n] = (inSt[n] || 0) + 1; if(now - e.t > 4 * 3600000) stuck[n] = (stuck[n] || 0) + 1; }
-    else if(e.event === 'MoveOut' && n < count){
-      if(n === ggLinkAfter && st in readyToLink && !activePair.has(e.sn)) readyToLink[st]++;
-      else waiting[n + 1] = (waiting[n + 1] || 0) + 1;
-    }
+    const st = ggStyleOf(e.sn), route = ggRoute(st);
+    if(!at[st] || act.parentOf[e.sn]) return;   // a linked part lives inside its parent
+    if(e.event === 'MoveIn'){ (at[st][e.st] = at[st][e.st] || []).push(e); if(now - e.t > 24 * 3600000) stuck[st][e.st] = (stuck[st][e.st] || 0) + 1; }
+    else if(e.event === 'MoveOut' && e.st < route.length) waiting[st][e.st + 1] = (waiting[st][e.st + 1] || 0) + 1;
+    else if(e.event === 'MoveOut' && st !== P && ggCfg.needs[st]) ready[st]++;
   });
-  // time at each station over the last 7 days
-  const openIn = {}, dur = {}, opDur = {}, firstIn = {}, leads = [];
+  const openIn = {}, dur = {}, opDur = {}, firstIn = {}, leads = [], finished = [], partsDone = [];
   ev.forEach(e => {
-    const k = e.sn + '|' + e.st;
-    if(e.event === 'MoveIn'){ openIn[k] = e.t; if(e.st === '1' && !firstIn[e.sn]) firstIn[e.sn] = e.t; }
+    const st = ggStyleOf(e.sn), k = e.sn + '|' + e.st, route = ggRoute(st);
+    if(e.event === 'MoveIn'){ openIn[k] = e.t; if(e.st === 1 && !firstIn[e.sn]) firstIn[e.sn] = e.t; }
     else if(e.event === 'MoveOut'){
-      if(openIn[k]){
-        const d = Math.max(0, e.t - openIn[k]);
-        if(e.t >= weekAgo){ (dur[e.st] = dur[e.st] || []).push(d); const ok = (e.person || '?') + '|' + e.st; (opDur[ok] = opDur[ok] || []).push(d); }
-        delete openIn[k];
-      }
-      if(Number(e.st) === count && firstIn[e.sn] && e.t >= weekAgo) leads.push(e.t - firstIn[e.sn]);
+      if(openIn[k]){ const d = Math.max(0, e.t - openIn[k]); if(e.t >= weekAgo){ const sk = st + '|' + e.st; (dur[sk] = dur[sk] || []).push(d); const ok = e.person + '|' + sk; (opDur[ok] = opDur[ok] || []).push(d); } delete openIn[k]; }
+      if(e.st === route.length){ if(st === P){ finished.push(e); if(firstIn[e.sn] && e.t >= weekAgo) leads.push(e.t - firstIn[e.sn]); } else partsDone.push(e); }
     }
   });
-  const finished = ev.filter(e => e.event === 'MoveOut' && Number(e.st) === count);
   const shipped = sentRows.slice(1).map(r => ({sn: locCell(r[0]).toUpperCase(), t: locDate(r[1]), order: locCell(r[3])})).filter(x => x.sn);
-  const wip = Object.values(inSt).reduce((a, b) => a + b, 0) + Object.values(waiting).reduce((a, b) => a + b, 0) + readyToLink.GG1 + readyToLink.GG2;
   const goals = goalRows.slice(1).map(r => ({label: locCell(r[0]), target: Number(r[1]) || 0})).filter(g => g.label);
   const shippedBy = {}; shipped.forEach(x => { if(ggCountsForOrder(x.order, x.sn)) shippedBy[x.order] = (shippedBy[x.order] || 0) + 1; });
-  const openOrders = goals.filter(g => (shippedBy[g.label] || 0) < g.target);
-  const kpis = [
-    ['On the line now', wip],
-    ['Finished today', finished.filter(e => localDayKeyLoc(e.t) === todayKey).length],
-    ['Finished, last 7 days', finished.filter(e => e.t >= weekAgo).length],
-    ['Shipped, last 7 days', shipped.filter(x => x.t && x.t >= weekAgo).length],
-    ['Open orders', openOrders.length],
-    ['Avg lead time, 7 days', leads.length ? formatDuration(leads.reduce((a, b) => a + b, 0) / leads.length) : '\u2014']
-  ];
-  document.getElementById('ggKpis').innerHTML = kpis.map(k => '<div class="ss-stat"><div class="v">' + k[1] + '</div><div class="k">' + k[0] + '</div></div>').join('');
+  const parentWip = Object.values(at[P] || {}).reduce((a, l) => a + l.length, 0) + Object.values(waiting[P] || {}).reduce((a, n) => a + n, 0);
+  const pName = ggCfg.names[P] || P;
+  const kpis = [[pName + ' on the line', parentWip], ['Finished today', finished.filter(e => localDayKeyLoc(e.t) === todayKey).length], ['Finished, last 7 days', finished.filter(e => e.t >= weekAgo).length],
+    ['Shipped, last 7 days', shipped.filter(x => x.t && x.t >= weekAgo).length], ['Open orders', goals.filter(g => (shippedBy[g.label] || 0) < g.target).length],
+    ['Avg lead time, 7 days', leads.length ? formatDuration(leads.reduce((a, b) => a + b, 0) / leads.length) : '\u2014']];
+  document.getElementById('ggKpis').innerHTML = kpis.map(k => '<div class="ss-stat"><div class="v">' + k[1] + '</div><div class="k">' + locEsc(k[0]) + '</div></div>').join('');
   const med = a => { const x = a.slice().sort((p, q) => p - q); return x[Math.floor(x.length / 2)]; };
-  const opKeys = Object.keys(opDur).sort((a, b) => { const [pa, sa] = a.split('|'), [pb, sb] = b.split('|'); return pa === pb ? Number(sa) - Number(sb) : pa < pb ? -1 : 1; });
+  document.getElementById('ggStationBody').innerHTML = ggStyles().map(st => ggRoute(st).map((nm, i) => {
+    const n = i + 1, d = dur[st + '|' + n] || [], here = (at[st][n] || []).length;
+    const linkNote = st === P && n === ggCfg.linkStation ? ' <span class="hint">(parts are linked here)</span>' : '';
+    return '<tr><td><b>' + locEsc(ggPartName(st)) + '</b></td><td>' + n + ' ' + locEsc(nm) + linkNote + (n === ggRoute(st).length && st === P ? ' <span class="hint">(finished)</span>' : '') + '</td><td><b>' + here + '</b></td><td>' + (waiting[st][n] || 0) +
+      '</td><td' + (stuck[st][n] ? ' class="gg-bad"' : '') + '>' + (stuck[st][n] || 0) + '</td><td>' + (d.length ? formatDuration(med(d)) : '\u2014') + '</td></tr>';
+  }).join('') + (st !== P && ggCfg.needs[st] ? '<tr style="background:var(--accent-soft);"><td><b>' + locEsc(ggPartName(st)) + '</b></td><td>\u{1F517} Ready to link</td><td colspan="4"><b>' + ready[st] + '</b> finished, waiting to be linked into a ' + locEsc(pName) + '</td></tr>' : '')).join('');
+  const opKeys = Object.keys(opDur).sort();
   document.getElementById('ggOpBody').innerHTML = opKeys.length ? opKeys.map(k => {
-    const [p, st] = k.split('|'), d = opDur[k];
-    return '<tr><td><b>' + locEsc(p) + '</b></td><td>' + locEsc(ggStationName(st)) + '</td><td>' + d.length + '</td><td>' + formatDuration(med(d)) + '</td><td>' + formatDuration(d.reduce((a, b) => a + b, 0) / d.length) + '</td><td>' + formatDuration(Math.min(...d)) + '</td><td>' + formatDuration(Math.max(...d)) + '</td></tr>';
-  }).join('') : '<tr><td colspan="7">No completed station times in the last 7 days.</td></tr>';
-  document.getElementById('ggStationBody').innerHTML = ggStations.map((nm, i) => {
-    const n = i + 1; const d = (dur[String(n)] || []).slice().sort((a, b) => a - b);
-    const linkRow = n === ggLinkAfter + 1 ? '<tr style="background:var(--accent-soft);"><td colspan="5"><b>\u{1F517} Link A + B</b> &nbsp;\u2014&nbsp; waiting to be linked: <b>' + readyToLink.GG1 + '</b> A (GG1), <b>' + readyToLink.GG2 + '</b> B (GG2)</td></tr>' : '';
-    return linkRow + '<tr><td><b>' + n + '</b> ' + locEsc(nm) + (n > ggLinkAfter ? ' <span class="hint">(combined)</span>' : ' <span class="hint">(A / B)</span>') + (n === count ? ' <span class="hint">(finished)</span>' : '') + '</td><td><b>' + (inSt[n] || 0) + '</b></td><td>' + (waiting[n] || 0) + '</td><td' + (stuck[n] ? ' class="gg-bad"' : '') + '>' + (stuck[n] || 0) + '</td><td>' + (d.length ? formatDuration(d[Math.floor(d.length / 2)]) : '\u2014') + '</td></tr>';
-  }).join('');
-  // finished per working day, by shift and style
+    const [p, st, n] = k.split('|'), d = opDur[k];
+    return '<tr><td><b>' + locEsc(p) + '</b></td><td>' + locEsc(ggPartName(st)) + '</td><td>' + n + ' ' + locEsc(ggRoute(st)[Number(n) - 1] || '') + '</td><td>' + d.length + '</td><td>' + formatDuration(med(d)) + '</td><td>' + formatDuration(d.reduce((a, b) => a + b, 0) / d.length) + '</td><td>' + formatDuration(Math.min(...d)) + '</td><td>' + formatDuration(Math.max(...d)) + '</td></tr>';
+  }).join('') : '<tr><td colspan="8">No completed station times in the last 7 days.</td></tr>';
   const days = {};
-  finished.forEach(e => { const k = localDayKeyLoc(e.t); const o = days[k] = days[k] || {total: 0, shifts: {}, styles: {}}; o.total++; const sh = ggShiftOf(e.t); o.shifts[sh] = (o.shifts[sh] || 0) + 1; const st = ggStyleOf(e.sn); o.styles[st] = (o.styles[st] || 0) + 1; });
-  const dayKeys = Object.keys(days).sort().reverse().slice(0, 10);
-  const shiftNames = SHIFT_DEFS.map(d => d.name);
-  document.getElementById('ggDailyHead').innerHTML = '<tr><th>Day</th>' + shiftNames.map(n => '<th>' + n + '</th>').join('') + '<th>Total</th><th>By style</th></tr>';
-  document.getElementById('ggDailyBody').innerHTML = dayKeys.length ? dayKeys.map(k => {
-    const o = days[k];
-    return '<tr><td>' + new Date(k + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}) + '</td>' + shiftNames.map(n => '<td>' + (o.shifts[n] || 0) + '</td>').join('') +
-      '<td><b>' + o.total + '</b></td><td>' + Object.keys(o.styles).sort().map(st => st + ': ' + o.styles[st]).join(', ') + '</td></tr>';
-  }).join('') : '<tr><td colspan="' + (shiftNames.length + 3) + '">No gimbals finished yet.</td></tr>';
+  finished.forEach(e => { const k = localDayKeyLoc(e.t); const o = days[k] = days[k] || {total: 0, shifts: {}, parts: {}}; o.total++; const sh = ggShiftOf(e.t); o.shifts[sh] = (o.shifts[sh] || 0) + 1; });
+  partsDone.forEach(e => { const k = localDayKeyLoc(e.t); const o = days[k] = days[k] || {total: 0, shifts: {}, parts: {}}; const st = ggStyleOf(e.sn); o.parts[st] = (o.parts[st] || 0) + 1; });
+  const dayKeys = Object.keys(days).sort().reverse().slice(0, 10), shiftNames = SHIFT_DEFS.map(d => d.name), partSt = ggStyles().filter(s => s !== P);
+  document.getElementById('ggDailyHead').innerHTML = '<tr><th>Day</th><th>' + locEsc(pName) + ' finished</th>' + shiftNames.map(n => '<th>' + n + '</th>').join('') + partSt.map(s => '<th>' + locEsc(ggCfg.names[s] || s) + ' done</th>').join('') + '</tr>';
+  document.getElementById('ggDailyBody').innerHTML = dayKeys.length ? dayKeys.map(k => { const o = days[k];
+    return '<tr><td>' + new Date(k + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}) + '</td><td><b>' + o.total + '</b></td>' + shiftNames.map(n => '<td>' + (o.shifts[n] || 0) + '</td>').join('') + partSt.map(s => '<td>' + (o.parts[s] || 0) + '</td>').join('') + '</tr>';
+  }).join('') : '<tr><td colspan="' + (2 + shiftNames.length + partSt.length) + '">Nothing finished yet.</td></tr>';
   document.getElementById('ggOrders').innerHTML = goals.length ? goals.map(g => {
     const s = shippedBy[g.label] || 0; const pct = g.target ? Math.min(100, Math.round(s / g.target * 100)) : 0;
     return '<div class="gg-order"><div class="top"><span><b>' + locEsc(customerAlias(g.label)) + '</b></span><span>' + s + ' / ' + g.target + ' shipped (' + pct + '%)</span></div><div class="gg-bar"><div style="width:' + pct + '%;"></div></div></div>';
-  }).join('') : '<div class="hint">No gimbal orders yet. Add them to the <b>GimbalGoals</b> tab in the sheet: Customer / Style in column A (for example <code>Name_10_14 - GG1</code>), target in column B.</div>';
+  }).join('') : '<div class="hint">No gimbal orders yet. Add one in Settings &rarr; Add an order.</div>';
   document.getElementById('ggUpdated').textContent = 'updated ' + new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-  const at = {};
-  Object.values(latest).forEach(e => { if(e.event === 'MoveIn'){ const n = Number(e.st); (at[n] = at[n] || []).push({sn: e.sn, t: e.t}); } });
-  ggData = {inSt: inSt, waiting: waiting, at: at};
-  // subassembly links
-  const links = linkRows.slice(1).filter(r => /^linked$/i.test(locCell(r[5])));
-  const linked = new Set(); links.forEach(r => { linked.add(locCell(r[1]).toUpperCase()); linked.add(locCell(r[2]).toUpperCase()); });
-  const shippedSet = new Set(shipped.map(x => x.sn));
-  const waitFor = st => readyToLink[st];
-  document.getElementById('ggLinkKpis').innerHTML = [['Linked pairs, all time', links.length], ['Linked, last 7 days', links.filter(r => { const d = locDate(r[4]); return d && d >= weekAgo; }).length],
-    ['A done with station ' + ggLinkAfter + ', waiting to link', waitFor('GG1')], ['B done with station ' + ggLinkAfter + ', waiting to link', waitFor('GG2')]]
-    .map(k => '<div class="ss-stat"><div class="v">' + k[1] + '</div><div class="k">' + k[0] + '</div></div>').join('');
+  ggData = {at: at, act: act};
   ggRenderChips();
 }
 document.getElementById('btnGgRefresh').addEventListener('click', ggRefreshStatus);
 document.getElementById('btnGgCountTab').addEventListener('click', async () => {
   const msg = document.getElementById('ggCountMsg'); msg.textContent = 'Updating the GimbalCount tab\u2026';
-  try{
-    const r = await sheetPost({action: 'refreshGimbalCount'});
-    if(r.status === 'error') throw new Error(r.message);
-    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 GimbalCount tab updated</b> (' + locEsc(r.updated || 'now') + ').';
-  }catch(e){ msg.textContent = /unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Could not update: ' + e.message; }
+  try{ const r = await sheetPost({action: 'refreshGimbalCount'}); if(r.status === 'error') throw new Error(r.message); msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 GimbalCount tab updated</b> (' + locEsc(r.updated || 'now') + ').'; }
+  catch(e){ msg.textContent = /unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Could not update: ' + e.message; }
 });
 
-// ---------- Sign in / out (works like the headset Station Sign In/Out tab) ----------
-let ggSelected = 1;
-function ggRenderChips(){   // the numbered station cards + the "currently signed in here" line
-  const row = document.getElementById('ggStationRow'); if(!row) return;
-  if(ggSelected > ggStations.length) ggSelected = 1;
-  row.innerHTML = ggStations.map((nm, i) => '<button class="gg-station-btn' + (i + 1 === ggSelected ? ' active' : '') + (i + 1 === ggLinkAfter + 1 ? ' gg-stage-start' : '') + '" data-ggstation="' + (i + 1) + '"><b>' + (i + 1) + '</b><span>' + locEsc(nm) + '</span><span class="gg-stage">' + (i + 1 > ggLinkAfter ? 'Combined' : 'A / B') + '</span></button>').join('');
-  const here = document.getElementById('ggCurrentlyHere');
-  const name = ggStationName(ggSelected);
+// ---------- Sign in / out, with linking at the parent's Link station ----------
+function ggRenderChips(){
+  const pr = document.getElementById('ggPartRow'), row = document.getElementById('ggStationRow'); if(!row) return;
+  if(!ggCfg.routes[ggPart]) ggPart = ggStyles()[0];
+  pr.innerHTML = ggStyles().map(st => '<button class="gg-part-btn' + (st === ggPart ? ' active' : '') + '" data-ggpart="' + st + '">' + locEsc(ggCfg.names[st] || st) + ' \u00b7 ' + st + (st === ggCfg.parent ? ' (parent)' : '') + '</button>').join('');
+  const route = ggRoute(ggPart); if(ggSelected > route.length) ggSelected = 1;
+  row.innerHTML = route.map((nm, i) => '<button class="gg-station-btn' + (i + 1 === ggSelected ? ' active' : '') + '" data-ggstation="' + (i + 1) + '"><b>' + (i + 1) + '</b><span>' + locEsc(nm) + '</span>' +
+    (ggPart === ggCfg.parent && i + 1 === ggCfg.linkStation ? '<span class="gg-stage">\u{1F517} links parts</span>' : '<span class="gg-stage">' + ggPart + '</span>') + '</button>').join('');
+  const here = document.getElementById('ggCurrentlyHere'), name = ggPartName(ggPart) + ', ' + ggStationName(ggSelected, ggPart);
   if(!ggData){ here.textContent = 'Press Refresh station status to see what is signed in at ' + name + '.'; return; }
-  const list = (ggData.at && ggData.at[ggSelected]) || [];
+  const list = (ggData.at[ggPart] && ggData.at[ggPart][ggSelected]) || [];
   if(!list.length){ here.textContent = 'Nothing currently signed in at ' + name + '.'; return; }
   const oldest = list.reduce((a, b) => a.t < b.t ? a : b);
   here.textContent = list.length + ' unit(s) currently signed in at ' + name + ' \u2014 oldest (' + oldest.sn + ') has been waiting ' + formatDuration(Date.now() - oldest.t) + '.';
 }
-document.getElementById('ggStationRow').addEventListener('click', e => {
-  const b = e.target.closest('[data-ggstation]'); if(!b) return;
-  ggSelected = Number(b.getAttribute('data-ggstation')); ggRenderChips();
-  document.getElementById('ggScanInput').focus();
-});
-document.getElementById('btnGgLocate').addEventListener('click', () => openLocate());
+document.getElementById('ggPartRow').addEventListener('click', e => { const b = e.target.closest('[data-ggpart]'); if(!b) return; ggPart = b.getAttribute('data-ggpart'); ggSelected = 1; ggRenderChips(); document.getElementById('ggScanInput').focus(); });
+document.getElementById('ggStationRow').addEventListener('click', e => { const b = e.target.closest('[data-ggstation]'); if(!b) return; ggSelected = Number(b.getAttribute('data-ggstation')); ggRenderChips(); document.getElementById('ggScanInput').focus(); });
 document.getElementById('btnGgStationRefresh').addEventListener('click', async () => { await ggRefreshStatus(); document.getElementById('ggScanInput').focus(); });
+// ---------- big, readable pop-up for anything that isn't a plain success ----------
+function ggPopup(html, kind){
+  const ov = document.getElementById('ggWarnOverlay');
+  document.getElementById('ggWarnText').innerHTML = html;
+  document.getElementById('ggWarnIcon').innerHTML = kind === 'ok' ? '&#10004;' : kind === 'info' ? '&#8505;' : '&#9888;';
+  ov.classList.toggle('gg-ok', kind === 'ok');
+  ov.classList.add('show');
+}
+function ggPopupClose(){ document.getElementById('ggWarnOverlay').classList.remove('show'); const i = document.getElementById(ggSub === 'ship' ? 'ggShipInput' : 'ggScanInput'); if(i) i.focus(); }
+document.getElementById('btnGgWarnOk').addEventListener('click', ggPopupClose);
+document.getElementById('ggWarnOverlay').addEventListener('click', e => { if(e.target.id === 'ggWarnOverlay') ggPopupClose(); });
+document.addEventListener('keydown', e => {   // Enter or Esc closes it; the next scan also closes it
+  if(!document.getElementById('ggWarnOverlay').classList.contains('show')) return;
+  if(e.key === 'Escape' || (e.key === 'Enter' && !(e.target && e.target.value))){ e.preventDefault(); ggPopupClose(); }
+}, true);
+
+// ---------- hover Locate / Unit history, same as the headset page ----------
+(function(){
+  const q = document.getElementById('ggQuickLocate'); let typed = false;
+  q.addEventListener('mouseenter', () => { q.placeholder = 'Scan or type a serial'; q.focus(); });
+  q.addEventListener('mousemove', () => { if(document.activeElement !== q && !document.querySelector('.ps-overlay.open')) q.focus(); });
+  q.addEventListener('mouseleave', () => { if(!q.value.trim() && !typed){ q.blur(); document.getElementById('ggScanInput').focus(); } });
+  q.addEventListener('focus', () => { q.placeholder = 'Scan or type a serial'; });
+  q.addEventListener('blur', () => { if(!q.value.trim()){ q.placeholder = 'Unit history'; typed = false; } });
+  const go = sn => { q.value = ''; typed = false; q.blur(); q.placeholder = 'Unit history'; openLocate(sn); };
+  q.addEventListener('input', () => { typed = true; const v = q.value.trim().toUpperCase().replace(/\s+/g, ''); if(FULL_SERIAL_RE.test(v)) go(v); });
+  q.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); const v = q.value.trim(); if(v) go(v); } });
+})();
+
+// ---------- link form: every part the parent needs, scanned in at once, then linked together ----------
+let ggKitSlots = [];   // [{style, sn, state: ''|'checking'|'ready'|'notFinished'|'bad'|'linked', why}]
+async function ggShowKit(parent){
+  ggKitParent = parent; ggPart = ggStyleOf(parent) || ggCfg.parent; ggSelected = ggCfg.linkStation; ggRenderChips();
+  const panel = document.getElementById('ggKitPanel');
+  panel.style.display = ''; panel.innerHTML = '<div class="hint">Loading the parts for ' + locEsc(parent) + '\u2026</div>';
+  let r; try{ r = await sheetPost({action: 'gimbalKit', parent: parent}); }catch(e){ panel.innerHTML = '<div class="gg-bad">Could not load: ' + locEsc(e.message) + '</div>'; return; }
+  const linked = (r.parts || []).map(p => ({sn: p.sn, style: ggStyleOf(p.sn), linkId: p.linkId}));
+  ggKitSlots = [];
+  Object.keys(ggCfg.needs).forEach(st => {
+    const mine = linked.filter(p => p.style === st);
+    for(let i = 0; i < ggCfg.needs[st]; i++){
+      const l = mine[i];
+      ggKitSlots.push(l ? {style: st, sn: l.sn, state: 'linked', why: 'Linked', linkId: l.linkId} : {style: st, sn: '', state: '', why: ''});
+    }
+  });
+  ggRenderKit();
+  document.getElementById('ggScanLabel').textContent = 'Scan the parts for ' + parent + ' (any order), then press Link all parts';
+  document.getElementById('ggScanInput').focus();
+}
+function ggRenderKit(){
+  const panel = document.getElementById('ggKitPanel'), parent = ggKitParent; if(!parent) return;
+  const open = ggKitSlots.filter(x => x.state !== 'linked'), filled = open.filter(x => x.sn);
+  const allLinked = ggKitSlots.every(x => x.state === 'linked');
+  const canLink = open.length && filled.length === open.length && open.every(x => x.state === 'ready');
+  const firstEmpty = ggKitSlots.findIndex(x => !x.sn);
+  let html = '<h3>\u{1F517} Parts for ' + locEsc(ggCfg.names[ggCfg.parent] || ggCfg.parent) + ' <span class="loc-mono">' + locEsc(parent) + '</span></h3>';
+  Object.keys(ggCfg.needs).forEach(st => {
+    const group = ggKitSlots.map((x, i) => Object.assign({i: i}, x)).filter(x => x.style === st);
+    html += '<div class="gg-slot-group"><div class="lab">' + locEsc(ggPartName(st)) + ' \u2014 ' + group.filter(x => x.state === 'linked' || x.state === 'ready').length + ' of ' + group.length + ' ready</div><div class="gg-slots">' +
+      group.map((x, n) => '<div class="gg-slot ' + x.state + (x.i === firstEmpty ? ' next' : '') + '">' +
+        (x.sn ? (x.state !== 'linked' ? '<button class="x" data-gg-slot-clear="' + x.i + '" title="Remove from the form">\u00d7</button>' : '') + '<div class="sn">' + locEsc(x.sn) + '</div><div class="why">' + (x.state === 'checking' ? 'Checking\u2026' : (x.state === 'linked' ? '\u2713 ' : x.state === 'ready' ? '\u2713 ' : '\u26a0 ') + locEsc(x.why)) + '</div>'
+          : '<div class="ph">Scan ' + locEsc(ggCfg.names[st] || st) + (group.length > 1 ? ' ' + (n + 1) + ' of ' + group.length : '') + '\u2026</div>') + '</div>').join('') + '</div></div>';
+  });
+  html += allLinked ? '<div class="hint" style="font-size:14px;"><b style="color:#1d7a3f;">All parts are linked.</b> Scan ' + locEsc(parent) + ' again to sign it out of Link.</div>'
+    : '<div class="btnrow" style="display:flex; gap:8px; flex-wrap:wrap;"><button class="accent" id="btnGgLinkAll"' + (canLink ? '' : ' disabled') + '>Link all parts (' + filled.length + ' of ' + open.length + ')</button><button class="secondary" id="btnGgKitClose">Close</button></div>' +
+      (!canLink && filled.some(x => x.state === 'notFinished' || x.state === 'bad') ? '<div class="hint" style="color:#a13636; font-weight:700;">Fix the highlighted parts first: finish their stations, or remove them (\u00d7) and scan a replacement.</div>' : '');
+  if(allLinked) html += '<div class="btnrow"><button class="secondary" id="btnGgKitClose">Close</button></div>';
+  panel.innerHTML = html;
+}
+async function ggKitAdd(sn){
+  const st = ggStyleOf(sn);
+  if(ggKitSlots.some(x => x.sn === sn)){ ggPopup(sn + ' is already in this form.', 'info'); return; }
+  if(!ggCfg.needs[st]){ ggPopup('<b>' + sn + '</b> is a ' + locEsc(ggCfg.names[st] || st) + ', which doesn\u2019t go into a ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + '.'); return; }
+  const slot = ggKitSlots.find(x => x.style === st && !x.sn);
+  if(!slot){ ggPopup(ggKitParent + ' already has all ' + ggCfg.needs[st] + ' \u00d7 ' + locEsc(ggCfg.names[st] || st) + ' in the form. Remove one (\u00d7) first if it\u2019s the wrong part.', 'info'); return; }
+  slot.sn = sn; slot.state = 'checking'; slot.why = ''; ggRenderKit();
+  try{
+    const r = await sheetPost({action: 'gimbalPartCheck', serial: sn, parent: ggKitParent});
+    slot.state = r.state === 'linked' ? 'ready' : r.state; slot.why = r.why || '';
+    if(r.state === 'notFinished') ggPopup('<b>' + locEsc(sn) + '</b> (' + locEsc(ggCfg.names[st] || st) + ') isn\u2019t ready to link.<br><br>' + locEsc(r.why));
+    else if(r.state === 'bad') ggPopup('<b>' + locEsc(sn) + '</b> can\u2019t be used.<br><br>' + locEsc(r.why));
+  }catch(e){ slot.state = 'bad'; slot.why = 'Could not check: ' + e.message; }
+  ggRenderKit();
+}
+async function ggKitLinkAll(){
+  const parts = ggKitSlots.filter(x => x.state !== 'linked' && x.sn).map(x => x.sn);
+  const btn = document.getElementById('btnGgLinkAll'); if(btn){ btn.disabled = true; btn.textContent = 'Linking\u2026'; }
+  try{
+    const r = await sheetPost({action: 'gimbalLinkParts', parent: ggKitParent, parts: parts, person: document.getElementById('ggPerson').value.trim()});
+    if(r.status === 'ok'){
+      ggPopup('<b>All ' + r.linked.length + ' parts linked into ' + locEsc(ggKitParent) + '.</b><br><br>Scan ' + locEsc(ggKitParent) + ' again to sign it out of Link.', 'ok');
+      await ggShowKit(ggKitParent);
+    }else if(r.status === 'rejected'){
+      r.problems.forEach(pr => { const sl = ggKitSlots.find(x => x.sn === pr.serial); if(sl){ sl.state = /finish its stations/i.test(pr.why) ? 'notFinished' : 'bad'; sl.why = pr.why; } });
+      ggRenderKit();
+      ggPopup('<b>Nothing was linked.</b> Fix these first:<br><br>' + r.problems.map(pr => '<span class="loc-mono">' + locEsc(pr.serial) + '</span>: ' + locEsc(pr.why)).join('<br><br>'));
+    }else{ ggPopup(locEsc(r.message || 'Could not link.')); ggRenderKit(); }
+  }catch(e){ ggPopup('Could not link: ' + locEsc(e.message)); ggRenderKit(); }
+}
+function ggHideKit(){ ggKitParent = null; document.getElementById('ggKitPanel').style.display = 'none'; document.getElementById('ggScanLabel').textContent = 'Scan or type a gimbal serial number, then press Enter'; }
+document.getElementById('ggKitPanel').addEventListener('click', e => {
+  if(e.target.id === 'btnGgKitClose'){ ggHideKit(); document.getElementById('ggScanInput').focus(); return; }
+  if(e.target.id === 'btnGgLinkAll'){ ggKitLinkAll(); return; }
+  const c = e.target.closest('[data-gg-slot-clear]');
+  if(c){ const sl = ggKitSlots[Number(c.getAttribute('data-gg-slot-clear'))]; if(sl){ sl.sn = ''; sl.state = ''; sl.why = ''; } ggRenderKit(); document.getElementById('ggScanInput').focus(); }
+});
 async function ggScan(raw){
   const msg = document.getElementById('ggMsg');
   const sn = String(raw || '').trim().toUpperCase();
@@ -6186,169 +6334,114 @@ async function ggScan(raw){
   if(!sn) return;
   if(!person){ msg.innerHTML = '<span class="gg-bad">Enter your initials first.</span>'; document.getElementById('ggPerson').focus(); return; }
   if(!GG_SERIAL_RE.test(sn)){ msg.innerHTML = '<span class="gg-bad">' + locEsc(sn) + ' is not a gimbal serial (they start with GG1, GG2 \u2026). Headsets are scanned on the Station Sign In/Out tab.</span>'; return; }
+  ggPopupClose();
+  // while a parent's link form is open, scanning a part puts it in the form
+  if(ggKitParent && sn !== ggKitParent && ggStyleOf(sn) !== ggCfg.parent){ msg.textContent = ''; ggKitAdd(sn); return; }
   const auto = document.getElementById('ggAutoDetect').checked;
   msg.textContent = 'Checking ' + sn + '\u2026';
   try{
     const r = await sheetPost({action: 'gimbalScanAction', serial: sn, autoMode: auto, selectedStation: String(ggSelected), person: person});
+    const unit = r.serialUsed || sn, st = ggStyleOf(unit), via = unit !== sn ? ' (scanned ' + sn + ', a part inside it)' : '';
     if(r.status === 'ok'){
-      const dur = r.duration ? formatDuration(r.duration) : '';
-      const unitSn = r.serialUsed || sn, via = unitSn !== sn ? ' (scanned ' + sn + ', part of this unit)' : '';
-      msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + unitSn + (r.event === 'MoveIn' ? ' signed into ' : ' signed out of ') + locEsc(ggStationName(r.targetStation)) + '</b>' + via + (r.finished ? ' \u2014 finished, ready for the warehouse.' : '') +
-        (r.event === 'MoveOut' && Number(r.targetStation) === ggLinkAfter && ['GG1', 'GG2'].indexOf(ggStyleOf(unitSn)) > -1 ? ' Subassembly done \u2014 next: <b>Link A + B</b>.' : '') + (dur ? ' (' + dur + ' at the station)' : '');
-      ggRecent.unshift({time: new Date().toLocaleTimeString(), sn: unitSn + (via ? ' (via ' + sn + ')' : ''), st: r.targetStation, event: r.event, person: person, dur: dur});
+      const dur = r.duration ? formatDuration(r.duration) : '', stName = ggStationName(r.targetStation, st);
+      msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + unit + ' (' + locEsc(ggCfg.names[st] || st) + ') ' + (r.event === 'MoveIn' ? 'signed into ' : 'signed out of ') + locEsc(stName) + '</b>' + via +
+        (r.finished && st === ggCfg.parent ? ' \u2014 finished, ready for the warehouse.' : r.finished && ggCfg.needs[st] ? ' \u2014 done; ready to be linked into a ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + '.' : '') + (dur ? ' (' + dur + ' at the station)' : '');
+      ggRecent.unshift({time: new Date().toLocaleTimeString(), sn: unit + (via ? ' (via ' + sn + ')' : ''), st: st, n: r.targetStation, event: r.event, person: person, dur: dur});
       ggRenderRecent();
-      if(ggData){
-        const n = Number(r.targetStation); ggData.at = ggData.at || {}; ggData.at[n] = (ggData.at[n] || []).filter(x => x.sn !== sn);
-        if(r.event === 'MoveIn') ggData.at[n].push({sn: sn, t: new Date()});
-      }
-      if(auto) ggSelected = Number(r.targetStation);
+      if(ggData && ggData.at[st]){ const n = Number(r.targetStation); ggData.at[st][n] = (ggData.at[st][n] || []).filter(x => x.sn !== unit); if(r.event === 'MoveIn') ggData.at[st][n].push({sn: unit, t: new Date()}); }
+      if(auto){ ggPart = st; ggSelected = Number(r.targetStation); }
       ggRenderChips();
-    }else if(r.status === 'ignored'){ msg.textContent = sn + ' was just scanned at ' + ggStationName(r.station) + '. Ignored the double scan.'; }
-    else if(r.status === 'complete'){ msg.textContent = sn + ' has already finished every station.'; }
-    else if(r.reason === 'wrongStation'){ msg.innerHTML = '<span class="gg-bad">' + sn + ' should go to ' + locEsc(ggStationName(r.expectedNext)) + ' next, not ' + locEsc(ggStationName(ggSelected)) + '.</span>'; }
-    else if(r.reason === 'needsLink'){ msg.innerHTML = '<span class="gg-bad">' + locEsc(r.message) + '</span>'; }
-    else if(r.reason === 'signedInElsewhere'){ msg.innerHTML = '<span class="gg-bad">' + sn + ' is still signed in at ' + locEsc(ggStationName(r.station)) + '. Sign it out there first, or turn on Auto-detect.</span>'; }
-    else{ msg.innerHTML = '<span class="gg-bad">' + locEsc(r.message || 'Scan not logged.') + '</span>'; }
+      if(r.atLink) ggShowKit(unit);
+      else if(ggKitParent === unit && r.event === 'MoveOut') ggHideKit();
+    }else{
+      let text;
+      if(r.reason === 'kitIncomplete'){ text = '<b>' + locEsc(unit) + ' can\u2019t leave the Link station yet.</b><br><br>It still needs ' + locEsc((r.kit && r.kit.missing || []).join(', ') || 'parts') + '.<br>Scan them into the form, then press <b>Link all parts</b>.'; ggShowKit(unit); }
+      else if(r.status === 'ignored') text = '<b>' + locEsc(sn) + '</b> was just scanned.<br><br>The double scan was ignored.';
+      else if(r.status === 'complete') text = st === ggCfg.parent ? '<b>' + locEsc(unit) + '</b> has already finished every station.<br><br>Ship it from <b>Ship to warehouse</b>.'
+        : '<b>' + locEsc(sn) + '</b> (' + locEsc(ggCfg.names[st] || st) + ') has already finished its stations.<br><br>Link it: sign its ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + ' into the <b>Link</b> station and scan this part into the form there.';
+      else if(r.reason === 'wrongStation') text = '<b>' + locEsc(unit) + '</b> should go to <b>' + locEsc(ggStationName(r.expectedNext, st)) + '</b> next.';
+      else if(r.reason === 'signedInElsewhere') text = '<b>' + locEsc(unit) + '</b> is still signed in at <b>' + locEsc(ggStationName(r.station, st)) + '</b>.<br><br>Sign it out there first, or turn on Auto-detect.';
+      else text = locEsc(r.message || 'Scan not logged.');
+      msg.innerHTML = '<span class="' + (r.status === 'ignored' || r.status === 'complete' ? '' : 'gg-bad') + '">' + text.replace(/<br><br>/g, ' ') + '</span>';
+      ggPopup(text, r.status === 'ignored' || r.status === 'complete' ? 'info' : 'warn');
+    }
   }catch(e){
     msg.innerHTML = '<span class="gg-bad">Could not log this scan: ' + locEsc(e.message) + '</span>';
+    ggPopup('Could not log this scan:<br><br>' + locEsc(e.message));
     if(typeof connectionProblem === 'function') connectionProblem(e.message);
   }
 }
 function ggRenderRecent(){
   document.getElementById('ggRecentCount').textContent = ggRecent.length;
-  document.getElementById('ggRecentBody').innerHTML = ggRecent.slice(0, 50).map(x => '<tr><td>' + x.time + '</td><td class="loc-mono">' + x.sn + '</td><td>' + locEsc(ggStationName(x.st)) + '</td><td>' + x.event + '</td><td>' + locEsc(x.person) + '</td><td>' + (x.dur || '\u2014') + '</td></tr>').join('');
+  document.getElementById('ggRecentBody').innerHTML = ggRecent.slice(0, 50).map(x => '<tr><td>' + x.time + '</td><td class="loc-mono">' + x.sn + '</td><td>' + locEsc(ggCfg.names[x.st] || x.st) + '</td><td>' + locEsc(ggStationName(x.n, x.st)) + '</td><td>' + x.event + '</td><td>' + locEsc(x.person) + '</td><td>' + (x.dur || '\u2014') + '</td></tr>').join('');
 }
 document.getElementById('ggScanInput').addEventListener('keydown', e => {
   if(e.key !== 'Enter') return;
   e.preventDefault(); const v = e.target.value; e.target.value = ''; ggScan(v);
 });
 
-
-// ---------- Link Subassembly A (GG1) + Subassembly B (GG2) ----------
-const GG_LINK_A = 'GG1', GG_LINK_B = 'GG2';
-async function ggLoadLinks(){
-  const body = document.getElementById('ggLinkBody');
-  try{
-    const rows = (await ggTab('GimbalLinks')).slice(1).reverse().slice(0, 30);
-    document.getElementById('ggLinkCount').textContent = rows.length ? rows.length + ' shown' : '';
-    body.innerHTML = rows.length ? rows.map(r => {
-      const active = /^linked$/i.test(locCell(r[5]));
-      return '<tr><td>' + (locFmt(locDate(r[4])) || locEsc(locCell(r[4]))) + '</td><td class="loc-mono"><span class="loc-link" data-open-loc="' + locEsc(locCell(r[1])) + '">' + locEsc(locCell(r[1])) + '</span></td><td class="loc-mono"><span class="loc-link" data-open-loc="' + locEsc(locCell(r[2])) + '">' + locEsc(locCell(r[2])) + '</span></td><td>' + locEsc(locCell(r[3])) +
-        '</td><td>' + (active ? 'Linked' : '<span class="hint" title="' + locEsc(locCell(r[6])) + '">Unlinked</span>') + '</td><td>' + (active && engineerUnlocked ? '<button class="danger" data-gg-unlink="' + locEsc(locCell(r[0])) + '" style="padding:3px 10px;">Unlink</button>' : '') + '</td></tr>';
-    }).join('') : '<tr><td colspan="6" class="hint">No links yet.</td></tr>';
-  }catch(e){ body.innerHTML = '<tr><td colspan="6" class="hint">Could not load links: ' + locEsc(e.message) + '</td></tr>'; }
-}
-async function ggTryLink(){
-  const msg = document.getElementById('ggLinkMsg');
-  const fa = document.getElementById('ggLinkA'), fb = document.getElementById('ggLinkB');
-  const a = fa.value.trim().toUpperCase(), b = fb.value.trim().toUpperCase();
-  const person = document.getElementById('ggLinkPerson').value.trim();
-  if(!a){ fa.focus(); return; }
-  if(!b){ fb.focus(); return; }
-  if(!person){ msg.innerHTML = '<span class="gg-bad">Enter your initials first.</span>'; document.getElementById('ggLinkPerson').focus(); return; }
-  msg.textContent = 'Checking both units\u2026';
-  try{
-    const r = await sheetPost({action: 'linkGimbalPair', serialA: a, serialB: b, person: person});
-    if(r.status === 'ok'){
-      msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Linked: A ' + r.serialA + ' + B ' + r.serialB + '.</b> Assemble them and sign the unit into ' + locEsc(ggStationName(ggLinkAfter + 1)) + ' (either label works).';
-      fa.value = ''; fb.value = ''; fa.focus(); ggLoadLinks();
-    }else{ msg.innerHTML = '<span class="gg-bad">Not linked: ' + locEsc(r.message || 'check the serials') + '</span>'; }
-  }catch(e){ msg.innerHTML = '<span class="gg-bad">' + (/unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Could not link: ' + locEsc(e.message)) + '</span>'; }
-}
-['ggLinkA', 'ggLinkB'].forEach(id => document.getElementById(id).addEventListener('keydown', e => {
-  if(e.key !== 'Enter') return;
-  e.preventDefault();
-  const fa = document.getElementById('ggLinkA'), fb = document.getElementById('ggLinkB');
-  const v = e.target.value.trim().toUpperCase();
-  // a B scanned into the A box (or the other way round) goes where it belongs
-  if(id === 'ggLinkA' && ggStyleOf(v) === GG_LINK_B){ fa.value = ''; fb.value = v; }
-  if(id === 'ggLinkB' && ggStyleOf(v) === GG_LINK_A){ fb.value = ''; fa.value = v; }
-  if(!fa.value.trim()){ fa.focus(); return; }
-  if(!fb.value.trim()){ fb.focus(); return; }
-  ggTryLink();
-}));
-document.getElementById('ggLinkPerson').addEventListener('change', e => localStorage.setItem(GG_PERSON_KEY, e.target.value.trim()));
-document.getElementById('ggLinkBody').addEventListener('click', async e => {
-  const loc = e.target.closest('[data-open-loc]'); if(loc){ openLocate(loc.getAttribute('data-open-loc')); return; }
-  const b = e.target.closest('[data-gg-unlink]'); if(!b) return;
-  const reason = prompt('Unlink this pair? Only for a pair linked by mistake.\n\nWhy?'); if(reason === null) return;
-  if(!reason.trim()){ alert('Please give a reason.'); return; }
-  const person = document.getElementById('ggLinkPerson').value.trim() || prompt('Your initials:') || '';
-  try{
-    const r = await sheetPost({action: 'unlinkGimbalPair', linkId: b.getAttribute('data-gg-unlink'), person: person, reason: reason.trim()});
-    if(r.status === 'error') throw new Error(r.message);
-    ggLoadLinks();
-  }catch(err){ alert('Could not unlink: ' + err.message); }
-});
-
-// ---------- Ship to warehouse ----------
-let ggGoals = [], ggPairOf = {};   // serial -> linked partner
+// ---------- Ship to warehouse: finished parents only; scanning a part brings its parent ----------
+let ggGoals = [], ggParentOf = {};
 async function ggLoadOrders(){
   const sel = document.getElementById('ggOrder');
   try{
     const [goalRows, sentRows, linkRows] = await Promise.all([ggTab('GimbalGoals'), ggTab('GimbalSentToWH'), ggTab('GimbalLinks')]);
-    ggPairOf = {};
-    linkRows.slice(1).filter(r => /^linked$/i.test(locCell(r[5]))).forEach(r => { const a = locCell(r[1]).toUpperCase(), b = locCell(r[2]).toUpperCase(); ggPairOf[a] = b; ggPairOf[b] = a; });
+    ggParentOf = ggActiveLinks(linkRows).parentOf;
     const shippedBy = {}; sentRows.slice(1).forEach(r => { const k = locCell(r[3]); if(ggCountsForOrder(k, locCell(r[0]).toUpperCase())) shippedBy[k] = (shippedBy[k] || 0) + 1; });
     ggGoals = goalRows.slice(1).map(r => ({label: locCell(r[0]), target: Number(r[1]) || 0})).filter(g => g.label).map(g => Object.assign(g, {shipped: shippedBy[g.label] || 0}));
     const keep = sel.value;
     sel.innerHTML = ggGoals.length ? ggGoals.map(g => '<option value="' + locEsc(g.label) + '">' + locEsc(customerAlias(g.label)) + ' (' + Math.max(0, g.target - g.shipped) + ' remaining of ' + g.target + ')</option>').join('')
-      : '<option value="">No gimbal orders yet (add them to the GimbalGoals tab)</option>';
+      : '<option value="">No gimbal orders yet (Settings \u2192 Add an order)</option>';
     if(keep) sel.value = keep;
   }catch(e){ document.getElementById('ggShipMsg').textContent = 'Could not load orders: ' + e.message; }
 }
 function ggRenderBox(){
-  const size = Number(document.getElementById('ggBoxSize').value) || 20;
-  document.getElementById('ggBoxBody').innerHTML = ggBox.map((sn, i) => '<tr><td>' + (i + 1) + '</td><td class="loc-mono">' + sn + (ggPairOf[sn] ? ' <span class="hint">paired with ' + ggPairOf[sn] + '</span>' : '') + '</td><td><button class="secondary" data-gg-remove="' + i + '" style="padding:2px 10px;">\u00d7</button></td></tr>').join('');
+  const size = Number(document.getElementById('ggBoxSize').value) || 10;
+  document.getElementById('ggBoxBody').innerHTML = ggBox.map((sn, i) => '<tr><td>' + (i + 1) + '</td><td class="loc-mono">' + sn + '</td><td><button class="secondary" data-gg-remove="' + i + '" style="padding:2px 10px;">\u00d7</button></td></tr>').join('');
   document.getElementById('btnGgShip').disabled = !ggBox.length;
   document.getElementById('btnGgShip').textContent = 'Check & ship this box (' + ggBox.length + ' / ' + size + ')';
 }
 document.getElementById('ggShipInput').addEventListener('keydown', e => {
   if(e.key !== 'Enter') return;
   e.preventDefault();
-  const sn = e.target.value.trim().toUpperCase(); e.target.value = '';
+  const raw = e.target.value.trim().toUpperCase(); e.target.value = '';
   const msg = document.getElementById('ggShipMsg');
-  if(!sn) return;
-  if(!GG_SERIAL_RE.test(sn)){ msg.innerHTML = '<span class="gg-bad">' + locEsc(sn) + ' is not a gimbal serial.</span>'; return; }
+  if(!raw) return;
+  if(!GG_SERIAL_RE.test(raw)){ msg.innerHTML = '<span class="gg-bad">' + locEsc(raw) + ' is not a gimbal serial.</span>'; return; }
+  const sn = ggParentOf[raw] || raw;
+  if(ggStyleOf(sn) !== ggCfg.parent){ const t = '<b>' + raw + '</b> is a ' + locEsc(ggCfg.names[ggStyleOf(raw)] || 'part') + ' that isn\u2019t linked into a ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + ' yet.<br><br>Only finished ' + locEsc(ggCfg.names[ggCfg.parent] || 'parents') + ' ship.'; msg.innerHTML = '<span class="gg-bad">' + t.replace(/<br><br>/g, ' ') + '</span>'; ggPopup(t); return; }
   if(ggBox.indexOf(sn) > -1){ msg.textContent = sn + ' is already in this box.'; return; }
-  const size = Number(document.getElementById('ggBoxSize').value) || 20;
-  const partner = ggPairOf[sn];
-  const adding = partner && ggBox.indexOf(partner) < 0 ? 2 : 1;
-  if(ggBox.length + adding > size){ msg.innerHTML = '<span class="gg-bad">The box is full (' + size + ' units). Ship it, or raise the box size.</span>'; return; }
-  ggBox.push(sn);
-  if(partner && ggBox.indexOf(partner) < 0){ ggBox.push(partner); msg.innerHTML = '\u2713 ' + sn + ' and its linked partner ' + partner + ' added as a pair.'; }
-  else if(!partner && ['GG1', 'GG2'].indexOf(ggStyleOf(sn)) > -1){ msg.innerHTML = '<span class="gg-bad">' + sn + ' is not linked to its partner yet. Link it at Link A + B first, or it will be turned away.</span>'; }
-  else msg.textContent = '';
+  const size = Number(document.getElementById('ggBoxSize').value) || 10;
+  if(ggBox.length >= size){ msg.innerHTML = '<span class="gg-bad">The box is full (' + size + '). Ship it, or raise the box size.</span>'; return; }
+  ggBox.push(sn); msg.textContent = sn !== raw ? '\u2713 ' + raw + ' is inside ' + sn + '; added ' + sn + '.' : '';
   ggLastShip = null; document.getElementById('btnGgPrintBox').style.display = 'none';
   ggRenderBox();
 });
-document.getElementById('ggBoxBody').addEventListener('click', e => {
-  const b = e.target.closest('[data-gg-remove]'); if(!b) return;
-  const gone = ggBox.splice(Number(b.getAttribute('data-gg-remove')), 1)[0];
-  if(ggPairOf[gone]) ggBox = ggBox.filter(x => x !== ggPairOf[gone]);   // a pair comes out together
-  ggRenderBox();
-});
+document.getElementById('ggBoxBody').addEventListener('click', e => { const b = e.target.closest('[data-gg-remove]'); if(!b) return; ggBox.splice(Number(b.getAttribute('data-gg-remove')), 1); ggRenderBox(); });
 document.getElementById('ggBoxSize').addEventListener('change', ggRenderBox);
 document.getElementById('btnGgClearBox').addEventListener('click', () => { ggBox = []; ggRenderBox(); document.getElementById('ggShipMsg').textContent = ''; });
 document.getElementById('btnGgShip').addEventListener('click', async () => {
   const msg = document.getElementById('ggShipMsg');
-  const order = document.getElementById('ggOrder').value;
-  const person = document.getElementById('ggShipPerson').value.trim();
+  const order = document.getElementById('ggOrder').value, person = document.getElementById('ggShipPerson').value.trim();
   if(!order){ msg.innerHTML = '<span class="gg-bad">Pick a customer order.</span>'; return; }
   if(!person){ msg.innerHTML = '<span class="gg-bad">Enter your initials.</span>'; return; }
   const btn = document.getElementById('btnGgShip'); btn.disabled = true; msg.textContent = 'Checking every unit\u2026';
   try{
     const r = await sheetPost({action: 'gimbalShipBox', orderLabel: order, serials: ggBox, person: person});
     if(r.status === 'rejected'){
-      msg.innerHTML = '<span class="gg-bad">Nothing was shipped. Take these out of the box first:</span><br>' + r.rejected.map(x => '<span class="loc-mono">' + x.serial + '</span> \u2014 ' + locEsc(x.why)).join('<br>');
-    }else if(r.status === 'ok'){
-      ggLastShip = {order: order, box: r.box, serials: r.serials || ggBox.slice(), person: person, when: r.dateTime, counted: r.counted};
-      msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Box ' + r.box + ' recorded: ' + r.shipped + ' units' + (r.counted && r.counted !== r.shipped ? ' (' + r.counted + ' linked pair' + (r.counted === 1 ? '' : 's') + ')' : '') + ' for ' + locEsc(customerAlias(order)) + '.</b> Print the box label.';
+      const list = r.rejected.map(x => '<span class="loc-mono">' + x.serial + '</span>: ' + locEsc(x.why)).join('<br><br>');
+      msg.innerHTML = '<span class="gg-bad">Nothing was shipped. Take these out of the box first:</span><br>' + list;
+      ggPopup('<b>Nothing was shipped.</b> Take these out of the box first:<br><br>' + list);
+    }
+    else if(r.status === 'ok'){
+      ggLastShip = {order: order, box: r.box, serials: r.serials || ggBox.slice(), person: person, when: r.dateTime};
+      msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Box ' + r.box + ' recorded: ' + r.shipped + ' unit' + (r.shipped === 1 ? '' : 's') + ' for ' + locEsc(customerAlias(order)) + '.</b> Print the box label.';
       ggBox = []; ggRenderBox(); document.getElementById('btnGgPrintBox').style.display = ''; ggLoadOrders();
-    }else{ msg.innerHTML = '<span class="gg-bad">' + locEsc(r.message || 'Could not ship.') + '</span>'; }
+    }else msg.innerHTML = '<span class="gg-bad">' + locEsc(r.message || 'Could not ship.') + '</span>';
   }catch(e){ msg.innerHTML = '<span class="gg-bad">Could not ship: ' + locEsc(e.message) + '</span>'; }
   finally{ btn.disabled = !ggBox.length; }
 });
+
 function ggQrDataUrl(text){
   const holder = document.createElement('div');
   new QRCode(holder, {text: text, width: 512, height: 512, correctLevel: QRCode.CorrectLevel.M});
@@ -6362,7 +6455,7 @@ document.getElementById('btnGgPrintBox').addEventListener('click', () => {
   w.document.write('<!doctype html><html><head><title>Gimbal box ' + s.box + '</title><style>@page{size:4in 3in;margin:0}body{margin:0;font-family:Arial,sans-serif}' +
     '.l{width:4in;height:3in;box-sizing:border-box;padding:.18in;display:flex;gap:.15in}.l img{width:1.5in;height:1.5in}.t{flex:1}.big{font-size:22pt;font-weight:800}.k{font-size:8pt;color:#555;text-transform:uppercase}.v{font-size:11pt;font-weight:700;margin-bottom:5px}</style></head><body>' +
     '<div class="l"><div><img src="' + qr + '"><div class="k" style="margin-top:4px;">Scan for serial list</div></div><div class="t"><div class="big">GIMBAL BOX ' + s.box + '</div>' +
-    '<div class="k">Order</div><div class="v">' + locEsc(s.order) + '</div><div class="k">Quantity</div><div class="v">' + (s.counted && s.counted !== s.serials.length ? s.counted + ' pairs (A + B, ' + s.serials.length + ' units)' : s.serials.length) + '</div>' +
+    '<div class="k">Order</div><div class="v">' + locEsc(s.order) + '</div><div class="k">Quantity</div><div class="v">' + s.serials.length + '</div>' +
     '<div class="k">Packed by / date</div><div class="v">' + locEsc(s.person) + ' \u00b7 ' + locEsc(String(s.when).split(',')[0]) + '</div></div></div>' +
     '<script>window.onload=function(){setTimeout(function(){window.print();},300)}<\/script></body></html>');
   w.document.close();
@@ -6509,29 +6602,87 @@ document.getElementById('btnGgPrintLabels').addEventListener('click', () => {
   setTimeout(() => window.print(), 250);
 });
 
-// ---------- Settings: gimbal stations ----------
+
+// ---------- Settings: gimbal parts and stations ----------
+let ggEditPart = 'GG1';
 function ggRenderStationEditor(){
-  const el = document.getElementById('ggStationList'); if(!el) return;
-  const la = document.getElementById('ggLinkAfterInput'); if(la && document.activeElement !== la) la.value = ggLinkAfter;
-  el.innerHTML = ggStations.map((nm, i) => '<div class="gg-st-row"><b>' + (i + 1) + '</b><input type="text" class="gg-st-name" value="' + locEsc(nm) + '"><button class="secondary" data-gg-del="' + i + '" style="padding:4px 10px;">\u00d7</button></div>').join('');
+  const sel = document.getElementById('ggEditPart'); if(!sel) return;
+  if(!ggCfg.routes[ggEditPart]) ggEditPart = ggStyles()[0];
+  sel.innerHTML = ggStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggCfg.names[st] || st) + (st === ggCfg.parent ? ' (parent)' : '') + '</option>').join(''); sel.value = ggEditPart;
+  const nm = document.getElementById('ggEditName'); if(document.activeElement !== nm) nm.value = ggCfg.names[ggEditPart] || '';
+  document.getElementById('ggStationList').innerHTML = ggRoute(ggEditPart).map((s, i) => '<div class="gg-st-row"><b>' + (i + 1) + '</b><input type="text" class="gg-st-name" value="' + locEsc(s) + '"><button class="secondary" data-gg-del="' + i + '" style="padding:4px 10px;">\u00d7</button></div>').join('');
+  const ps = document.getElementById('ggParentSel'); ps.innerHTML = ggStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggCfg.names[st] || st) + '</option>').join(''); ps.value = ggCfg.parent;
+  const ls = document.getElementById('ggLinkStation'); if(document.activeElement !== ls) ls.value = ggCfg.linkStation;
+  document.getElementById('ggNeedsList').innerHTML = ggStyles().filter(st => st !== ggCfg.parent).map(st => '<label class="field"><span>' + locEsc(ggCfg.names[st] || st) + ' (' + st + ') per ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + '</span><input type="number" class="gg-need" data-st="' + st + '" min="0" max="20" value="' + (ggCfg.needs[st] || 0) + '"></label>').join('');
 }
-document.getElementById('btnGgAddStation').addEventListener('click', () => { ggStations = [...document.querySelectorAll('.gg-st-name')].map(i => i.value); ggStations.push(''); ggRenderStationEditor(); });
+function ggCaptureEditor(){   // keep what was typed before switching parts
+  const list = [...document.querySelectorAll('.gg-st-name')].map(i => i.value);
+  if(list.length || ggCfg.routes[ggEditPart]) ggCfg.routes[ggEditPart] = list;
+  ggCfg.names[ggEditPart] = document.getElementById('ggEditName').value.trim() || ggCfg.names[ggEditPart] || ggEditPart;
+  document.querySelectorAll('.gg-need').forEach(i => { ggCfg.needs[i.dataset.st] = Number(i.value) || 0; });
+  ggCfg.parent = document.getElementById('ggParentSel').value || ggCfg.parent;
+  ggCfg.linkStation = Number(document.getElementById('ggLinkStation').value) || 1;
+}
+document.getElementById('ggEditPart').addEventListener('change', e => { ggCaptureEditor(); ggEditPart = e.target.value; ggRenderStationEditor(); });
+document.getElementById('ggParentSel').addEventListener('change', () => { ggCaptureEditor(); ggRenderStationEditor(); });
+document.getElementById('btnGgAddStation').addEventListener('click', () => { ggCaptureEditor(); ggCfg.routes[ggEditPart].push(''); ggRenderStationEditor(); });
+document.getElementById('btnGgAddPart').addEventListener('click', () => {
+  ggCaptureEditor();
+  const next = 'GG' + (Math.max(0, ...ggStyles().map(s => Number(s.slice(2)) || 0)) + 1);
+  ggCfg.routes[next] = ['Laser Mark', 'Build', 'Test']; ggCfg.names[next] = 'New part'; ggEditPart = next; ggRenderStationEditor();
+  document.getElementById('ggStationsMsg').textContent = next + ' added. Name it, set its stations and how many go into each parent, then Save.';
+});
 document.getElementById('ggStationList').addEventListener('click', e => {
   const b = e.target.closest('[data-gg-del]'); if(!b) return;
-  ggStations = [...document.querySelectorAll('.gg-st-name')].map(i => i.value); ggStations.splice(Number(b.getAttribute('data-gg-del')), 1); ggRenderStationEditor();
+  ggCaptureEditor(); ggCfg.routes[ggEditPart].splice(Number(b.getAttribute('data-gg-del')), 1); ggRenderStationEditor();
 });
 document.getElementById('btnGgSaveStations').addEventListener('click', async () => {
   const msg = document.getElementById('ggStationsMsg');
-  const list = [...document.querySelectorAll('.gg-st-name')].map(i => i.value.trim()).filter(Boolean);
+  ggCaptureEditor();
+  Object.keys(ggCfg.routes).forEach(st => { ggCfg.routes[st] = ggCfg.routes[st].map(x => String(x).trim()).filter(Boolean); if(!ggCfg.routes[st].length) delete ggCfg.routes[st]; });
   try{
-    const r = await sheetPost({action: 'setGimbalConfig', stations: list, linkAfter: Number(document.getElementById('ggLinkAfterInput').value) || 3});
+    const r = await sheetPost({action: 'setGimbalConfig', config: ggCfg});
     if(r.status === 'error') throw new Error(r.message);
-    ggStations = r.stations; ggLinkAfter = Number(r.linkAfter) || ggLinkAfter; ggRenderStationEditor(); ggRenderChips();
-    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Saved for every computer.</b> A and B are linked after station ' + ggLinkAfter + '; last station (finished): ' + locEsc(ggStations[ggStations.length - 1]) + '.';
+    ggCfg = {parent: r.parent, linkStation: r.linkStation, names: r.names, routes: r.routes, needs: r.needs};
+    ggRenderStationEditor(); ggRenderChips(); ggFillStyleSelect();
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Saved for every computer and the TV.</b> Parts are linked at ' + locEsc(ggCfg.names[ggCfg.parent] || ggCfg.parent) + ' station ' + ggCfg.linkStation + ' (' + locEsc(ggRoute(ggCfg.parent)[ggCfg.linkStation - 1] || '') + ').';
   }catch(e){ msg.textContent = /unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Could not save: ' + e.message; }
 });
-ggRenderStationEditor();
 
+// ---------- Settings: add an order (headsets → Goals, gimbals → GimbalGoals) ----------
+function goalStyles(){ return document.getElementById('goalLine').value === 'gimbal' ? ggStyles().map(st => [st, st + ' \u2014 ' + (ggCfg.names[st] || st)]) : ['H2B', 'H2C', 'H2D', 'H2E', 'H2F'].map(st => [st, st]); }
+function goalFillStyles(){
+  const sel = document.getElementById('goalStyle'), keep = sel.value;
+  sel.innerHTML = goalStyles().map(x => '<option value="' + x[0] + '">' + locEsc(x[1]) + '</option>').join('');
+  if(document.getElementById('goalLine').value === 'gimbal') sel.value = ggCfg.parent; else if(keep && /^H2/.test(keep)) sel.value = keep;
+  goalPreview();
+}
+function goalPreview(){
+  const nm = document.getElementById('goalName').value.trim().replace(/\s*-\s*(H2[A-F]|GG\d+)\s*$/i, '');
+  document.getElementById('goalPreview').textContent = nm ? nm + ' - ' + document.getElementById('goalStyle').value : '';
+}
+document.getElementById('goalLine').addEventListener('change', goalFillStyles);
+['goalName', 'goalStyle'].forEach(id => document.getElementById(id).addEventListener('input', goalPreview));
+document.getElementById('goalStyle').addEventListener('change', goalPreview);
+document.getElementById('btnGoalAdd').addEventListener('click', async () => {
+  const msg = document.getElementById('goalMsg');
+  if(!engineerUnlocked){ msg.textContent = 'Engineer PIN required.'; return; }
+  const line = document.getElementById('goalLine').value, name = document.getElementById('goalName').value.trim(), style = document.getElementById('goalStyle').value;
+  const qty = Number(document.getElementById('goalQty').value), due = document.getElementById('goalDue').value;
+  if(!name){ msg.innerHTML = '<span class="gg-bad">Enter the customer or work order.</span>'; return; }
+  if(!(qty > 0)){ msg.innerHTML = '<span class="gg-bad">Enter a quantity.</span>'; return; }
+  const btn = document.getElementById('btnGoalAdd'); btn.disabled = true;
+  try{
+    const r = await sheetPost({action: 'addGoal', line: line, name: name, style: style, qty: qty, due: due});
+    if(r.status === 'error') throw new Error(r.message);
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Added "' + locEsc(r.label) + '"</b> (' + qty + (due ? ', due ' + locEsc(due) : '') + ') to the ' + locEsc(r.tab) + ' tab, row ' + r.row + '.';
+    document.getElementById('goalName').value = ''; document.getElementById('goalQty').value = ''; document.getElementById('goalDue').value = ''; goalPreview();
+    if(line === 'gimbal') ggLoadOrders();
+  }catch(e){ msg.innerHTML = '<span class="gg-bad">' + (/unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Not added: ' + locEsc(e.message)) + '</span>'; }
+  finally{ btn.disabled = false; }
+});
+goalFillStyles();
+ggRenderStationEditor();
 
 // =====================================================================
 // CUSTOMER DISPLAY NAMES (Settings) — choose the name shown for each customer
@@ -6649,75 +6800,77 @@ function locRowTime(pairs){
 }
 
 
-// ---- Locate for gimbal serials (GG1, GG2 …): GimbalSerials, GimbalLog and GimbalSentToWH only ----
-async function runGimbalLocate(serial){
+// ---- Locate / Unit history for gimbal serials: the parent shows every linked part, and its
+// timeline can include each part's own history. A part shows the parent it went into. ----
+async function runGimbalLocate(serial, withParts){
   const msg = document.getElementById('locMsg'), out = document.getElementById('locResult');
   try{
-    const [ggSerials, ggSent, evJson, ggLinks] = await Promise.all([locateTab('ggSerials'), locateTab('ggSent'), sheetPost({action: 'getGimbalSerialEvents', serial: serial}), locateTab('ggLinks')]);
-    const myLinks = ggLinks.slice(1).filter(r => locCell(r[1]).toUpperCase() === serial || locCell(r[2]).toUpperCase() === serial);
-    const activeLink = myLinks.find(r => /^linked$/i.test(locCell(r[5])));
-    const partnerOf = r => locCell(r[1]).toUpperCase() === serial ? locCell(r[2]).toUpperCase() : locCell(r[1]).toUpperCase();
     if(!ggConfigLoaded) await ggLoadConfig();
-    const N = ggStations.length;
+    const [ggSerials, ggSent, ggLinks] = await Promise.all([locateTab('ggSerials'), ggTab('GimbalSentToWH'), ggTab('GimbalLinks')]);
+    const act = ggActiveLinks(ggLinks), style = ggStyleOf(serial), route = ggRoute(style), N = route.length, isParent = style === ggCfg.parent;
+    const evOf = async sn => ((await sheetPost({action: 'getGimbalSerialEvents', serial: sn})).events || [])
+      .map(e => ({sn: sn, event: locCell(e.event), person: locCell(e.person), st: Number(stationNumberFromLabel(locCell(e.station)) || 0), t: locDate(e.dateTime), comment: locCell(e.comment)})).filter(e => e.t).sort((a, b) => a.t - b.t);
+    const events = await evOf(serial);
     const gen = ggSerials.slice(1).find(r => locCell(r[4]).toUpperCase() === serial);
-    const events = (evJson.events || []).map(e => ({event: locCell(e.event), person: locCell(e.person), st: String(stationNumberFromLabel(locCell(e.station)) || ''), t: locDate(e.dateTime)}))
-      .filter(e => e.t).sort((a, b) => a.t - b.t);
     const ship = ggSent.slice(1).find(r => locCell(r[0]).toUpperCase() === serial);
     if(!gen && !events.length && !ship){
       const near = ggSerials.slice(1).map(r => locCell(r[4]).toUpperCase()).filter(sn => sn.indexOf(serial) > -1).slice(0, 12);
       msg.innerHTML = 'No record of <b class="loc-mono">' + locEsc(serial) + '</b> on the gimbal tabs.' + (near.length ? '<div class="loc-suggest">' + near.map(sn => '<button class="secondary" data-loc="' + sn + '">' + sn + '</button>').join('') + '</div>' : '');
       return;
     }
+    const parent = act.parentOf[serial], parts = act.partsOf[serial] || [];
+    const myLinks = ggLinks.slice(1).filter(r => locCell(r[1]).toUpperCase() === serial || locCell(r[2]).toUpperCase() === serial);
+    const link = sn => '<span class="loc-link loc-mono" data-loc="' + sn + '">' + sn + '</span>';
     const items = [];
-    if(gen) items.push({t: locDate(gen[5]), c: 'var(--accent)', tag: 'gen', tagText: 'GENERATED', h: 'Gimbal serial generated (' + locEsc(locCell(gen[1])) + ')',
-      d: '<span>By</span> ' + locEsc(locCell(gen[3]) || 'unknown') + (locCell(gen[2]) ? ' &nbsp;<span>Work order</span> ' + locEsc(gen[2]) : '')});
-    const openIn = {};
-    events.forEach(e => {
-      const isIn = /movein/i.test(e.event), isOut = /moveout/i.test(e.event);
-      let dur = '';
-      if(isIn) openIn[e.st] = e.t;
-      if(isOut && openIn[e.st]){ dur = formatDuration(Math.max(0, e.t - openIn[e.st])); delete openIn[e.st]; }
-      items.push({t: e.t, c: isIn ? '#1d7a3f' : '#c7851a', tag: isIn ? 'in' : 'out', tagText: isIn ? 'SIGNED IN' : 'SIGNED OUT', h: ggStationName(e.st),
-        d: '<span>Operator</span> ' + locEsc(e.person || 'unknown') + (dur ? ' &nbsp;<span>Time at station</span> ' + dur : '') + (isOut && Number(e.st) === N ? ' &nbsp;<b>Finished</b>' : '')});
-    });
+    const addEvents = (list, prefix) => {
+      const openIn = {};
+      list.forEach(e => {
+        const isIn = /movein/i.test(e.event), isOut = /moveout/i.test(e.event), stl = ggStyleOf(e.sn), rt = ggRoute(stl);
+        let dur = ''; if(isIn) openIn[e.st] = e.t; if(isOut && openIn[e.st]){ dur = formatDuration(Math.max(0, e.t - openIn[e.st])); delete openIn[e.st]; }
+        items.push({t: e.t, c: isIn ? '#1d7a3f' : '#c7851a', tag: isIn ? 'in' : 'out', tagText: isIn ? 'SIGNED IN' : 'SIGNED OUT',
+          h: (prefix ? prefix + ' \u00b7 ' : '') + 'Station ' + e.st + ' \u2014 ' + locEsc(rt[e.st - 1] || '?'),
+          d: '<span>Operator</span> ' + locEsc(e.person || 'unknown') + (dur ? ' &nbsp;<span>Time at station</span> ' + dur : '') + (e.comment ? ' &nbsp;<span>Note</span> ' + locEsc(e.comment) : '') + (isOut && e.st === rt.length ? ' &nbsp;<b>Finished its stations</b>' : '')});
+      });
+    };
+    if(gen) items.push({t: locDate(gen[5]), c: 'var(--accent)', tag: 'gen', tagText: 'GENERATED', h: locEsc(ggPartName(style)) + ' serial generated', d: '<span>By</span> ' + locEsc(locCell(gen[3]) || 'unknown') + (locCell(gen[2]) ? ' &nbsp;<span>Work order</span> ' + locEsc(gen[2]) : '')});
+    addEvents(events, '');
     myLinks.forEach(r => {
-      items.push({t: locDate(r[4]), c: 'var(--accent)', tag: 'gen', tagText: 'LINKED', h: 'Linked to <span class="loc-link loc-mono" data-loc="' + partnerOf(r) + '">' + partnerOf(r) + '</span>',
-        d: '<span>By</span> ' + locEsc(locCell(r[3]) || 'unknown') + (/unlinked/i.test(locCell(r[5])) ? ' &nbsp;<b>Unlinked later</b> ' + locEsc(locCell(r[6])) : '')});
+      const p = locCell(r[1]).toUpperCase(), c = locCell(r[2]).toUpperCase(), unl = /unlinked/i.test(locCell(r[6]));
+      items.push({t: locDate(r[5]), c: unl ? 'var(--muted)' : 'var(--accent)', tag: 'gen', tagText: unl ? 'UNLINKED' : 'LINKED',
+        h: serial === p ? locEsc(ggPartName(ggStyleOf(c))) + ' ' + link(c) + ' linked in' : 'Linked into ' + locEsc(ggCfg.names[ggStyleOf(p)] || 'parent') + ' ' + link(p),
+        d: '<span>By</span> ' + locEsc(locCell(r[4]) || 'unknown') + (unl ? ' &nbsp;' + locEsc(locCell(r[7])) : '')});
     });
-    if(ship) items.push({t: locDate(ship[1]), c: 'var(--cyan)', tag: 'ship', tagText: 'TO WAREHOUSE', h: 'Shipped to the warehouse',
-      d: '<span>Order</span> ' + locEsc(customerAlias(locCell(ship[3]))) + ' &nbsp;<span>Box</span> ' + locEsc(locCell(ship[4])) + ' &nbsp;<span>Packed by</span> ' + locEsc(locCell(ship[2]) || 'unknown')});
+    if(withParts && isParent){
+      for(const pt of parts){ addEvents(await evOf(pt.sn), locEsc(ggCfg.names[pt.style] || pt.style) + ' ' + pt.sn.slice(-5)); }
+    }
+    if(ship) items.push({t: locDate(ship[1]), c: 'var(--cyan)', tag: 'ship', tagText: 'TO WAREHOUSE', h: 'Shipped to the warehouse', d: '<span>Order</span> ' + locEsc(customerAlias(locCell(ship[3]))) + ' &nbsp;<span>Box</span> ' + locEsc(locCell(ship[4])) + ' &nbsp;<span>Packed by</span> ' + locEsc(locCell(ship[2]) || 'unknown')});
     items.sort((a, b) => (a.t ? a.t.getTime() : -Infinity) - (b.t ? b.t.getTime() : -Infinity));
     const last = events[events.length - 1];
     let status = {c: 'var(--muted)', big: 'Generated, not started', sub: 'No station activity yet.'};
     if(ship) status = {c: 'var(--cyan)', big: 'Shipped to the warehouse', sub: 'Box ' + locCell(ship[4]) + ' for ' + customerAlias(locCell(ship[3])) + (locDate(ship[1]) ? ', ' + locFmt(locDate(ship[1])) : '')};
-    else if(last && /movein/i.test(last.event)) status = {c: '#1d7a3f', big: 'At ' + ggStationName(last.st), sub: 'Signed in by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago (' + locFmt(last.t) + ')'};
-    else if(last && /moveout/i.test(last.event)){
-      const n = Number(last.st);
-      status = n >= N ? {c: '#c7851a', big: 'Finished, waiting to ship to the warehouse', sub: 'Signed out of ' + ggStationName(n) + ' by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago'}
-        : {c: '#c7851a', big: 'Between stations, waiting for ' + ggStationName(n + 1), sub: 'Signed out of ' + ggStationName(n) + ' by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago'};
-    }
-    // a linked B is part of its A from the combined stations on: point to the unit
-    if(activeLink && ggStyleOf(serial) === 'GG2' && !ship){
-      const master = partnerOf(activeLink);
-      status = {c: 'var(--accent)', big: 'Combined into ' + master, sub: 'Subassembly B, linked ' + (locFmt(locDate(activeLink[4])) || '') + '. The combined unit is tracked under its A: click the A serial to see where it is now.'};
-    }
-    const done = [...new Set(events.filter(e => /moveout/i.test(e.event)).map(e => e.st))].sort();
-    const first = events.find(e => /movein/i.test(e.event) && e.st === '1'), fin = events.find(e => /moveout/i.test(e.event) && Number(e.st) === N);
-    const facts = [
-      ['Gimbal serial', serial, true], ['Style', ggStyleOf(serial)], ['Work order', gen && locCell(gen[2]) ? locEsc(gen[2]) : '\u2014'],
-      ['Generated', gen ? locFmt(locDate(gen[5])) || locEsc(locCell(gen[5])) : '\u2014'],
-      ['Stations completed', done.length ? done.join(', ') + ' of ' + N : 'None'],
-      ['Lead time', first && fin ? formatDuration(fin.t - first.t) : (first ? formatDuration(Date.now() - first.t) + ' so far' : '\u2014')],
-      ['Linked to', activeLink ? '<span class="loc-link loc-mono" data-loc="' + partnerOf(activeLink) + '">' + partnerOf(activeLink) + '</span>' : (['GG1', 'GG2'].indexOf(ggStyleOf(serial)) > -1 ? 'Not linked yet' : '\u2014')],
-      ['Order', ship ? locEsc(customerAlias(locCell(ship[3]))) : '\u2014'], ['Box', ship ? locEsc(locCell(ship[4])) : '\u2014']
-    ];
+    else if(parent) status = {c: 'var(--accent)', big: 'Inside ' + (ggCfg.names[ggStyleOf(parent)] || 'parent') + ' ' + parent, sub: 'This ' + (ggCfg.names[style] || 'part') + ' is linked into ' + parent + '. Click it below to see where the unit is now.'};
+    else if(last && /movein/i.test(last.event)) status = {c: '#1d7a3f', big: 'At Station ' + last.st + ' \u2014 ' + (route[last.st - 1] || '?'), sub: 'Signed in by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago (' + locFmt(last.t) + ')'};
+    else if(last && /moveout/i.test(last.event)) status = last.st >= N
+      ? {c: '#c7851a', big: isParent ? 'Finished, waiting to ship to the warehouse' : 'Finished its stations, waiting to be linked', sub: 'Signed out of ' + (route[last.st - 1] || '') + ' by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago'}
+      : {c: '#c7851a', big: 'Between stations, waiting for Station ' + (last.st + 1) + ' \u2014 ' + (route[last.st] || '?'), sub: 'Signed out of ' + (route[last.st - 1] || '') + ' by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago'};
+    const done = [...new Set(events.filter(e => /moveout/i.test(e.event)).map(e => e.st))].sort((a, b) => a - b);
+    const kit = isParent ? ggKitOf(parts) : null;
+    const facts = [['Serial', serial, true], ['Part', locEsc(ggPartName(style))], ['Work order', gen && locCell(gen[2]) ? locEsc(gen[2]) : '\u2014'],
+      ['Generated', gen ? (locFmt(locDate(gen[5])) || locEsc(locCell(gen[5]))) : '\u2014'], ['Stations completed', done.length ? done.join(', ') + ' of ' + N : 'None'],
+      isParent ? ['Parts', kit.rows.map(x => locEsc(ggCfg.names[x.st] || x.st) + ' ' + x.have + '/' + x.need).join(', ') + (kit.complete ? ' \u2713' : '')] : ['Inside', parent ? link(parent) : (ggCfg.needs[style] ? 'Not linked yet' : '\u2014')],
+      ['Order', ship ? locEsc(customerAlias(locCell(ship[3]))) : '\u2014'], ['Box', ship ? locEsc(locCell(ship[4])) : '\u2014']];
     out.innerHTML =
-      '<div class="panel"><h2>Gimbal ' + locEsc(serial) + '</h2>' +
+      '<div class="panel"><h2>' + locEsc(ggCfg.names[style] || 'Gimbal') + ' ' + locEsc(serial) + '</h2>' +
         '<div class="loc-status"><span class="dot" style="background:' + status.c + ';"></span><div><div class="big">' + locEsc(status.big) + '</div><div class="sub">' + locEsc(status.sub) + '</div></div></div>' +
         '<div class="loc-facts">' + facts.map(f => '<div class="loc-fact"><div class="k">' + f[0] + '</div><div class="v' + (f[2] ? ' mono' : '') + '">' + f[1] + '</div></div>').join('') + '</div></div>' +
-      '<div class="panel"><h2>Full history <span class="count">' + items.length + ' events</span></h2><div class="loc-timeline">' + items.map(i =>
-        '<div class="loc-item" style="--c:' + i.c + ';"><div class="t">' + locFmt(i.t) + '</div><div class="h"><span class="loc-tag ' + i.tag + '">' + i.tagText + '</span>' + i.h + '</div>' +
-        (i.d ? '<div class="d">' + i.d + '</div>' : '') + '</div>').join('') + '</div></div>';
+      (isParent ? '<div class="panel"><h2>Linked parts <span class="count">' + parts.length + '</span></h2>' + (parts.length ? '<div class="tablewrap"><table><thead><tr><th>Part</th><th>Serial</th><th>Linked</th><th>By</th></tr></thead><tbody>' +
+        parts.map(pt => '<tr><td>' + locEsc(ggPartName(pt.style)) + '</td><td>' + link(pt.sn) + '</td><td>' + (locFmt(pt.t) || '') + '</td><td>' + locEsc(pt.by || '') + '</td></tr>').join('') + '</tbody></table></div>' : '<div class="hint">No parts linked yet.</div>') +
+        (parts.length ? '<div class="btnrow"><button class="secondary" id="btnGgFullHistory">' + (withParts ? 'Show only this unit\u2019s own history' : 'Show every part\u2019s history too') + '</button></div>' : '') + '</div>' :
+       parent ? '<div class="panel"><h2>Inside</h2><div class="hint" style="font-size:14px;">' + link(parent) + ' \u2014 click to see the whole unit and all its parts.</div></div>' : '') +
+      '<div class="panel"><h2>' + (withParts ? 'Full build history (unit and all parts)' : 'History') + ' <span class="count">' + items.length + ' events</span></h2><div class="loc-timeline">' + items.map(i =>
+        '<div class="loc-item" style="--c:' + i.c + ';"><div class="t">' + locFmt(i.t) + '</div><div class="h"><span class="loc-tag ' + i.tag + '">' + i.tagText + '</span>' + i.h + '</div>' + (i.d ? '<div class="d">' + i.d + '</div>' : '') + '</div>').join('') + '</div></div>';
+    const fb = document.getElementById('btnGgFullHistory');
+    if(fb) fb.addEventListener('click', () => { fb.disabled = true; fb.textContent = 'Loading\u2026'; runGimbalLocate(serial, !withParts); });
     msg.textContent = '';
   }catch(e){ msg.textContent = 'Lookup failed: ' + e.message; }
 }
