@@ -88,6 +88,9 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .gg-slot.notFinished{ border-style:solid; border-color:#c7851a; background:#fff8ec; } .gg-slot.notFinished .why{ color:#8a5a0b; font-weight:700; }
   .gg-slot.bad{ border-style:solid; border-color:#c0392b; background:#fdf0ee; } .gg-slot.bad .why{ color:#a13636; font-weight:700; }
   .gg-slot.next{ border-color:var(--accent); }
+  .gg-slot-in{ width:100%; border:none !important; background:transparent; font-family:var(--mono); font-size:14px; font-weight:700; padding:6px 2px !important; box-shadow:none !important; outline:none; }
+  .gg-slot-in::placeholder{ font-family:var(--sans); font-weight:500; color:var(--muted); }
+  .gg-slot:focus-within{ border-style:solid; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
   .gg-slot .x{ float:right; border:none; background:none; color:#a13636; font-weight:800; cursor:pointer; font-size:15px; padding:0 2px; }
   #ggMsg{ font-size:15px; margin-top:8px; }
   .station-warning-overlay.gg-ok .station-warning-box{ border-color:#1d7a3f; }
@@ -6358,23 +6361,39 @@ document.addEventListener('keydown', e => {   // Enter or Esc closes it; the nex
 
 // ---------- link form: every part the parent needs, scanned in at once, then linked together ----------
 let ggKitSlots = [];   // [{style, sn, state: ''|'checking'|'ready'|'notFinished'|'bad'|'linked', why}]
-async function ggShowKit(parent){
-  ggKitParent = parent; ggPart = ggStyleOf(parent) || ggCfg.parent; ggSelected = ggCfg.linkStation; ggRenderChips();
-  const panel = document.getElementById('ggKitPanel');
-  panel.style.display = ''; panel.innerHTML = '<div class="hint">Loading the parts for ' + locEsc(parent) + '\u2026</div>';
-  let r; try{ r = await sheetPost({action: 'gimbalKit', parent: parent}); }catch(e){ panel.innerHTML = '<div class="gg-bad">Could not load: ' + locEsc(e.message) + '</div>'; return; }
-  const linked = (r.parts || []).map(p => ({sn: p.sn, style: ggStyleOf(p.sn), linkId: p.linkId}));
-  ggKitSlots = [];
+function ggKitSlotsFor(linked){
+  const slots = [];
   Object.keys(ggCfg.needs).forEach(st => {
-    const mine = linked.filter(p => p.style === st);
+    const mine = (linked || []).filter(p => p.style === st);
     for(let i = 0; i < ggCfg.needs[st]; i++){
       const l = mine[i];
-      ggKitSlots.push(l ? {style: st, sn: l.sn, state: 'linked', why: 'Linked', linkId: l.linkId} : {style: st, sn: '', state: '', why: ''});
+      slots.push(l ? {style: st, sn: l.sn, state: 'linked', why: 'Linked', linkId: l.linkId} : {style: st, sn: '', state: '', why: ''});
     }
   });
-  ggRenderKit();
-  document.getElementById('ggScanLabel').textContent = 'Scan the parts for ' + parent + ' (any order), then press Link all parts';
-  document.getElementById('ggScanInput').focus();
+  return slots;
+}
+async function ggShowKit(parent, kitPromise){
+  const fresh = ggKitParent !== parent;
+  ggKitParent = parent; ggPart = ggStyleOf(parent) || ggCfg.parent; ggSelected = ggCfg.linkStation; ggRenderChips();
+  document.getElementById('ggKitPanel').style.display = '';
+  if(fresh){ ggKitSlots = ggKitSlotsFor([]); ggKitLoading = true; ggRenderKit(); ggKitFocusNext(); }
+  document.getElementById('ggScanLabel').textContent = 'Scan the parts for ' + parent + ' into the form above (any order), or scan ' + parent + ' here to sign it out of Link';
+  let r;
+  try{ r = await (kitPromise || sheetPost({action: 'gimbalKit', parent: parent})); }
+  catch(e){ ggKitLoading = false; ggRenderKit(); ggPopup('Could not load the parts already linked to ' + locEsc(parent) + ':<br><br>' + locEsc(e.message)); return; }
+  if(ggKitParent !== parent) return;
+  const linked = (r.parts || []).map(p => ({sn: p.sn, style: ggStyleOf(p.sn), linkId: p.linkId}));
+  // keep anything already scanned into the form while this was loading
+  const typed = ggKitSlots.filter(x => x.sn && x.state !== 'linked');
+  ggKitSlots = ggKitSlotsFor(linked);
+  typed.forEach(t => { if(ggKitSlots.some(x => x.sn === t.sn)) return; const slot = ggKitSlots.find(x => x.style === t.style && !x.sn); if(slot) Object.assign(slot, {sn: t.sn, state: t.state, why: t.why}); });
+  ggKitLoading = false;
+  ggRenderKit(); ggKitFocusNext();
+}
+let ggKitLoading = false;
+function ggKitFocusNext(){   // the cursor goes to the next empty slot, so the scanner just keeps going
+  const inp = document.querySelector('#ggKitPanel .gg-slot-in');
+  if(inp) inp.focus(); else document.getElementById('ggScanInput').focus();
 }
 function ggRenderKit(){
   const panel = document.getElementById('ggKitPanel'), parent = ggKitParent; if(!parent) return;
@@ -6388,21 +6407,26 @@ function ggRenderKit(){
     html += '<div class="gg-slot-group"><div class="lab">' + locEsc(ggPartName(st)) + ' \u2014 ' + group.filter(x => x.state === 'linked' || x.state === 'ready').length + ' of ' + group.length + ' ready</div><div class="gg-slots">' +
       group.map((x, n) => '<div class="gg-slot ' + x.state + (x.i === firstEmpty ? ' next' : '') + '">' +
         (x.sn ? (x.state !== 'linked' ? '<button class="x" data-gg-slot-clear="' + x.i + '" title="Remove from the form">\u00d7</button>' : '') + '<div class="sn">' + locEsc(x.sn) + '</div><div class="why">' + (x.state === 'checking' ? 'Checking\u2026' : (x.state === 'linked' ? '\u2713 ' : x.state === 'ready' ? '\u2713 ' : '\u26a0 ') + locEsc(x.why)) + '</div>'
-          : '<div class="ph">Scan ' + locEsc(ggCfg.names[st] || st) + (group.length > 1 ? ' ' + (n + 1) + ' of ' + group.length : '') + '\u2026</div>') + '</div>').join('') + '</div></div>';
+          : '<input type="text" class="gg-slot-in" data-slot="' + x.i + '" autocomplete="off" spellcheck="false" placeholder="Scan ' + locEsc(ggCfg.names[st] || st) + (group.length > 1 ? ' ' + (n + 1) + ' of ' + group.length : '') + '\u2026">') + '</div>').join('') + '</div></div>';
   });
   html += allLinked ? '<div class="hint" style="font-size:14px;"><b style="color:#1d7a3f;">All parts are linked.</b> Scan ' + locEsc(parent) + ' again to sign it out of Link.</div>'
     : '<div class="btnrow" style="display:flex; gap:8px; flex-wrap:wrap;"><button class="accent" id="btnGgLinkAll"' + (canLink ? '' : ' disabled') + '>Link all parts (' + filled.length + ' of ' + open.length + ')</button><button class="secondary" id="btnGgKitClose">Close</button></div>' +
       (!canLink && filled.some(x => x.state === 'notFinished' || x.state === 'bad') ? '<div class="hint" style="color:#a13636; font-weight:700;">Fix the highlighted parts first: finish their stations, or remove them (\u00d7) and scan a replacement.</div>' : '');
   if(allLinked) html += '<div class="btnrow"><button class="secondary" id="btnGgKitClose">Close</button></div>';
+  // re-drawing must not wipe a serial that's being scanned into a slot right now
+  const act = document.activeElement, keep = act && act.classList && act.classList.contains('gg-slot-in') ? {slot: act.dataset.slot, value: act.value} : null;
+  if(ggKitLoading) html = html.replace('</h3>', ' <span class="hint" style="font-weight:400;">loading parts already linked\u2026</span></h3>');
   panel.innerHTML = html;
+  if(keep){ const again = panel.querySelector('.gg-slot-in[data-slot="' + keep.slot + '"]') || panel.querySelector('.gg-slot-in'); if(again){ again.value = keep.value; again.focus(); } }
 }
-async function ggKitAdd(sn){
+async function ggKitAdd(sn, slotIndex){
   const st = ggStyleOf(sn);
   if(ggKitSlots.some(x => x.sn === sn)){ ggPopup(sn + ' is already in this form.', 'info'); return; }
   if(!ggCfg.needs[st]){ ggPopup('<b>' + sn + '</b> is a ' + locEsc(ggCfg.names[st] || st) + ', which doesn\u2019t go into a ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + '.'); return; }
-  const slot = ggKitSlots.find(x => x.style === st && !x.sn);
+  const want = ggKitSlots[slotIndex];
+  const slot = want && want.style === st && !want.sn ? want : ggKitSlots.find(x => x.style === st && !x.sn);   // a part scanned into another part's slot goes where it belongs
   if(!slot){ ggPopup(ggKitParent + ' already has all ' + ggCfg.needs[st] + ' \u00d7 ' + locEsc(ggCfg.names[st] || st) + ' in the form. Remove one (\u00d7) first if it\u2019s the wrong part.', 'info'); return; }
-  slot.sn = sn; slot.state = 'checking'; slot.why = ''; ggRenderKit();
+  slot.sn = sn; slot.state = 'checking'; slot.why = ''; ggRenderKit(); ggKitFocusNext();
   try{
     const r = await sheetPost({action: 'gimbalPartCheck', serial: sn, parent: ggKitParent});
     slot.state = r.state === 'linked' ? 'ready' : r.state; slot.why = r.why || '';
@@ -6427,6 +6451,16 @@ async function ggKitLinkAll(){
   }catch(e){ ggPopup('Could not link: ' + locEsc(e.message)); ggRenderKit(); }
 }
 function ggHideKit(){ ggKitParent = null; document.getElementById('ggKitPanel').style.display = 'none'; document.getElementById('ggScanLabel').textContent = 'Scan or type a gimbal serial number, then press Enter'; }
+document.getElementById('ggKitPanel').addEventListener('keydown', e => {
+  const inp = e.target.closest && e.target.closest('.gg-slot-in'); if(!inp || e.key !== 'Enter') return;
+  e.preventDefault();
+  const v = inp.value.trim().toUpperCase(); inp.value = '';
+  if(!v) return;
+  ggPopupClose();
+  if(v === ggKitParent || ggStyleOf(v) === ggCfg.parent){ ggScan(v); return; }   // scanning the D here signs it out of Link
+  if(!GG_SERIAL_RE.test(v)){ ggPopup('<b>' + locEsc(v) + '</b> is not a gimbal serial.'); return; }
+  ggKitAdd(v, Number(inp.dataset.slot));
+});
 document.getElementById('ggKitPanel').addEventListener('click', e => {
   if(e.target.id === 'btnGgKitClose'){ ggHideKit(); document.getElementById('ggScanInput').focus(); return; }
   if(e.target.id === 'btnGgLinkAll'){ ggKitLinkAll(); return; }
@@ -6445,9 +6479,16 @@ async function ggScan(raw){
   if(ggKitParent && sn !== ggKitParent && ggStyleOf(sn) !== ggCfg.parent){ msg.textContent = ''; ggKitAdd(sn); return; }
   const auto = document.getElementById('ggAutoDetect').checked;
   msg.textContent = 'Checking ' + sn + '\u2026';
+  const isParent = ggStyleOf(sn) === ggCfg.parent;
+  const kitP = isParent ? sheetPost({action: 'gimbalKit', parent: sn}) : null;   // in parallel with the sign-in
+  if(kitP) kitP.catch(() => {});
+  // open the parts form straight away; it closes again below if this scan isn't a Link sign-in
+  const openedEarly = isParent && auto && ggKitParent !== sn && ggData && ggCfg.linkStation === 1 && !Object.values((ggData.at[ggCfg.parent]) || {}).flat().some(x => x.sn === sn);
+  if(openedEarly) ggShowKit(sn, kitP);
   try{
     const r = await sheetPost({action: 'gimbalScanAction', serial: sn, autoMode: auto, selectedStation: String(ggSelected), person: person});
     const unit = r.serialUsed || sn, st = ggStyleOf(unit), via = unit !== sn ? ' (scanned ' + sn + ', a part inside it)' : '';
+    if(isParent && ggKitParent === sn && !(r.atLink || r.reason === 'kitIncomplete')) ggHideKit();   // not a Link sign-in after all
     if(r.status === 'ok'){
       const dur = r.duration ? formatDuration(r.duration) : '', stName = ggStationName(r.targetStation, st);
       msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + unit + ' (' + locEsc(ggCfg.names[st] || st) + ') ' + (r.event === 'MoveIn' ? 'signed into ' : 'signed out of ') + locEsc(stName) + '</b>' + via +
@@ -6457,11 +6498,11 @@ async function ggScan(raw){
       if(ggData && ggData.at[st]){ const n = Number(r.targetStation); ggData.at[st][n] = (ggData.at[st][n] || []).filter(x => x.sn !== unit); if(r.event === 'MoveIn') ggData.at[st][n].push({sn: unit, t: new Date()}); }
       if(auto){ ggPart = st; ggSelected = Number(r.targetStation); }
       ggRenderChips();
-      if(r.atLink) ggShowKit(unit);
+      if(r.atLink) ggShowKit(unit, kitP);
       else if(ggKitParent === unit && r.event === 'MoveOut') ggHideKit();
     }else{
       let text;
-      if(r.reason === 'kitIncomplete'){ text = '<b>' + locEsc(unit) + ' can\u2019t leave the Link station yet.</b><br><br>It still needs ' + locEsc((r.kit && r.kit.missing || []).join(', ') || 'parts') + '.<br>Scan them into the form, then press <b>Link all parts</b>.'; ggShowKit(unit); }
+      if(r.reason === 'kitIncomplete'){ text = '<b>' + locEsc(unit) + ' can\u2019t leave the Link station yet.</b><br><br>It still needs ' + locEsc((r.kit && r.kit.missing || []).join(', ') || 'parts') + '.<br>Scan them into the form, then press <b>Link all parts</b>.'; ggShowKit(unit, kitP); }
       else if(r.status === 'ignored') text = '<b>' + locEsc(sn) + '</b> was just scanned.<br><br>The double scan was ignored.';
       else if(r.status === 'complete') text = st === ggCfg.parent ? '<b>' + locEsc(unit) + '</b> has already finished every station.<br><br>Ship it from <b>Ship to warehouse</b>.'
         : '<b>' + locEsc(sn) + '</b> (' + locEsc(ggCfg.names[st] || st) + ') has already finished its stations.<br><br>Link it: sign its ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + ' into the <b>Link</b> station and scan this part into the form there.';
