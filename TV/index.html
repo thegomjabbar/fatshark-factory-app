@@ -1624,7 +1624,7 @@ function customerAlias(label){
   const text = String(label || '').trim();
   if(!text) return text;
   if(/^WO[\s\-_#]*\d/i.test(text)) return text;
-  const styleMatch = text.match(/^(.*?)\s*-\s*(H2[A-F]|GG\d+)$/i);
+  const styleMatch = text.match(/^(.*?)\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})$/i);
   const body = styleMatch ? styleMatch[1].trim() : text;
   const style = styleMatch ? ' \u00b7 ' + styleMatch[2].toUpperCase() : '';
   const us = body.indexOf('_');
@@ -1768,18 +1768,19 @@ function renderSummarySlide(logEvents, side){
 // Parts (A, B, motors) each have their own stations and are linked into the parent (D), which ships.
 async function loadGimbal(){
   const tab = name => sheetPost({action: 'getFullSheet', sheet: name}).then(j => j.rows || []).catch(() => []);
-  const DEF = {parent: 'GG4', linkStation: 1, names: {GG1: 'Subassembly A', GG2: 'Subassembly B', GG3: 'Motor', GG4: 'Subassembly D'},
-    routes: {GG1: ['Laser Mark', 'Build', 'Test'], GG2: ['Laser Mark', 'Build', 'Test'], GG3: ['Laser Mark', 'Test'], GG4: ['Link', 'Assemble', 'Final Test']}, needs: {GG1: 1, GG2: 1, GG3: 4}};
-  const [cfg, log, sent, goals, links] = await Promise.all([
-    sheetPost({action: 'getGimbalConfig'}).catch(() => DEF), tab('GimbalLog'), tab('GimbalSentToWH'), tab('GimbalGoals'), tab('GimbalLinks')]);
-  return {cfg: (cfg && cfg.routes) ? cfg : DEF, log: log, sent: sent, goals: goals, links: links};
+  const DEF = {parent: 'GG4', linkStation: 1, names: {GG1: 'Subassembly A', GG2: 'Subassembly B', GG3: 'Subassembly C', GG4: 'Subassembly D', GGM: 'Motor'},
+    routes: {GG1: ['Laser Mark', 'Build', 'Test'], GG2: ['Laser Mark', 'Build', 'Test'], GG3: ['Assembly', 'Test'], GG4: ['Link', 'Assemble', 'Final Test'], GGM: []}, needs: {GG1: 1, GG2: 1, GG3: 1, GGM: 4}};
+  const [cfg, log, sent, goals, links, serials] = await Promise.all([
+    sheetPost({action: 'getGimbalConfig'}).catch(() => DEF), tab('GimbalLog'), tab('GimbalSentToWH'), tab('GimbalGoals'), tab('GimbalLinks'), tab('GimbalSerials')]);
+  return {cfg: (cfg && cfg.routes) ? cfg : DEF, log: log, sent: sent, goals: goals, links: links, serials: serials};
 }
 function renderGimbalSlide(g){
   const cfg = g.cfg, P = cfg.parent, now = Date.now(), week = now - 7 * 86400000;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const styleOf = sn => sn.length > 10 ? sn.slice(0, sn.length - 10) : '';
-  const routeOf = st => cfg.routes[st] || cfg.routes.GG1 || ['Station 1'];
-  const styles = Object.keys(cfg.routes).sort((a, b) => Number(a.slice(2)) - Number(b.slice(2)));
+  const routeOf = st => Array.isArray(cfg.routes[st]) ? cfg.routes[st] : (cfg.routes.GG1 || ['Station 1']);
+  const sk = x => { const n = Number(x.slice(2)); return isNaN(n) ? 100 : n; };
+  const styles = Object.keys(cfg.routes).sort((a, b) => sk(a) - sk(b) || (a < b ? -1 : 1));
   const inParent = new Set(); (g.links || []).slice(1).filter(r => tvCell(r[6]) === 'Linked').forEach(r => inParent.add(tvCell(r[2]).toUpperCase()));
   const ev = g.log.slice(1).map(r => ({sn: tvCell(r[1]).toUpperCase(), event: tvCell(r[2]), st: Number((tvCell(r[4]).match(/(\d+)/) || [])[1]), t: tvDate(r[5])}))
     .filter(e => e.sn && e.t && e.st).sort((a, b) => a.t - b.t);
@@ -1795,6 +1796,8 @@ function renderGimbalSlide(g){
   });
   const finished = ev.filter(e => e.event === 'MoveOut' && styleOf(e.sn) === P && e.st === routeOf(P).length);
   const sent = g.sent.slice(1).map(r => ({t: tvDate(r[1]), order: tvCell(r[3]), sn: tvCell(r[0]).toUpperCase()}));
+  const shippedSns = new Set(sent.map(x => x.sn));
+  (g.serials || []).slice(1).forEach(r => { const sn = tvCell(r[4]).toUpperCase(), st = styleOf(sn); if(sn && st in ready && !routeOf(st).length && cfg.needs[st] && !inParent.has(sn) && !shippedSns.has(sn)) ready[st]++; });   // parts with no stations (motors)
   const parentWip = Object.values(at[P] || {}).reduce((a, b) => a + b, 0);
   const pName = cfg.names[P] || P;
   const kpis = [
@@ -1818,7 +1821,7 @@ function renderGimbalSlide(g){
   const keys = Object.keys(days).sort().reverse().slice(0, 6);
   document.getElementById('ggDays').innerHTML = keys.length ? keys.map(k => '<div class="ssum-item"><span>' + new Date(k + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}) + '</span><b>' + days[k] + '</b></div>').join('')
     : '<div class="ssum-empty">No ' + pName + ' finished yet.</div>';
-  const counts = (label, sn) => { const st = (String(label || '').match(/(GG\d+)\s*$/i) || [])[1]; return !st || styleOf(sn) === st.toUpperCase(); };
+  const counts = (label, sn) => { const st = (String(label || '').match(/(GG[A-Z0-9]{1,3})\s*$/i) || [])[1]; return !st || styleOf(sn) === st.toUpperCase(); };
   const shippedBy = {}; sent.forEach(x => { if(counts(x.order, x.sn)) shippedBy[x.order] = (shippedBy[x.order] || 0) + 1; });
   const orders = g.goals.slice(1).map(r => ({label: tvCell(r[0]), target: Number(r[1]) || 0})).filter(o => o.label).slice(0, 5);
   document.getElementById('ggOrders').innerHTML = orders.length ? orders.map(o => {
