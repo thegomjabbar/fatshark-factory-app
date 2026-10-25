@@ -95,6 +95,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   #ggMsg{ font-size:15px; margin-top:8px; }
   .station-warning-overlay.gg-ok .station-warning-box{ border-color:#1d7a3f; }
   .station-warning-overlay.gg-ok .station-warning-icon{ color:#1d7a3f; }
+  .station-warning-overlay.gg-ok .station-warning-dismiss{ background:#1d7a3f; }
+  .station-warning-overlay.gg-ok .station-warning-text{ color:#14532d; }
   .gg-station-btn .gg-stage{ font-size:9.5px !important; letter-spacing:.06em; color:var(--accent) !important; margin-top:3px !important; }
   .gg-station-btn.gg-stage-start{ margin-left:18px; position:relative; }
   .gg-station-btn.gg-stage-start::before{ content:'\1F517'; position:absolute; left:-17px; top:50%; transform:translateY(-50%); font-size:12px; }
@@ -265,6 +267,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   /* ---------- Builder-mode restricted tabs ---------- */
   nav.tabs button.restricted{display:none;}
   nav.tabs .legacy-tabs{display:none !important;}
+  #hsSubtabs button{ white-space:nowrap; padding:9px 12px; font-size:12px; }   /* stays on one line with Serial & QR Labels showing */
   #tab-shipping .ship-inner-switch, #tab-scanout .ship-inner-switch{display:none;}   /* now separate Headset Line sub-tabs */
 
   /* ---------- mobile/narrow-screen nav: dropdown instead of a row that can overflow off-screen ---------- */
@@ -1571,7 +1574,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div class="gg-view" id="gg-motors">
     <div class="panel">
       <h2><span id="mmTitle">Motor serials</span> <span class="count" id="mmSessionCount">0 this session</span></h2>
-      <p class="hint">One new serial for every motor, lasered onto the motor housing. Generate a serial, scan the QR code into the laser software, mark the housing, then generate the next one. Motors have no stations: once marked they're installed on Subassembly C, and each one is scanned into its Subassembly D's parts form at the Link station. Every serial follows the <b><span class="mm-style">GGM</span>[YY][WW][6 random A-Z0-9]</b> format, is checked against every gimbal serial already in the <b>GimbalSerials</b> tab so it never repeats, and is saved there the moment it's made.</p>
+      <p class="hint">One new serial for every motor, lasered onto the motor housing. Generate a serial, scan the QR code into the laser software, mark the housing, then generate the next one. Motors have no stations: once marked they're installed, and each one is scanned into its Subassembly D's parts form at the Link station. Every serial follows the <b><span class="mm-style">GGM</span>[YY][WW][6 random A-Z0-9]</b> format, is checked against every gimbal serial already in the <b>GimbalSerials</b> tab so it never repeats, and is saved there the moment it's made.</p>
       <div class="row3">
         <label class="field"><span>Your initials</span><input type="text" id="mmPerson" maxlength="8" placeholder="e.g. tm" autocomplete="off"></label>
         <label class="field"><span>Work order (optional)</span><input type="text" id="mmWo" placeholder="WO-00000" autocomplete="off"></label>
@@ -7261,7 +7264,7 @@ async function runLocate(query){
   msg.textContent = 'Looking up ' + serial + '\u2026';
   out.innerHTML = '';
   const btn = document.getElementById('btnLocate');
-  if(/^GG\d/.test(serial) && GG_SERIAL_RE.test(serial)){ btn.disabled = true; try{ await runGimbalLocate(serial); }finally{ btn.disabled = false; } return; }
+  if(GG_SERIAL_RE.test(serial)){ btn.disabled = true; try{ await runGimbalLocate(serial); }finally{ btn.disabled = false; } return; }
   btn.disabled = true;
   try{
     const [serialRows, opticalRows, sentRows, holdRows, countRows, scrapRows, holdsRows] = await Promise.all(
