@@ -6809,6 +6809,35 @@ setTimeout(loadCustomerAliases, 1500);   // after start-up has loaded the sheet 
 // "Stuck at" lists for what's really on the floor, SentToWH and Goals (same matching as Ship to Warehouse).
 // =====================================================================
 let hsStatusTimer = null, hsStatusBusy = false;
+// Current orders exactly as the Count tab lists them: the block headed "Customer / Style | Shipped | Target |
+// Remaining to Ship | … | Due Date". Fulfilled orders live in its separate Fulfilled list, so they never show here.
+function hsOrdersFromCount(rows){
+  for(let r = 0; r < rows.length; r++){
+    const row = rows[r] || [];
+    for(let c = 0; c < row.length; c++){
+      if(!/^customer\s*\/\s*style$/i.test(locCell(row[c]))) continue;
+      const head = row.slice(c).map(h => locCell(h).toLowerCase());
+      const ix = name => head.findIndex(h => h.indexOf(name) === 0);
+      const iShip = ix('shipped'), iTarget = ix('target');
+      if(iShip < 0 || iTarget < 0) continue;   // not the open-orders table (e.g. the Fulfilled list)
+      const iRem = ix('remaining'), iDue = ix('due'), iWip = ix('active factory'), iPrep = ix('units to prep');
+      const out = [];
+      for(let k = r + 1; k < rows.length; k++){
+        const rr = rows[k] || [], label = locCell(rr[c]);
+        if(!label || /fulfilled/i.test(label)) break;
+        const num = i => i < 0 ? null : Number(String(rr[c + i]).replace(/[^\d.-]/g, '')) || 0;
+        out.push({label: label, shipped: num(iShip), target: num(iTarget), remaining: iRem < 0 ? null : num(iRem), wip: num(iWip), prep: num(iPrep), due: iDue < 0 ? '' : rr[c + iDue]});
+      }
+      return out;
+    }
+  }
+  return null;
+}
+function hsDueText(v){
+  const d = locDate(v);
+  if(d) return d.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'});
+  return locCell(v);
+}
 async function hsRefreshStatus(){
   const cfg = sheetConfig();
   const upd = document.getElementById('hsUpdated');
@@ -6817,11 +6846,12 @@ async function hsRefreshStatus(){
   upd.textContent = 'loading\u2026';
   try{
     const now = Date.now(), from = now - 8 * 86400000, weekAgo = now - 7 * 86400000, todayKey = localDayKeyLoc(new Date());
-    const [logRows, floor, goalsRes, sentRes] = await Promise.all([
+    const [logRows, floor, goalsRes, sentRes, countRows] = await Promise.all([
       sheetPost({action: 'getLogRowsBetween', from: from, to: now + 60000}).then(j => j.rows || []).catch(() => sheetPost({action: 'getRecentLogRows', maxRows: 20000}).then(j => j.rows || [])),
       loadStuckAtStations(true).catch(() => ({})),
       sheetGet({action: 'goals'}).catch(() => ({goals: []})),
-      sheetGet({action: 'sentToWH'}).catch(() => ({rows: []}))
+      sheetGet({action: 'sentToWH'}).catch(() => ({rows: []})),
+      loadCountSheetRaw(false).catch(() => [])
     ]);
     goalsList = goalsRes.goals || goalsList; sentToWHRows = sentRes.rows || sentToWHRows;   // same data Ship to Warehouse uses
     const onFloor = {}; Object.keys(floor).forEach(k => { const n = String(stationNumberFromLabel(k) || k).replace(/\D/g, ''); onFloor[n] = (floor[k] || []).map(x => String(x).trim().toUpperCase()); });
@@ -6847,8 +6877,10 @@ async function hsRefreshStatus(){
     });
     const finished = ev.filter(e => e.st === '6' && /moveout/i.test(e.event));
     const shipped7 = sentToWHRows.filter(r => { const d = locDate(r.date); return d && d.getTime() >= weekAgo; }).length;
-    const orders = (goalsList || []).filter(g => g.label).map(g => ({label: g.label, target: Number(g.target) || 0, due: g.dueDate, shipped: shippedCountFor(g.label)}));
-    const open = orders.filter(o => o.shipped < o.target);
+    const fromCount = hsOrdersFromCount(countRows || []);
+    const open = (fromCount || (goalsList || []).filter(g => g.label).map(g => ({label: g.label, target: Number(g.target) || 0, due: g.dueDate, shipped: shippedCountFor(g.label)})))
+      .map(o => Object.assign(o, {remaining: o.remaining !== null && o.remaining !== undefined ? o.remaining : Math.max(0, o.target - o.shipped)}))
+      .filter(o => o.remaining > 0);
     const kpis = [['On the line', floorSet.size], ['Finished today', finished.filter(e => localDayKeyLoc(e.t) === todayKey).length], ['Finished, last 7 days', finished.filter(e => e.t >= weekAgo).length],
       ['Shipped, last 7 days', shipped7], ['Open orders', open.length], ['Avg lead time, 7 days', leads.length ? formatDuration(leads.reduce((a, b) => a + b, 0) / leads.length) : '\u2014']];
     document.getElementById('hsKpis').innerHTML = kpis.map(k => '<div class="ss-stat"><div class="v">' + k[1] + '</div><div class="k">' + k[0] + '</div></div>').join('');
@@ -6871,10 +6903,12 @@ async function hsRefreshStatus(){
       return '<tr><td>' + new Date(k + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}) + '</td><td><b>' + o.total + '</b></td>' + shiftNames.map(n => '<td>' + (o.shifts[n] || 0) + '</td>').join('') + stl.map(x => '<td>' + (o.styles[x] || 0) + '</td>').join('') + '</tr>';
     }).join('') : '<tr><td colspan="' + (2 + shiftNames.length) + '">No headsets finished in the last 8 days.</td></tr>';
     document.getElementById('hsOrdersCount').textContent = open.length + ' open';
-    document.getElementById('hsOrders').innerHTML = open.length ? open.sort((a, b) => (b.target - b.shipped) - (a.target - a.shipped)).map(o => {
+    document.getElementById('hsOrders').innerHTML = (open.length ? open.map(o => {
       const pct = o.target ? Math.min(100, Math.round(o.shipped / o.target * 100)) : 0;
-      return '<div class="gg-order"><div class="top"><span><b>' + locEsc(customerAlias(o.label)) + '</b>' + (o.due ? ' <span class="hint">due ' + locEsc(o.due) + '</span>' : '') + '</span><span>' + o.shipped + ' / ' + o.target + ' shipped (' + pct + '%) \u00b7 ' + (o.target - o.shipped) + ' to go</span></div><div class="gg-bar"><div style="width:' + pct + '%;"></div></div></div>';
-    }).join('') : '<div class="hint">No open headset orders. Add one in Settings \u2192 Add an order.</div>';
+      return '<div class="gg-order"><div class="top"><span><b>' + locEsc(customerAlias(o.label)) + '</b>' + (o.due ? ' <span class="hint">due ' + locEsc(hsDueText(o.due)) + '</span>' : '') + '</span><span>' + o.shipped + ' / ' + o.target + ' shipped (' + pct + '%) \u00b7 <b>' + o.remaining + '</b> to go' +
+        (o.wip ? ' \u00b7 ' + o.wip + ' on the floor' : '') + (o.prep ? ' \u00b7 ' + o.prep + ' to prep' : '') + '</span></div><div class="gg-bar"><div style="width:' + pct + '%;"></div></div></div>';
+    }).join('') : '<div class="hint">No open headset orders.</div>') +
+      '<div class="hint" style="margin-top:6px;">' + (fromCount ? 'Current orders from the Count tab (fulfilled orders are in its Fulfilled list).' : 'Couldn\u2019t find the orders table on the Count tab, so these are worked out from Goals and SentToWH.') + '</div>';
     upd.textContent = 'updated ' + new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
   }catch(e){ upd.textContent = 'could not load: ' + e.message; }
   finally{ hsStatusBusy = false; }
