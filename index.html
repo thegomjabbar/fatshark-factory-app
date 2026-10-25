@@ -1533,6 +1533,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 <div id="tab-gimbal" class="tabpanel">
   <div class="subtabs">
     <button data-ggsub="status">Line status</button>
+    <button data-ggsub="motors">Motor Serials</button>
     <button data-ggsub="scan">Sign in / out</button>
     <button data-ggsub="ship">Ship to warehouse</button>
     <button data-ggsub="serials" id="ggSerialsSubBtn">Serials &amp; labels</button>
@@ -1561,6 +1562,41 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <div class="tablewrap" style="max-height:360px;"><table><thead><tr><th>Operator</th><th>Part</th><th>Station</th><th>Units</th><th>Median</th><th>Average</th><th>Fastest</th><th>Slowest</th></tr></thead><tbody id="ggOpBody"></tbody></table></div></div>
     <div class="panel"><h2>Finished per day</h2><div class="tablewrap"><table><thead id="ggDailyHead"></thead><tbody id="ggDailyBody"></tbody></table></div></div>
     <div class="panel"><h2>Customer orders</h2><div id="ggOrders"></div></div>
+  </div>
+
+  <!-- ===== Motor serials: one at a time for the laser, like Optical Module Serials ===== -->
+  <div class="gg-view" id="gg-motors">
+    <div class="panel">
+      <h2><span id="mmTitle">Motor serials</span> <span class="count" id="mmSessionCount">0 this session</span></h2>
+      <p class="hint">One new serial for every motor, lasered onto the motor housing. Generate a serial, scan the QR code into the laser software, mark the housing, then generate the next one. Motors have no stations: once marked they're installed on Subassembly C, and each one is scanned into its Subassembly D's parts form at the Link station. Every serial follows the <b><span class="mm-style">GGM</span>[YY][WW][6 random A-Z0-9]</b> format, is checked against every gimbal serial already in the <b>GimbalSerials</b> tab so it never repeats, and is saved there the moment it's made.</p>
+      <div class="row3">
+        <label class="field"><span>Your initials</span><input type="text" id="mmPerson" maxlength="8" placeholder="e.g. tm" autocomplete="off"></label>
+        <label class="field"><span>Work order (optional)</span><input type="text" id="mmWo" placeholder="WO-00000" autocomplete="off"></label>
+        <label class="field"><span>Copy serial to clipboard</span><select id="mmAutoCopy"><option value="yes">Yes, every time</option><option value="no">No</option></select></label>
+      </div>
+      <div class="field" style="max-width:420px;"><span class="om-live-fieldlab">Duplicate check</span><div class="om-live-history" id="mmHistory">Checking the sheet&hellip;</div></div>
+      <div class="btnrow"><button class="accent om-live-go" id="btnMmGenerate">Generate next serial</button></div>
+      <div class="hint" id="mmMsg"></div>
+    </div>
+    <div class="panel om-live-card" id="mmCard">
+      <div class="om-live-empty" id="mmEmpty">Enter your initials, then press <b>Generate next serial</b>.</div>
+      <div class="om-live-body" id="mmBody" style="display:none;">
+        <div class="om-live-qr" id="mmQR"></div>
+        <div class="om-live-info">
+          <div class="om-live-label">Scan into the laser software</div>
+          <div class="om-live-serial" id="mmSerial"></div>
+          <div class="om-live-status" id="mmStatus"></div>
+          <div class="btnrow">
+            <button class="secondary" id="btnMmCopy">Copy serial</button>
+            <button class="secondary" id="btnMmRetry" style="display:none;">Retry saving to sheet</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Generated on this computer <span class="count" id="mmListCount">0</span></h2>
+      <div class="tablewrap" style="max-height:320px;"><table><thead><tr><th>Time</th><th>Motor serial</th><th>Work order</th><th>By</th><th>Sheet</th></tr></thead><tbody id="mmListBody"></tbody></table></div>
+    </div>
   </div>
 
   <!-- ===== Sign in / out (laid out like the headset Station Sign In/Out tab) ===== -->
@@ -6123,18 +6159,18 @@ async function sendTestSummary(){
 // Its own sheet tabs (GimbalSerials, GimbalLog, GimbalLinks, GimbalGoals, GimbalSentToWH);
 // nothing here touches the headset tabs, and headset totals never include gimbals.
 // =====================================================================
-const GG_SERIAL_RE = /^GG\d+\d{4}[A-Z0-9]{6}$/;
+const GG_SERIAL_RE = /^GG[A-Z0-9]{1,3}\d{4}[A-Z0-9]{6}$/;   // GG1…GG4, GGM …
 const GG_PERSON_KEY = 'gg-person-v1';
-let ggCfg = {parent: 'GG4', linkStation: 1, names: {GG1: 'Subassembly A', GG2: 'Subassembly B', GG3: 'Motor', GG4: 'Subassembly D'},
-  routes: {GG1: ['Laser Mark', 'Build', 'Test'], GG2: ['Laser Mark', 'Build', 'Test'], GG3: ['Laser Mark', 'Test'], GG4: ['Link', 'Assemble', 'Final Test']}, needs: {GG1: 1, GG2: 1, GG3: 4}};
+let ggCfg = {parent: 'GG4', linkStation: 1, names: {GG1: 'Subassembly A', GG2: 'Subassembly B', GG3: 'Subassembly C', GG4: 'Subassembly D', GGM: 'Motor'},
+  routes: {GG1: ['Laser Mark', 'Build', 'Test'], GG2: ['Laser Mark', 'Build', 'Test'], GG3: ['Assembly', 'Test'], GG4: ['Link', 'Assemble', 'Final Test'], GGM: []}, needs: {GG1: 1, GG2: 1, GG3: 1, GGM: 4}};
 let ggConfigLoaded = false;
 let ggSub = 'status', ggData = null, ggRecent = [], ggBox = [], ggLastShip = null, ggBatch = [], ggTimer = null;
 let ggPart = 'GG1', ggSelected = 1, ggKitParent = null;
 function ggStyleOf(sn){ const s = String(sn || '').trim().toUpperCase(); return s.length > 10 ? s.slice(0, s.length - 10) : ''; }
-function ggRoute(st){ return ggCfg.routes[st] || ggCfg.routes.GG1 || ['Station 1']; }
+function ggRoute(st){ return Array.isArray(ggCfg.routes[st]) ? ggCfg.routes[st] : (ggCfg.routes.GG1 || ['Station 1']); }
 function ggPartName(st){ return (ggCfg.names[st] || st) + ' (' + st + ')'; }
 function ggStationName(n, st){ st = st || ggPart; return 'Station ' + n + ' \u2014 ' + (ggRoute(st)[Number(n) - 1] || '?'); }
-function ggStyles(){ return Object.keys(ggCfg.routes).sort((a, b) => Number(a.slice(2)) - Number(b.slice(2))); }
+function ggStyles(){ const k = x => { const n = Number(x.slice(2)); return isNaN(n) ? 100 : n; }; return Object.keys(ggCfg.routes).sort((a, b) => k(a) - k(b) || (a < b ? -1 : 1)); }
 async function ggTab(name){
   try{ return (await sheetPost({action: 'getFullSheet', sheet: name})).rows || []; }
   catch(e){ if(/not found/i.test(e.message)) return []; throw e; }
@@ -6157,6 +6193,7 @@ function ggShowSub(name){
   document.querySelectorAll('.gg-view').forEach(v => v.classList.toggle('active', v.id === 'gg-' + name));
   if(name === 'scan'){ ggRenderChips(); if(!ggData) ggRefreshStatus(); setTimeout(() => document.getElementById('ggScanInput').focus(), 50); }
   if(name === 'serials') ggSerialsOnOpen();
+  if(name === 'motors') mmOnOpen();
   if(name === 'ship'){ ggLoadOrders(); setTimeout(() => document.getElementById('ggShipInput').focus(), 50); }
   if(name === 'status') ggRefreshStatus();
 }
@@ -6172,7 +6209,7 @@ document.getElementById('tabBtnGimbal').addEventListener('click', () => switchTa
 document.querySelectorAll('[data-ggsub]').forEach(b => b.addEventListener('click', () => ggShowSub(b.dataset.ggsub)));
 ['ggPerson', 'ggShipPerson', 'ggGenPerson'].forEach(id => { const el = document.getElementById(id); if(el) el.addEventListener('change', e => localStorage.setItem(GG_PERSON_KEY, e.target.value.trim())); });
 // a shipped row counts toward its order only when it is the order's own style (the parent)
-function ggCountsForOrder(label, sn){ const st = (String(label || '').match(/(GG\d+)\s*$/i) || [])[1]; return !st || ggStyleOf(sn) === st.toUpperCase(); }
+function ggCountsForOrder(label, sn){ const st = (String(label || '').match(/(GG[A-Z0-9]{1,3})\s*$/i) || [])[1]; return !st || ggStyleOf(sn) === st.toUpperCase(); }
 function ggActiveLinks(linkRows){   // {parentOf, partsOf}
   const parentOf = {}, partsOf = {};
   (linkRows || []).slice(1).forEach(r => {
@@ -6199,7 +6236,8 @@ async function ggRefreshStatus(){
   if(!cfg.url || !cfg.token){ document.getElementById('ggUpdated').textContent = 'no sheet connection'; return; }
   if(!ggConfigLoaded) await ggLoadConfig();
   let logRows, sentRows, goalRows, linkRows;
-  try{ [logRows, sentRows, goalRows, linkRows] = await Promise.all([ggTab('GimbalLog'), ggTab('GimbalSentToWH'), ggTab('GimbalGoals'), ggTab('GimbalLinks')]); }
+  let serRows = [];
+  try{ [logRows, sentRows, goalRows, linkRows, serRows] = await Promise.all([ggTab('GimbalLog'), ggTab('GimbalSentToWH'), ggTab('GimbalGoals'), ggTab('GimbalLinks'), ggTab('GimbalSerials')]); }
   catch(e){ document.getElementById('ggUpdated').textContent = 'could not load: ' + e.message; return; }
   const P = ggCfg.parent, act = ggActiveLinks(linkRows);
   const ev = logRows.slice(1).map(r => ({sn: locCell(r[1]).toUpperCase(), event: locCell(r[2]), person: locCell(r[3]) || '?', st: Number(stationNumberFromLabel(locCell(r[4])) || 0), t: locDate(r[5])}))
@@ -6215,6 +6253,8 @@ async function ggRefreshStatus(){
     else if(e.event === 'MoveOut' && e.st < route.length) waiting[st][e.st + 1] = (waiting[st][e.st + 1] || 0) + 1;
     else if(e.event === 'MoveOut' && st !== P && ggCfg.needs[st]) ready[st]++;
   });
+  const shippedSns = new Set(sentRows.slice(1).map(r => locCell(r[0]).toUpperCase()));
+  serRows.slice(1).forEach(r => { const sn = locCell(r[4]).toUpperCase(), st = ggStyleOf(sn); if(sn && st in ready && !ggRoute(st).length && ggCfg.needs[st] && !act.parentOf[sn] && !shippedSns.has(sn)) ready[st]++; });
   const openIn = {}, dur = {}, opDur = {}, firstIn = {}, leads = [], finished = [], partsDone = [];
   ev.forEach(e => {
     const st = ggStyleOf(e.sn), k = e.sn + '|' + e.st, route = ggRoute(st);
@@ -6239,7 +6279,7 @@ async function ggRefreshStatus(){
     const linkNote = st === P && n === ggCfg.linkStation ? ' <span class="hint">(parts are linked here)</span>' : '';
     return '<tr><td><b>' + locEsc(ggPartName(st)) + '</b></td><td>' + n + ' ' + locEsc(nm) + linkNote + (n === ggRoute(st).length && st === P ? ' <span class="hint">(finished)</span>' : '') + '</td><td><b>' + here + '</b></td><td>' + (waiting[st][n] || 0) +
       '</td><td' + (stuck[st][n] ? ' class="gg-bad"' : '') + '>' + (stuck[st][n] || 0) + '</td><td>' + (d.length ? formatDuration(med(d)) : '\u2014') + '</td></tr>';
-  }).join('') + (st !== P && ggCfg.needs[st] ? '<tr style="background:var(--accent-soft);"><td><b>' + locEsc(ggPartName(st)) + '</b></td><td>\u{1F517} Ready to link</td><td colspan="4"><b>' + ready[st] + '</b> finished, waiting to be linked into a ' + locEsc(pName) + '</td></tr>' : '')).join('');
+  }).join('') + (st !== P && ggCfg.needs[st] ? '<tr style="background:var(--accent-soft);"><td><b>' + locEsc(ggPartName(st)) + '</b></td><td>\u{1F517} Ready to link</td><td colspan="4"><b>' + ready[st] + '</b> ready, waiting to be linked into a ' + locEsc(pName) + '</td></tr>' : '')).join('');
   const opKeys = Object.keys(opDur).sort();
   document.getElementById('ggOpBody').innerHTML = opKeys.length ? opKeys.map(k => {
     const [p, st, n] = k.split('|'), d = opDur[k];
@@ -6271,8 +6311,9 @@ document.getElementById('btnGgCountTab').addEventListener('click', async () => {
 // ---------- Sign in / out, with linking at the parent's Link station ----------
 function ggRenderChips(){
   const pr = document.getElementById('ggPartRow'), row = document.getElementById('ggStationRow'); if(!row) return;
-  if(!ggCfg.routes[ggPart]) ggPart = ggStyles()[0];
-  pr.innerHTML = ggStyles().map(st => '<button class="gg-part-btn' + (st === ggPart ? ' active' : '') + '" data-ggpart="' + st + '">' + locEsc(ggCfg.names[st] || st) + ' \u00b7 ' + st + (st === ggCfg.parent ? ' (parent)' : '') + '</button>').join('');
+  const withStations = ggStyles().filter(st => ggRoute(st).length);
+  if(!ggCfg.routes[ggPart] || !ggRoute(ggPart).length) ggPart = withStations[0];
+  pr.innerHTML = withStations.map(st => '<button class="gg-part-btn' + (st === ggPart ? ' active' : '') + '" data-ggpart="' + st + '">' + locEsc(ggCfg.names[st] || st) + ' \u00b7 ' + st + (st === ggCfg.parent ? ' (parent)' : '') + '</button>').join('');
   const route = ggRoute(ggPart); if(ggSelected > route.length) ggSelected = 1;
   row.innerHTML = route.map((nm, i) => '<button class="gg-station-btn' + (i + 1 === ggSelected ? ' active' : '') + '" data-ggstation="' + (i + 1) + '"><b>' + (i + 1) + '</b><span>' + locEsc(nm) + '</span>' +
     (ggPart === ggCfg.parent && i + 1 === ggCfg.linkStation ? '<span class="gg-stage">\u{1F517} links parts</span>' : '<span class="gg-stage">' + ggPart + '</span>') + '</button>').join('');
@@ -6675,7 +6716,7 @@ function ggRenderStationEditor(){
   if(!ggCfg.routes[ggEditPart]) ggEditPart = ggStyles()[0];
   sel.innerHTML = ggStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggCfg.names[st] || st) + (st === ggCfg.parent ? ' (parent)' : '') + '</option>').join(''); sel.value = ggEditPart;
   const nm = document.getElementById('ggEditName'); if(document.activeElement !== nm) nm.value = ggCfg.names[ggEditPart] || '';
-  document.getElementById('ggStationList').innerHTML = ggRoute(ggEditPart).map((s, i) => '<div class="gg-st-row"><b>' + (i + 1) + '</b><input type="text" class="gg-st-name" value="' + locEsc(s) + '"><button class="secondary" data-gg-del="' + i + '" style="padding:4px 10px;">\u00d7</button></div>').join('');
+  document.getElementById('ggStationList').innerHTML = (ggRoute(ggEditPart).length ? '' : '<div class="hint" style="margin-bottom:6px;">No stations: this part is ready to link as soon as its serial exists. Add a station if it needs one.</div>') + ggRoute(ggEditPart).map((s, i) => '<div class="gg-st-row"><b>' + (i + 1) + '</b><input type="text" class="gg-st-name" value="' + locEsc(s) + '"><button class="secondary" data-gg-del="' + i + '" style="padding:4px 10px;">\u00d7</button></div>').join('');
   const ps = document.getElementById('ggParentSel'); ps.innerHTML = ggStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggCfg.names[st] || st) + '</option>').join(''); ps.value = ggCfg.parent;
   const ls = document.getElementById('ggLinkStation'); if(document.activeElement !== ls) ls.value = ggCfg.linkStation;
   document.getElementById('ggNeedsList').innerHTML = ggStyles().filter(st => st !== ggCfg.parent).map(st => '<label class="field"><span>' + locEsc(ggCfg.names[st] || st) + ' (' + st + ') per ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + '</span><input type="number" class="gg-need" data-st="' + st + '" min="0" max="20" value="' + (ggCfg.needs[st] || 0) + '"></label>').join('');
@@ -6704,7 +6745,7 @@ document.getElementById('ggStationList').addEventListener('click', e => {
 document.getElementById('btnGgSaveStations').addEventListener('click', async () => {
   const msg = document.getElementById('ggStationsMsg');
   ggCaptureEditor();
-  Object.keys(ggCfg.routes).forEach(st => { ggCfg.routes[st] = ggCfg.routes[st].map(x => String(x).trim()).filter(Boolean); if(!ggCfg.routes[st].length) delete ggCfg.routes[st]; });
+  Object.keys(ggCfg.routes).forEach(st => { ggCfg.routes[st] = ggCfg.routes[st].map(x => String(x).trim()).filter(Boolean); });   // a part may have no stations (e.g. motors)
   try{
     const r = await sheetPost({action: 'setGimbalConfig', config: ggCfg});
     if(r.status === 'error') throw new Error(r.message);
@@ -6723,7 +6764,7 @@ function goalFillStyles(){
   goalPreview();
 }
 function goalPreview(){
-  const nm = document.getElementById('goalName').value.trim().replace(/\s*-\s*(H2[A-F]|GG\d+)\s*$/i, '');
+  const nm = document.getElementById('goalName').value.trim().replace(/\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})\s*$/i, '');
   document.getElementById('goalPreview').textContent = nm ? nm + ' - ' + document.getElementById('goalStyle').value : '';
 }
 document.getElementById('goalLine').addEventListener('change', goalFillStyles);
@@ -6755,7 +6796,7 @@ ggRenderStationEditor();
 function aliasCustomerOf(label){
   const text = String(label || '').trim();
   if(!text || /^WO[\s\-_#]*\d/i.test(text)) return null;
-  const sm = text.match(/^(.*?)\s*-\s*(H2[A-F]|GG\d+)$/i);
+  const sm = text.match(/^(.*?)\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})$/i);
   const body = sm ? sm[1].trim() : text;
   const us = body.indexOf('_');
   return {cust: (us > 0 ? body.slice(0, us) : body).trim(), style: sm ? sm[2].toUpperCase() : ''};
@@ -6915,6 +6956,120 @@ async function hsRefreshStatus(){
 }
 document.getElementById('btnHsRefresh').addEventListener('click', hsRefreshStatus);
 hsStatusTimer = setInterval(() => { if(lastActiveTab === 'hsstatus' && !document.hidden) hsRefreshStatus(); }, 60000);
+
+
+// =====================================================================
+// MOTOR SERIALS — one at a time for lasering onto the motor housing, exactly like the
+// Optical Module Serials page. Saved to GimbalSerials (style GG3) the moment each is made.
+// =====================================================================
+const MM_STYLE = 'GGM';
+const MM_PERSON_KEY = 'mm-person-v1', MM_WO_KEY = 'mm-wo-v1', MM_AUTOCOPY_KEY = 'mm-autocopy-v1';
+const MM_RECHECK_MS = 20 * 60 * 1000;
+let mmRows = [], mmBusy = false, mmKnown = new Set(), mmPulledAt = 0, mmPulled = false;
+(function initMotorSerials(){
+  const person = document.getElementById('mmPerson'), wo = document.getElementById('mmWo'), autoCopy = document.getElementById('mmAutoCopy');
+  person.value = localStorage.getItem(MM_PERSON_KEY) || localStorage.getItem(GG_PERSON_KEY) || '';
+  wo.value = localStorage.getItem(MM_WO_KEY) || '';
+  autoCopy.value = localStorage.getItem(MM_AUTOCOPY_KEY) || 'yes';
+  person.addEventListener('input', () => localStorage.setItem(MM_PERSON_KEY, person.value.trim()));
+  wo.addEventListener('input', () => localStorage.setItem(MM_WO_KEY, wo.value.trim()));
+  autoCopy.addEventListener('change', () => localStorage.setItem(MM_AUTOCOPY_KEY, autoCopy.value));
+  document.getElementById('btnMmGenerate').addEventListener('click', mmGenerate);
+  document.getElementById('btnMmCopy').addEventListener('click', () => { if(mmRows[0]) mmCopy(mmRows[0].sn, true); });
+  document.getElementById('btnMmRetry').addEventListener('click', mmRetryUnsaved);
+})();
+function mmName(){ return (ggCfg.names && ggCfg.names[MM_STYLE]) || 'Motor'; }
+function mmUpdateHistory(){
+  const el = document.getElementById('mmHistory'), cfg = sheetConfig();
+  if(!cfg.url || !cfg.token){ el.className = 'om-live-history warn'; el.textContent = 'No sheet connection. Ask an engineer to connect it in Settings.'; }
+  else if(mmPulled){ el.className = 'om-live-history ok'; el.textContent = mmKnown.size.toLocaleString() + ' gimbal serials on record. New ones never repeat these.'; }
+  else{ el.className = 'om-live-history warn'; el.textContent = 'Not checked against the sheet yet.'; }
+}
+async function mmEnsureHistory(force){
+  const cfg = sheetConfig();
+  if(!cfg.url || !cfg.token){ mmUpdateHistory(); return false; }
+  if(force || !mmPulled || Date.now() - mmPulledAt > MM_RECHECK_MS){
+    const el = document.getElementById('mmHistory'); el.className = 'om-live-history'; el.textContent = 'Checking the sheet\u2026';
+    try{ const r = await sheetPost({action: 'getGimbalSerials'}); (r.serials || []).forEach(x => mmKnown.add(String(x).trim().toUpperCase())); mmPulled = true; mmPulledAt = Date.now(); }
+    catch(e){ mmPulled = false; }
+  }
+  mmUpdateHistory();
+  return mmPulled;
+}
+function mmOnOpen(){
+  document.getElementById('mmTitle').textContent = mmName() + ' serials';
+  document.querySelectorAll('.mm-style').forEach(el => el.textContent = MM_STYLE);
+  mmEnsureHistory(false);
+  const person = document.getElementById('mmPerson'); if(!person.value.trim()) person.focus();
+}
+async function mmCopy(serial, announce){
+  try{ await navigator.clipboard.writeText(serial); if(announce) document.getElementById('mmMsg').textContent = serial + ' copied to the clipboard.'; return true; }
+  catch(e){ if(announce) document.getElementById('mmMsg').textContent = 'Could not copy automatically. Scan the QR code, or select the serial and copy it.'; return false; }
+}
+function mmSheetRow(r){ return [r.uniqId, MM_STYLE, r.wo, r.person, r.sn, r.dateTime, 'Active', '']; }
+async function mmGenerate(){
+  if(mmBusy) return;
+  const msg = document.getElementById('mmMsg'), personEl = document.getElementById('mmPerson'), person = personEl.value.trim();
+  if(!person){ msg.textContent = 'Enter your initials first.'; personEl.focus(); return; }
+  const cfg = sheetConfig(), online = !!(cfg.url && cfg.token);
+  const btn = document.getElementById('btnMmGenerate');
+  mmBusy = true; btn.disabled = true; btn.textContent = 'Generating\u2026'; msg.textContent = '';
+  try{
+    if(online) await mmEnsureHistory(false);
+    if(online && !mmPulled) throw new Error('could not check the existing gimbal serials, so a duplicate can\u2019t be ruled out. Check the connection and try again');
+    const {yy, ww} = isoWeekParts('');
+    let sn = '', tries = 0;
+    do{ sn = MM_STYLE + yy + ww + randomChars(6); tries++; }while(mmKnown.has(sn) && tries < 200000);
+    mmKnown.add(sn);
+    const row = {uniqId: genUniqID(), sn: sn, wo: document.getElementById('mmWo').value.trim(), person: person, dateTime: new Date().toLocaleString(), time: new Date(), pushedToSheet: false};
+    mmRows.unshift(row);
+    mmShow(row, 'saving'); mmRenderList();
+    if(document.getElementById('mmAutoCopy').value === 'yes') mmCopy(sn, false);
+    if(online){
+      try{
+        const r = await sheetPost({action: 'appendGimbalSerials', rows: [mmSheetRow(row)]});
+        if(r.status === 'error') throw new Error(r.message);
+        row.pushedToSheet = true; mmShow(row, 'ok');
+      }catch(e){ row.pushError = e.message; mmShow(row, 'err'); }
+    }else{ row.pushError = 'no sheet connection'; mmShow(row, 'err'); }
+    mmRenderList(); mmUpdateHistory();
+  }catch(e){ msg.textContent = 'Could not generate a serial: ' + e.message; }
+  finally{ mmBusy = false; btn.disabled = false; btn.textContent = 'Generate next serial'; }
+}
+function mmShow(row, state){
+  document.getElementById('mmEmpty').style.display = 'none';
+  document.getElementById('mmBody').style.display = 'flex';
+  const serialEl = document.getElementById('mmSerial');
+  if(serialEl.textContent !== row.sn){
+    serialEl.textContent = row.sn;
+    const target = document.getElementById('mmQR'); target.innerHTML = '';
+    try{ new QRCode(target, {text: row.sn, width: 540, height: 540, correctLevel: QRCode.CorrectLevel.M}); }catch(e){ target.textContent = 'QR could not be drawn: ' + e.message; }
+    const card = document.getElementById('mmCard'); card.classList.remove('fresh'); void card.offsetWidth; card.classList.add('fresh');
+  }
+  const status = document.getElementById('mmStatus'), retry = document.getElementById('btnMmRetry');
+  if(state === 'ok'){ status.className = 'om-live-status ok'; status.textContent = '\u2713 Saved to the GimbalSerials sheet. Ready to mark.'; retry.style.display = mmRows.some(r => !r.pushedToSheet) ? '' : 'none'; }
+  else if(state === 'saving'){ status.className = 'om-live-status saving'; status.textContent = 'Saving to the sheet\u2026'; retry.style.display = 'none'; }
+  else{ status.className = 'om-live-status err'; status.textContent = '\u26A0 Not saved to the sheet yet (' + (row.pushError || 'unknown error') + '). Press Retry before marking this ' + mmName().toLowerCase() + '.'; retry.style.display = ''; }
+}
+async function mmRetryUnsaved(){
+  const pending = mmRows.filter(r => !r.pushedToSheet); if(!pending.length) return;
+  const btn = document.getElementById('btnMmRetry'); btn.disabled = true; btn.textContent = 'Retrying\u2026';
+  try{
+    const r = await sheetPost({action: 'appendGimbalSerials', rows: pending.map(mmSheetRow)});
+    if(r.status === 'error') throw new Error(r.message);
+    pending.forEach(x => { x.pushedToSheet = true; delete x.pushError; });
+    document.getElementById('mmMsg').textContent = pending.length + ' serial(s) saved to the sheet.';
+  }catch(e){ pending.forEach(x => { x.pushError = e.message; }); document.getElementById('mmMsg').textContent = 'Still could not reach the sheet: ' + e.message; }
+  finally{ btn.disabled = false; btn.textContent = 'Retry saving to sheet'; }
+  if(mmRows[0]) mmShow(mmRows[0], mmRows[0].pushedToSheet ? 'ok' : 'err');
+  mmRenderList();
+}
+function mmRenderList(){
+  document.getElementById('mmListBody').innerHTML = mmRows.map(r => '<tr><td>' + r.time.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'}) + '</td><td><b style="font-family:var(--mono);">' + r.sn + '</b></td><td>' + locEsc(r.wo || '\u2014') + '</td><td>' + locEsc(r.person) + '</td><td>' +
+    (r.pushedToSheet ? '<span class="om-live-saved">Saved</span>' : '<span class="om-live-unsaved">Not saved</span>') + '</td></tr>').join('');
+  document.getElementById('mmListCount').textContent = mmRows.length.toLocaleString();
+  document.getElementById('mmSessionCount').textContent = mmRows.length.toLocaleString() + ' this session';
+}
 
 // =====================================================================
 // LOCATE — full history of one serial, read straight from the sheet tabs.
@@ -7242,7 +7397,7 @@ function closeLocate(){
   if(lastActiveTab === 'stations') setTimeout(() => document.getElementById('stationScanInput').focus(), 50);
 }
 // A complete serial: headset (H2B–H2F) or optical module (CMA), then YYWW, then 6 characters
-const FULL_SERIAL_RE = /^(H2[B-F]|CMA|GG\d)\d{4}[A-Z0-9]{6}$/;   // headset, optical module, gimbal (GG1–GG9 look up instantly; longer styles with Enter)
+const FULL_SERIAL_RE = /^(H2[B-F]|CMA|GG\d|GGM)\d{4}[A-Z0-9]{6}$/;   // headset, optical module, gimbal (GG1–GG9 look up instantly; longer styles with Enter)
 (function initQuickLocate(){
   const q = document.getElementById('quickLocate');
   let typed = false;
@@ -8669,7 +8824,7 @@ function customerAlias(label){
   const text = String(label || '').trim();
   if(!text) return text;
   if(/^WO[\s\-_#]*\d/i.test(text)) return text;
-  const styleMatch = text.match(/^(.*?)\s*-\s*(H2[A-F]|GG\d+)$/i);
+  const styleMatch = text.match(/^(.*?)\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})$/i);
   const body = styleMatch ? styleMatch[1].trim() : text;
   const style = styleMatch ? ' \u00b7 ' + styleMatch[2].toUpperCase() : '';
   const us = body.indexOf('_');
