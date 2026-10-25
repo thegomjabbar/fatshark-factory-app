@@ -182,7 +182,8 @@
   .sw-stuck{ color:var(--red); font-weight:800; }
   /* ---- gimbal line slide ---- */
   .gg-st{ flex:1; display:flex; flex-direction:column; justify-content:space-evenly; }
-  .gg-row{ display:grid; grid-template-columns:2vw 15vw 1fr 3.4vw; align-items:center; gap:.8vw; font-size:1.15vw; }
+  .gg-row{ display:grid; grid-template-columns:2.4vw 12vw 1fr 3vw; align-items:center; gap:.7vw; font-size:.95vw; }
+  .gg-row.gg-ready .nm{ color:var(--amber); font-weight:700; }
   .gg-row .n{ font-weight:800; color:var(--cyan); font-size:1.4vw; }
   .gg-row .nm{ color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .gg-track{ height:1.6vh; border-radius:99px; background:oklch(1 0 0 / .07); overflow:hidden; }
@@ -549,12 +550,12 @@
   <div class="slide" data-slide="gimbal">
     <div class="slide-head">
       <div class="slide-title">Gimbal Line</div>
-      <div class="slide-sub" id="ggSub">Guardian Gimbal · kept separate from headsets</div>
+      <div class="slide-sub" id="ggSub">Guardian Gimbal · parts are linked into the D, which ships</div>
     </div>
     <div class="ssum-wrap">
       <div class="ssum-kpis" id="ggKpis"></div>
       <div class="ssum-mid">
-        <div class="panel ssum-panel"><div class="panel-lab">Units at each station</div><div id="ggStations" class="gg-st"></div></div>
+        <div class="panel ssum-panel"><div class="panel-lab">Each part, at each station</div><div id="ggStations" class="gg-st"></div></div>
         <div class="panel ssum-panel"><div class="panel-lab">Finished per day</div><div id="ggDays" class="ssum-list"></div></div>
         <div class="panel ssum-panel"><div class="panel-lab">Customer orders</div><div id="ggOrders" class="ssum-list"></div></div>
       </div>
@@ -1764,58 +1765,60 @@ function renderSummarySlide(logEvents, side){
 
 
 // ==================== Gimbal line slide (its own tabs; never mixed into headset numbers) ====================
+// Parts (A, B, motors) each have their own stations and are linked into the parent (D), which ships.
 async function loadGimbal(){
   const tab = name => sheetPost({action: 'getFullSheet', sheet: name}).then(j => j.rows || []).catch(() => []);
-  const DEF = ['Laser Mark', 'Build', 'Test', 'Build', 'Test', 'QC', 'Pack Up'];
+  const DEF = {parent: 'GG4', linkStation: 1, names: {GG1: 'Subassembly A', GG2: 'Subassembly B', GG3: 'Motor', GG4: 'Subassembly D'},
+    routes: {GG1: ['Laser Mark', 'Build', 'Test'], GG2: ['Laser Mark', 'Build', 'Test'], GG3: ['Laser Mark', 'Test'], GG4: ['Link', 'Assemble', 'Final Test']}, needs: {GG1: 1, GG2: 1, GG3: 4}};
   const [cfg, log, sent, goals, links] = await Promise.all([
-    sheetPost({action: 'getGimbalConfig'}).catch(() => ({stations: DEF, linkAfter: 3})),
-    tab('GimbalLog'), tab('GimbalSentToWH'), tab('GimbalGoals'), tab('GimbalLinks')]);
-  return {stations: (cfg && cfg.stations) || DEF, linkAfter: Number(cfg && cfg.linkAfter) || 3, log: log, sent: sent, goals: goals, links: links};
+    sheetPost({action: 'getGimbalConfig'}).catch(() => DEF), tab('GimbalLog'), tab('GimbalSentToWH'), tab('GimbalGoals'), tab('GimbalLinks')]);
+  return {cfg: (cfg && cfg.routes) ? cfg : DEF, log: log, sent: sent, goals: goals, links: links};
 }
 function renderGimbalSlide(g){
-  const count = g.stations.length, now = Date.now(), week = now - 7 * 86400000;
+  const cfg = g.cfg, P = cfg.parent, now = Date.now(), week = now - 7 * 86400000;
   const today = new Date(); today.setHours(0, 0, 0, 0);
+  const styleOf = sn => sn.length > 10 ? sn.slice(0, sn.length - 10) : '';
+  const routeOf = st => cfg.routes[st] || cfg.routes.GG1 || ['Station 1'];
+  const styles = Object.keys(cfg.routes).sort((a, b) => Number(a.slice(2)) - Number(b.slice(2)));
+  const inParent = new Set(); (g.links || []).slice(1).filter(r => tvCell(r[6]) === 'Linked').forEach(r => inParent.add(tvCell(r[2]).toUpperCase()));
   const ev = g.log.slice(1).map(r => ({sn: tvCell(r[1]).toUpperCase(), event: tvCell(r[2]), st: Number((tvCell(r[4]).match(/(\d+)/) || [])[1]), t: tvDate(r[5])}))
-    .filter(e => e.sn && e.t).sort((a, b) => a.t - b.t);
+    .filter(e => e.sn && e.t && e.st).sort((a, b) => a.t - b.t);
   const latest = {}; ev.forEach(e => { latest[e.sn] = e; });
-  const inSt = {}, waiting = {}; let stuck = 0;
-  // a linked B is part of its A (the master) once linked; units done with the subassembly stations but
-  // not linked yet are shown at the last subassembly station
-  const L = g.linkAfter || 3, styleOf = sn => sn.length > 10 ? sn.slice(0, sn.length - 10) : '';
-  const paired = new Set(); (g.links || []).slice(1).filter(r => /^linked$/i.test(tvCell(r[5]))).forEach(r => { paired.add(tvCell(r[1]).toUpperCase()); paired.add(tvCell(r[2]).toUpperCase()); });
+  const at = {}, ready = {}; let stuck = 0;
+  styles.forEach(st => { at[st] = {}; ready[st] = 0; });
   Object.values(latest).forEach(e => {
-    const st = styleOf(e.sn);
-    if(st === 'GG2' && paired.has(e.sn)) return;
-    if(e.event === 'MoveIn'){ inSt[e.st] = (inSt[e.st] || 0) + 1; if(now - e.t > TV_STUCK_HOURS * 3600000) stuck++; }
-    else if(e.event === 'MoveOut' && e.st < count){
-      if(e.st === L && (st === 'GG1' || st === 'GG2') && !paired.has(e.sn)) inSt[L] = (inSt[L] || 0) + 1;   // waiting to be linked
-      else waiting[e.st + 1] = (waiting[e.st + 1] || 0) + 1;
-    }
+    const st = styleOf(e.sn), route = routeOf(st);
+    if(!at[st] || inParent.has(e.sn)) return;
+    if(e.event === 'MoveIn'){ at[st][e.st] = (at[st][e.st] || 0) + 1; if(now - e.t > TV_STUCK_HOURS * 3600000) stuck++; }
+    else if(e.event === 'MoveOut' && e.st < route.length) at[st][e.st + 1] = (at[st][e.st + 1] || 0) + 1;   // waiting for the next station
+    else if(e.event === 'MoveOut' && st !== P && cfg.needs[st]) ready[st]++;
   });
-  const finished = ev.filter(e => e.event === 'MoveOut' && e.st === count);
+  const finished = ev.filter(e => e.event === 'MoveOut' && styleOf(e.sn) === P && e.st === routeOf(P).length);
   const sent = g.sent.slice(1).map(r => ({t: tvDate(r[1]), order: tvCell(r[3]), sn: tvCell(r[0]).toUpperCase()}));
-  const wip = Object.values(inSt).reduce((a, b) => a + b, 0) + Object.values(waiting).reduce((a, b) => a + b, 0);
+  const parentWip = Object.values(at[P] || {}).reduce((a, b) => a + b, 0);
+  const pName = cfg.names[P] || P;
   const kpis = [
-    {v: wip, l: 'On the line now', s: stuck ? stuck + ' stuck over ' + TV_STUCK_HOURS + 'h' : 'None stuck', c: stuck ? 'var(--red)' : 'var(--purple)'},
-    {v: finished.filter(e => e.t >= today).length, l: 'Finished today', s: 'Out of ' + g.stations[count - 1], c: 'var(--green)'},
-    {v: finished.filter(e => e.t.getTime() >= week).length, l: 'Finished, 7 days', s: 'Gimbals only', c: 'var(--cyan)'},
+    {v: parentWip, l: pName + ' on the line', s: stuck ? stuck + ' stuck over ' + TV_STUCK_HOURS + 'h' : 'None stuck', c: stuck ? 'var(--red)' : 'var(--purple)'},
+    {v: finished.filter(e => e.t >= today).length, l: 'Finished today', s: 'Out of ' + routeOf(P)[routeOf(P).length - 1], c: 'var(--green)'},
+    {v: finished.filter(e => e.t.getTime() >= week).length, l: 'Finished, 7 days', s: pName + ' units', c: 'var(--cyan)'},
     {v: sent.filter(x => x.t && x.t.getTime() >= week).length, l: 'Shipped, 7 days', s: 'To the warehouse', c: 'var(--amber)'},
-    {v: g.goals.slice(1).filter(r => tvCell(r[0])).length, l: 'Orders', s: 'GG customer orders', c: 'var(--purple)'}
+    {v: styles.filter(st => st !== P && cfg.needs[st]).reduce((a, st) => a + ready[st], 0), l: 'Parts ready to link', s: 'Waiting for a ' + pName, c: 'var(--purple)'}
   ];
   document.getElementById('ggKpis').innerHTML = kpis.map((k, i) => '<div class="panel ssum-kpi"><div class="v" id="gg-kpi-' + i + '" style="color:' + k.c + ';">0</div><div class="l">' + k.l + '</div><div class="s">' + k.s + '</div></div>').join('');
   kpis.forEach((k, i) => animateCountUp(document.getElementById('gg-kpi-' + i), k.v));
-  const maxN = Math.max(1, ...g.stations.map((_, i) => (inSt[i + 1] || 0) + (waiting[i + 1] || 0)));
-  document.getElementById('ggStations').innerHTML = g.stations.map((nm, i) => {
-    const n = i + 1, v = (inSt[n] || 0) + (waiting[n] || 0);
-    return '<div class="gg-row"><span class="n">' + n + '</span><span class="nm">' + nm + (n > (g.linkAfter || 3) ? ' \u00b7 combined' : '') + '</span><div class="gg-track"><div class="gg-fill" style="width:' + (v / maxN * 100) + '%;"></div></div><b>' + v + '</b></div>';
-  }).join('');
+  const rows = [];
+  styles.forEach(st => {
+    routeOf(st).forEach((nm, i) => rows.push({tag: st.replace('GG', 'G'), nm: nm + (st === P && i + 1 === cfg.linkStation ? ' \u{1F517}' : ''), v: at[st][i + 1] || 0, parent: st === P}));
+    if(st !== P && cfg.needs[st]) rows.push({tag: st.replace('GG', 'G'), nm: 'Ready to link', v: ready[st], ready: true});
+  });
+  const maxN = Math.max(1, ...rows.map(r => r.v));
+  document.getElementById('ggStations').innerHTML = rows.map(r => '<div class="gg-row' + (r.ready ? ' gg-ready' : '') + '"><span class="n">' + r.tag + '</span><span class="nm">' + r.nm + '</span><div class="gg-track"><div class="gg-fill" style="width:' + (r.v / maxN * 100) + '%;' + (r.parent ? 'background:linear-gradient(90deg, oklch(0.62 0.2 150), oklch(0.78 0.17 180));' : '') + '"></div></div><b>' + r.v + '</b></div>').join('');
   const days = {};
   finished.forEach(e => { const d = new Date(e.t); d.setHours(12, 0, 0, 0); const k = d.toISOString().slice(0, 10); days[k] = (days[k] || 0) + 1; });
   const keys = Object.keys(days).sort().reverse().slice(0, 6);
   document.getElementById('ggDays').innerHTML = keys.length ? keys.map(k => '<div class="ssum-item"><span>' + new Date(k + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}) + '</span><b>' + days[k] + '</b></div>').join('')
-    : '<div class="ssum-empty">No gimbals finished yet.</div>';
-  // a linked A + B pair counts once: only rows of the order's own style count (same rule as the script)
-  const counts = (label, sn) => { const st = (String(label || '').match(/(GG\d+)\s*$/i) || [])[1]; return !st || (sn.length > 10 ? sn.slice(0, sn.length - 10) : '') === st.toUpperCase(); };
+    : '<div class="ssum-empty">No ' + pName + ' finished yet.</div>';
+  const counts = (label, sn) => { const st = (String(label || '').match(/(GG\d+)\s*$/i) || [])[1]; return !st || styleOf(sn) === st.toUpperCase(); };
   const shippedBy = {}; sent.forEach(x => { if(counts(x.order, x.sn)) shippedBy[x.order] = (shippedBy[x.order] || 0) + 1; });
   const orders = g.goals.slice(1).map(r => ({label: tvCell(r[0]), target: Number(r[1]) || 0})).filter(o => o.label).slice(0, 5);
   document.getElementById('ggOrders').innerHTML = orders.length ? orders.map(o => {
