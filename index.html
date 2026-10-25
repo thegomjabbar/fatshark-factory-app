@@ -57,6 +57,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   .em-add{ display:flex; gap:6px; }
   .em-add input{ flex:1; }
   .em-dirty{ color:#8a5a0b; font-weight:700; }
+  .em-sched{ margin-top:12px; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#fff; font-size:13px; line-height:1.5; }
+  .em-sched.on{ border-color:#1d7a3f; background:#eef8f1; }
+  .em-sched.off{ border-color:#c0392b; background:#fdf0ee; }
+  .em-sched b.state{ font-size:14px; }
   /* ---- gimbal line ---- */
   .gg-station-btn{ flex:1 1 0; min-width:90px; padding:10px 6px; text-align:center; cursor:pointer; background:#fff; border:2px solid var(--line); border-radius:8px; font-family:inherit; transition:border-color .15s ease, background-color .15s ease; }
   .gg-station-btn b{ display:block; font-size:20px; font-weight:800; color:var(--ink); }
@@ -1843,6 +1847,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="accent" id="btnEmSave">Save recipients</button>
       <button class="secondary" id="btnEmTest">Send test email now</button>
     </div>
+    <div class="em-sched" id="emSchedule"><span class="hint">Checking whether automatic emails are on…</span></div>
     <div class="hint" id="emMsg"></div>
   </div>
 
@@ -6024,7 +6029,31 @@ function renderEmailLists(dirty){
   });
   if(dirty) document.getElementById('emMsg').innerHTML = '<span class="em-dirty">Unsaved changes \u2014 press Save recipients.</span>';
 }
+
+// automatic email status: are the daily triggers there, and what did the last runs do?
+async function loadEmailSchedule(){
+  const box = document.getElementById('emSchedule'); if(!box) return;
+  try{
+    const r = await sheetPost({action: 'getEmailSchedule'});
+    if(r.status === 'error') throw new Error(r.message);
+    box.className = 'em-sched ' + (r.on ? 'on' : 'off');
+    box.innerHTML = (r.on ? '<b class="state" style="color:#1d7a3f;">\u2713 Automatic emails are ON</b> &nbsp;(' + locEsc(r.times.join(', ')) + ', weekdays; script time zone ' + locEsc(r.timeZone) + ')'
+      : '<b class="state" style="color:#a13636;">\u2716 Automatic emails are OFF</b> &nbsp;\u2014 no daily schedule exists, so only test emails go out. <button class="accent" id="btnEmTurnOn" style="margin-left:6px; padding:5px 12px;">Turn on automatic emails</button>') +
+      '<br><span class="hint">Last automatic email: ' + locEsc(r.lastSent || 'none yet') + '</span>' +
+      (r.lastRun ? '<br><span class="hint">Last run: ' + locEsc(r.lastRun) + '</span>' : '');
+  }catch(e){
+    box.className = 'em-sched';
+    box.innerHTML = '<span class="hint">' + (/unknown action/i.test(e.message) ? 'Deploy the latest Code.gs to see whether automatic emails are on.' : 'Could not check the schedule: ' + locEsc(e.message)) + '</span>';
+  }
+}
+document.getElementById('emSchedule').addEventListener('click', async e => {
+  if(e.target.id !== 'btnEmTurnOn') return;
+  e.target.disabled = true; e.target.textContent = 'Turning on\u2026';
+  try{ const r = await sheetPost({action: 'turnOnShiftEmails'}); if(r.status === 'error') throw new Error(r.message); loadEmailSchedule(); }
+  catch(err){ document.getElementById('emSchedule').innerHTML += '<br><span class="gg-bad">Could not turn on: ' + locEsc(err.message) + '. Run setupShiftEmails once in the Apps Script editor instead.</span>'; }
+});
 async function loadEmailRecipients(){
+  loadEmailSchedule();
   const msg = document.getElementById('emMsg');
   const cfg = sheetConfig();
   if(!cfg.url || !cfg.token){ msg.textContent = 'No sheet connection.'; return; }
@@ -6066,6 +6095,7 @@ async function sendTestSummary(){
   try{
     const r = await sheetPost({action: 'sendSummaryNow'});
     if(r.status === 'error') throw new Error(r.message);
+    loadEmailSchedule();
     msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Test email sent</b> for ' + locEsc(r.shift || 'the last shift') + ' to ' + locEsc((r.to || []).join(', ')) + ((r.cc || []).length ? ', CC ' + locEsc(r.cc.join(', ')) : '') + '.';
   }catch(e){ msg.textContent = 'Could not send: ' + e.message; }
   finally{ btn.disabled = false; }
