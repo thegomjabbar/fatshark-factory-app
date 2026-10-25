@@ -257,6 +257,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
   /* ---------- Builder-mode restricted tabs ---------- */
   nav.tabs button.restricted{display:none;}
+  nav.tabs .legacy-tabs{display:none !important;}
+  #tab-shipping .ship-inner-switch, #tab-scanout .ship-inner-switch{display:none;}   /* now separate Headset Line sub-tabs */
 
   /* ---------- mobile/narrow-screen nav: dropdown instead of a row that can overflow off-screen ---------- */
   .tabs-dropdown-wrap{display:none; padding:10px 24px; background:#100d1c;}
@@ -962,21 +964,30 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <button id="btnBackToHome" title="Back to home screen">&larr; Home</button>
   </div>
   <nav class="tabs">
-    <button id="tabBtnOMLive">Optical Module Serials</button>
-    <button id="tabBtnStations">Station Sign In/Out</button>
-    <button id="tabBtnReturn">Return / Scrap</button>
-    <button id="tabBtnShipping">Shipping &amp; Warehouse</button>
+    <button id="tabBtnHeadset">Headset Line</button>
     <button id="tabBtnGimbal">Gimbal Line</button>
-    <button id="tabBtnSerial" class="restricted">Serial &amp; QR Labels</button>
+    <span class="legacy-tabs" aria-hidden="true">
+      <button id="tabBtnOMLive">Optical Module Serials</button>
+      <button id="tabBtnStations">Station Sign In/Out</button>
+      <button id="tabBtnReturn">Return / Scrap</button>
+      <button id="tabBtnShipping">Shipping &amp; Warehouse</button>
+      <button id="tabBtnSerial" class="restricted">Serial &amp; QR Labels</button>
+    </span>
   </nav>
   <div class="tabs-dropdown-wrap">
     <select id="tabDropdown">
-      <option value="omlive">Optical Module Serials</option>
-      <option value="stations">Station Sign In/Out</option>
-      <option value="return">Return / Scrap</option>
-      <option value="shipping">Shipping &amp; Warehouse</option>
-      <option value="gimbal">Gimbal Line</option>
-      <option value="serial" class="restricted-opt">Serial &amp; QR Labels</option>
+      <optgroup label="Headset Line">
+        <option value="hsstatus">Line Status</option>
+        <option value="omlive">Optical Module Serials</option>
+        <option value="stations">Sign In / Out</option>
+        <option value="return">Return / Scrap</option>
+        <option value="shipping">Shipping Labels</option>
+        <option value="scanout">Ship to Warehouse</option>
+        <option value="serial" class="restricted-opt">Serial &amp; QR Labels</option>
+      </optgroup>
+      <optgroup label="Gimbal Line">
+        <option value="gimbal">Gimbal Line</option>
+      </optgroup>
     </select>
   </div>
 </header>
@@ -995,6 +1006,30 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </div>
 
 <main>
+<div class="subtabs" id="hsSubtabs">
+  <button data-hs="hsstatus">Line Status</button>
+  <button data-hs="omlive">Optical Module Serials</button>
+  <button data-hs="stations">Sign In / Out</button>
+  <button data-hs="return">Return / Scrap</button>
+  <button data-hs="shipping">Shipping Labels</button>
+  <button data-hs="scanout">Ship to Warehouse</button>
+  <button data-hs="serial" id="hsSerialBtn">Serial &amp; QR Labels</button>
+</div>
+<div id="tab-hsstatus" class="tabpanel">
+  <div class="panel">
+    <h2>Headset line status <span class="count" id="hsUpdated"></span></h2>
+    <p class="hint">Live from the Log (last 8 days), the Count tab's station lists (what's really on the floor), SentToWH and Goals. Updates every minute while open. Headsets only; gimbals are on the Gimbal Line.</p>
+    <div class="ss-grid" id="hsKpis" style="grid-template-columns:repeat(6, 1fr);"></div>
+    <div class="btnrow"><button class="secondary" id="btnHsRefresh">Refresh</button></div>
+  </div>
+  <div class="panel"><h2>Stations</h2><div class="tablewrap"><table><thead><tr><th>Station</th><th>On the floor (Count tab)</th><th>Signed in now</th><th>Stuck over 24h</th><th>Median time (7 days)</th><th>Through today</th></tr></thead><tbody id="hsStationBody"></tbody></table></div></div>
+  <div class="panel"><h2>Operator cycle times per station <span class="count">last 7 days</span></h2>
+    <p class="hint">Time from sign-in to sign-out, credited to whoever signed the unit out of that station.</p>
+    <div class="tablewrap" style="max-height:360px;"><table><thead><tr><th>Operator</th><th>Station</th><th>Units</th><th>Median</th><th>Average</th><th>Fastest</th><th>Slowest</th></tr></thead><tbody id="hsOpBody"></tbody></table></div></div>
+  <div class="panel"><h2>Finished per day <span class="count">signed out of Station 6</span></h2><div class="tablewrap"><table><thead id="hsDailyHead"></thead><tbody id="hsDailyBody"></tbody></table></div></div>
+  <div class="panel"><h2>Customer orders <span class="count" id="hsOrdersCount"></span></h2><div id="hsOrders"></div></div>
+</div>
+
 <div id="tab-serial" class="tabpanel">
   <div class="panel">
     <h2>Batch details</h2>
@@ -1076,7 +1111,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </div><!-- /tab-serial -->
 
 <div id="tab-shipping" class="tabpanel">
-  <div class="subtabs">
+  <div class="subtabs ship-inner-switch">
     <button data-subtab="shipping">Shipping labels</button>
     <button data-subtab="scanout">Ship to warehouse</button>
   </div>
@@ -1142,7 +1177,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 </div><!-- /tab-shipping -->
 
 <div id="tab-scanout" class="tabpanel">
-  <div class="subtabs">
+  <div class="subtabs ship-inner-switch">
     <button data-subtab="shipping">Shipping labels</button>
     <button data-subtab="scanout">Ship to warehouse</button>
   </div>
@@ -6737,6 +6772,86 @@ document.getElementById('btnAliasSave').addEventListener('click', async () => {
 });
 setTimeout(loadCustomerAliases, 1500);   // after start-up has loaded the sheet connection
 
+
+// =====================================================================
+// HEADSET LINE STATUS — the headset version of the Gimbal Line status page.
+// Log rows for the last 8 days (looked up by date, fast however big the Log is), the Count tab's
+// "Stuck at" lists for what's really on the floor, SentToWH and Goals (same matching as Ship to Warehouse).
+// =====================================================================
+let hsStatusTimer = null, hsStatusBusy = false;
+async function hsRefreshStatus(){
+  const cfg = sheetConfig();
+  const upd = document.getElementById('hsUpdated');
+  if(!cfg.url || !cfg.token){ upd.textContent = 'no sheet connection'; return; }
+  if(hsStatusBusy) return; hsStatusBusy = true;
+  upd.textContent = 'loading\u2026';
+  try{
+    const now = Date.now(), from = now - 8 * 86400000, weekAgo = now - 7 * 86400000, todayKey = localDayKeyLoc(new Date());
+    const [logRows, floor, goalsRes, sentRes] = await Promise.all([
+      sheetPost({action: 'getLogRowsBetween', from: from, to: now + 60000}).then(j => j.rows || []).catch(() => sheetPost({action: 'getRecentLogRows', maxRows: 20000}).then(j => j.rows || [])),
+      loadStuckAtStations(true).catch(() => ({})),
+      sheetGet({action: 'goals'}).catch(() => ({goals: []})),
+      sheetGet({action: 'sentToWH'}).catch(() => ({rows: []}))
+    ]);
+    goalsList = goalsRes.goals || goalsList; sentToWHRows = sentRes.rows || sentToWHRows;   // same data Ship to Warehouse uses
+    const onFloor = {}; Object.keys(floor).forEach(k => { const n = String(stationNumberFromLabel(k) || k).replace(/\D/g, ''); onFloor[n] = (floor[k] || []).map(x => String(x).trim().toUpperCase()); });
+    const floorSet = new Set(Object.values(onFloor).flat());
+    const ev = logRows.map(r => ({sn: locCell(r[1]).toUpperCase(), event: locCell(r[2]), person: locCell(r[3]) || '?', st: String(stationNumberFromLabel(locCell(r[4])) || ''), t: locDate(r[5])}))
+      .filter(e => /^H2[B-F]/.test(e.sn) && e.t && e.st).sort((a, b) => a.t - b.t);
+    const latest = {}; ev.forEach(e => { latest[e.sn] = e; });
+    const signedIn = {}, stuck = {};
+    Object.values(latest).forEach(e => {
+      if(!/movein/i.test(e.event)) return;
+      signedIn[e.st] = (signedIn[e.st] || 0) + 1;
+      if(now - e.t > 24 * 3600000 && floorSet.has(e.sn)) stuck[e.st] = (stuck[e.st] || 0) + 1;
+    });
+    const openIn = {}, dur = {}, opDur = {}, firstIn = {}, leads = [], throughToday = {};
+    ev.forEach(e => {
+      const k = e.sn + '|' + e.st;
+      if(/movein/i.test(e.event)){ openIn[k] = e.t; if(e.st === '1' && !firstIn[e.sn]) firstIn[e.sn] = e.t; }
+      else if(/moveout/i.test(e.event)){
+        if(localDayKeyLoc(e.t) === todayKey) throughToday[e.st] = (throughToday[e.st] || 0) + 1;
+        if(openIn[k]){ const d = Math.max(0, e.t - openIn[k]); if(e.t >= weekAgo){ (dur[e.st] = dur[e.st] || []).push(d); const ok = e.person + '|' + e.st; (opDur[ok] = opDur[ok] || []).push(d); } delete openIn[k]; }
+        if(e.st === '6' && firstIn[e.sn] && e.t >= weekAgo) leads.push(e.t - firstIn[e.sn]);
+      }
+    });
+    const finished = ev.filter(e => e.st === '6' && /moveout/i.test(e.event));
+    const shipped7 = sentToWHRows.filter(r => { const d = locDate(r.date); return d && d.getTime() >= weekAgo; }).length;
+    const orders = (goalsList || []).filter(g => g.label).map(g => ({label: g.label, target: Number(g.target) || 0, due: g.dueDate, shipped: shippedCountFor(g.label)}));
+    const open = orders.filter(o => o.shipped < o.target);
+    const kpis = [['On the line', floorSet.size], ['Finished today', finished.filter(e => localDayKeyLoc(e.t) === todayKey).length], ['Finished, last 7 days', finished.filter(e => e.t >= weekAgo).length],
+      ['Shipped, last 7 days', shipped7], ['Open orders', open.length], ['Avg lead time, 7 days', leads.length ? formatDuration(leads.reduce((a, b) => a + b, 0) / leads.length) : '\u2014']];
+    document.getElementById('hsKpis').innerHTML = kpis.map(k => '<div class="ss-stat"><div class="v">' + k[1] + '</div><div class="k">' + k[0] + '</div></div>').join('');
+    const med = a => { const x = a.slice().sort((p, q) => p - q); return x[Math.floor(x.length / 2)]; };
+    document.getElementById('hsStationBody').innerHTML = ['1', '2', '3', '4', '5', '6'].map(n => {
+      const d = dur[n] || [];
+      return '<tr><td><b>' + locEsc(STATION_LABELS[n] || ('Station ' + n)) + '</b></td><td><b>' + ((onFloor[n] || []).length) + '</b></td><td>' + (signedIn[n] || 0) + '</td><td' + (stuck[n] ? ' class="gg-bad"' : '') + '>' + (stuck[n] || 0) +
+        '</td><td>' + (d.length ? formatDuration(med(d)) : '\u2014') + '</td><td>' + (throughToday[n] || 0) + '</td></tr>';
+    }).join('');
+    const opKeys = Object.keys(opDur).sort((a, b) => { const [pa, sa] = a.split('|'), [pb, sb] = b.split('|'); return pa === pb ? Number(sa) - Number(sb) : pa < pb ? -1 : 1; });
+    document.getElementById('hsOpBody').innerHTML = opKeys.length ? opKeys.map(k => {
+      const [p, st] = k.split('|'), d = opDur[k];
+      return '<tr><td><b>' + locEsc(p) + '</b></td><td>' + locEsc(STATION_LABELS[st] || ('Station ' + st)) + '</td><td>' + d.length + '</td><td>' + formatDuration(med(d)) + '</td><td>' + formatDuration(d.reduce((a, b) => a + b, 0) / d.length) + '</td><td>' + formatDuration(Math.min(...d)) + '</td><td>' + formatDuration(Math.max(...d)) + '</td></tr>';
+    }).join('') : '<tr><td colspan="7">No completed station times in the last 7 days.</td></tr>';
+    const days = {}, styles = new Set();
+    finished.forEach(e => { const k = localDayKeyLoc(e.t), o = days[k] = days[k] || {total: 0, shifts: {}, styles: {}}; o.total++; const sh = ggShiftOf(e.t); o.shifts[sh] = (o.shifts[sh] || 0) + 1; const st = e.sn.slice(0, 3); o.styles[st] = (o.styles[st] || 0) + 1; styles.add(st); });
+    const keys = Object.keys(days).sort().reverse(), shiftNames = SHIFT_DEFS.map(d => d.name), stl = [...styles].sort();
+    document.getElementById('hsDailyHead').innerHTML = '<tr><th>Day</th><th>Total</th>' + shiftNames.map(n => '<th>' + n + '</th>').join('') + stl.map(x => '<th>' + x + '</th>').join('') + '</tr>';
+    document.getElementById('hsDailyBody').innerHTML = keys.length ? keys.map(k => { const o = days[k];
+      return '<tr><td>' + new Date(k + 'T12:00:00').toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}) + '</td><td><b>' + o.total + '</b></td>' + shiftNames.map(n => '<td>' + (o.shifts[n] || 0) + '</td>').join('') + stl.map(x => '<td>' + (o.styles[x] || 0) + '</td>').join('') + '</tr>';
+    }).join('') : '<tr><td colspan="' + (2 + shiftNames.length) + '">No headsets finished in the last 8 days.</td></tr>';
+    document.getElementById('hsOrdersCount').textContent = open.length + ' open';
+    document.getElementById('hsOrders').innerHTML = open.length ? open.sort((a, b) => (b.target - b.shipped) - (a.target - a.shipped)).map(o => {
+      const pct = o.target ? Math.min(100, Math.round(o.shipped / o.target * 100)) : 0;
+      return '<div class="gg-order"><div class="top"><span><b>' + locEsc(customerAlias(o.label)) + '</b>' + (o.due ? ' <span class="hint">due ' + locEsc(o.due) + '</span>' : '') + '</span><span>' + o.shipped + ' / ' + o.target + ' shipped (' + pct + '%) \u00b7 ' + (o.target - o.shipped) + ' to go</span></div><div class="gg-bar"><div style="width:' + pct + '%;"></div></div></div>';
+    }).join('') : '<div class="hint">No open headset orders. Add one in Settings \u2192 Add an order.</div>';
+    upd.textContent = 'updated ' + new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+  }catch(e){ upd.textContent = 'could not load: ' + e.message; }
+  finally{ hsStatusBusy = false; }
+}
+document.getElementById('btnHsRefresh').addEventListener('click', hsRefreshStatus);
+hsStatusTimer = setInterval(() => { if(lastActiveTab === 'hsstatus' && !document.hidden) hsRefreshStatus(); }, 60000);
+
 // =====================================================================
 // LOCATE — full history of one serial, read straight from the sheet tabs.
 // Headset: SerialNumbers row (generation), OpticalModelSN (linked module),
@@ -7128,6 +7243,13 @@ document.getElementById('tabBtnOMLive').addEventListener('click', () => switchTa
 document.getElementById('tabBtnReturn').addEventListener('click', () => switchTab('return'));
 document.getElementById('tabDropdown').addEventListener('change', (e) => switchTab(e.target.value));
 let lastActiveTab = 'omlive';
+// Headset Line sub-tabs (the Gimbal Line has its own inside its tab)
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-hs]'); if(b){ switchTab(b.dataset.hs); return; }
+  if(e.target.closest('#tabBtnHeadset')) switchTab(lastHeadsetTab || 'stations');
+});
+const HEADSET_TABS = ['hsstatus', 'omlive', 'stations', 'return', 'shipping', 'scanout', 'serial'];
+let lastHeadsetTab = 'stations';
 function switchTab(name){
   // Builder mode: Serial & QR Labels requires the engineer PIN (Optical Module Rework now lives
   // in Settings, which is already behind the PIN). Checked here too, not just by hiding the nav
@@ -7141,6 +7263,8 @@ function switchTab(name){
   document.getElementById('tab-omlive').classList.toggle('active', name === 'omlive');
   document.getElementById('tab-return').classList.toggle('active', name === 'return');
   document.getElementById('tab-gimbal').classList.toggle('active', name === 'gimbal');
+  document.getElementById('tab-hsstatus').classList.toggle('active', name === 'hsstatus');
+  if(name === 'hsstatus') hsRefreshStatus();
   document.getElementById('tabBtnGimbal').classList.toggle('active', name === 'gimbal');
   document.getElementById('tabBtnSerial').classList.toggle('active', name === 'serial');
   document.getElementById('tabBtnShipping').classList.toggle('active', name === 'shipping' || name === 'scanout');
@@ -7149,7 +7273,13 @@ function switchTab(name){
   document.getElementById('tabBtnStations').classList.toggle('active', name === 'stations');
   document.getElementById('tabBtnOMLive').classList.toggle('active', name === 'omlive');
   document.getElementById('tabBtnReturn').classList.toggle('active', name === 'return');
-  document.getElementById('tabDropdown').value = name === 'scanout' ? 'shipping' : name;
+  document.getElementById('tabDropdown').value = name;
+  const isHs = HEADSET_TABS.indexOf(name) > -1;
+  if(isHs) lastHeadsetTab = name;
+  document.getElementById('hsSubtabs').style.display = isHs ? '' : 'none';
+  document.querySelectorAll('[data-hs]').forEach(b => b.classList.toggle('active', b.dataset.hs === name));
+  document.getElementById('tabBtnHeadset').classList.toggle('active', isHs);
+  document.getElementById('hsSerialBtn').style.display = engineerUnlocked ? '' : 'none';
   if(name === 'shipping') renderShipPreview();
   if(name === 'return') renderReturnPreview();
   if(name === 'scanout' && goalsList.length === 0) refreshScanOutData();
@@ -7186,6 +7316,7 @@ let engineerUnlocked = sessionStorage.getItem('engineer-unlocked') === 'true';
 
 function applyAccessMode(){
   document.getElementById('tabBtnSerial').classList.toggle('restricted', !engineerUnlocked);
+  const hsSer = document.getElementById('hsSerialBtn'); if(hsSer) hsSer.style.display = engineerUnlocked ? '' : 'none';   // serial generator: engineers only
   document.querySelectorAll('#tabDropdown option[value="serial"]')
     .forEach(opt => opt.classList.toggle('restricted-opt', !engineerUnlocked));
   if(!engineerUnlocked && lastActiveTab === 'serial'){
@@ -7242,6 +7373,8 @@ function openSettings(){
   document.getElementById('tab-scanout').classList.remove('active');
   document.getElementById('tab-omlive').classList.remove('active');
   document.getElementById('tab-gimbal').classList.remove('active');
+  document.getElementById('tab-hsstatus').classList.remove('active');
+  document.getElementById('hsSubtabs').style.display = 'none';
   document.getElementById('tab-stations').classList.remove('active');
   // The rework generator lives in here now, so make sure its dedupe list is current
   if(!opticalHistoryPulled){ const c = sheetConfig(); if(c.url && c.token) refreshOpticalHistory(); }
