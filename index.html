@@ -1574,7 +1574,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   <div class="gg-view" id="gg-motors">
     <div class="panel">
       <h2><span id="mmTitle">Motor serials</span> <span class="count" id="mmSessionCount">0 this session</span></h2>
-      <p class="hint">One new serial for every motor, lasered onto the motor housing. Generate a serial, scan the QR code into the laser software, mark the housing, then generate the next one. Motors have no stations: once marked they're installed, and each one is scanned into its Subassembly D's parts form at the Link station. Every serial follows the <b><span class="mm-style">GGM</span>[YY][WW][6 random A-Z0-9]</b> format, is checked against every gimbal serial already in the <b>GimbalSerials</b> tab so it never repeats, and is saved there the moment it's made.</p>
+      <p class="hint">One new serial for every motor, lasered onto the motor housing. Generate a serial, scan the QR code into the laser software, mark the housing, then generate the next one. Motors have no stations: once marked they're installed, and each one is scanned into its Subassembly D's parts form at the Link station. <b>Motors that already carry a supplier serial don't need one from here</b>: scan the supplier serial straight into the D's parts form and it's accepted as a motor. Every serial follows the <b><span class="mm-style">GGM</span>[YY][WW][6 random A-Z0-9]</b> format, is checked against every gimbal serial already in the <b>GimbalSerials</b> tab so it never repeats, and is saved there the moment it's made.</p>
       <div class="row3">
         <label class="field"><span>Your initials</span><input type="text" id="mmPerson" maxlength="8" placeholder="e.g. tm" autocomplete="off"></label>
         <label class="field"><span>Work order (optional)</span><input type="text" id="mmWo" placeholder="WO-00000" autocomplete="off"></label>
@@ -6221,10 +6221,13 @@ function ggActiveLinks(linkRows){   // {parentOf, partsOf}
   (linkRows || []).slice(1).forEach(r => {
     if(locCell(r[6]) !== 'Linked') return;
     const p = locCell(r[1]).toUpperCase(), c = locCell(r[2]).toUpperCase();
-    parentOf[c] = p; (partsOf[p] = partsOf[p] || []).push({sn: c, style: ggStyleOf(c), linkId: locCell(r[0]), by: locCell(r[4]), t: locDate(r[5])});
+    parentOf[c] = p; (partsOf[p] = partsOf[p] || []).push({sn: c, style: locCell(r[3]).toUpperCase() || ggStyleOf(c), linkId: locCell(r[0]), by: locCell(r[4]), t: locDate(r[5])});
   });
   return {parentOf, partsOf};
 }
+function ggFreeStyles(){ return Object.keys(ggCfg.needs).filter(st => Array.isArray(ggCfg.routes[st]) && !ggCfg.routes[st].length); }
+function ggOurs(sn){ return GG_SERIAL_RE.test(sn) && (ggCfg.routes[ggStyleOf(sn)] !== undefined || ggCfg.needs[ggStyleOf(sn)]); }
+const GG_OUTSIDE_RE = /^[A-Z0-9][A-Z0-9._\-\/]{2,39}$/;
 function ggKitOf(parts){
   const have = {}; (parts || []).forEach(p => { have[p.style] = (have[p.style] || 0) + 1; });
   const rows = Object.keys(ggCfg.needs).map(st => ({st, need: ggCfg.needs[st], have: have[st] || 0}));
@@ -6385,7 +6388,7 @@ async function ggShowKit(parent, kitPromise){
   try{ r = await (kitPromise || sheetPost({action: 'gimbalKit', parent: parent})); }
   catch(e){ ggKitLoading = false; ggRenderKit(); ggPopup('Could not load the parts already linked to ' + locEsc(parent) + ':<br><br>' + locEsc(e.message)); return; }
   if(ggKitParent !== parent) return;
-  const linked = (r.parts || []).map(p => ({sn: p.sn, style: ggStyleOf(p.sn), linkId: p.linkId}));
+  const linked = (r.parts || []).map(p => ({sn: p.sn, style: p.style || ggStyleOf(p.sn), linkId: p.linkId}));
   // keep anything already scanned into the form while this was loading
   const typed = ggKitSlots.filter(x => x.sn && x.state !== 'linked');
   ggKitSlots = ggKitSlotsFor(linked);
@@ -6423,7 +6426,12 @@ function ggRenderKit(){
   if(keep){ const again = panel.querySelector('.gg-slot-in[data-slot="' + keep.slot + '"]') || panel.querySelector('.gg-slot-in'); if(again){ again.value = keep.value; again.focus(); } }
 }
 async function ggKitAdd(sn, slotIndex){
-  const st = ggStyleOf(sn);
+  let st = ggStyleOf(sn);
+  if(!ggOurs(sn)){
+    const free = ggFreeStyles(), want0 = ggKitSlots[slotIndex];
+    st = want0 && free.indexOf(want0.style) > -1 ? want0.style : (free.find(f => ggKitSlots.some(x => x.style === f && !x.sn)) || free[0] || '');
+    if(!st || /^(H2[B-F]|CMA)\d{4}/.test(sn) || !GG_OUTSIDE_RE.test(sn)){ ggPopup('<b>' + locEsc(sn) + '</b> isn\u2019t a serial this form can take.' + (st ? '' : ' No part type accepts supplier serials.')); return; }
+  }
   if(ggKitSlots.some(x => x.sn === sn)){ ggPopup(sn + ' is already in this form.', 'info'); return; }
   if(!ggCfg.needs[st]){ ggPopup('<b>' + sn + '</b> is a ' + locEsc(ggCfg.names[st] || st) + ', which doesn\u2019t go into a ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + '.'); return; }
   const want = ggKitSlots[slotIndex];
@@ -6431,7 +6439,7 @@ async function ggKitAdd(sn, slotIndex){
   if(!slot){ ggPopup(ggKitParent + ' already has all ' + ggCfg.needs[st] + ' \u00d7 ' + locEsc(ggCfg.names[st] || st) + ' in the form. Remove one (\u00d7) first if it\u2019s the wrong part.', 'info'); return; }
   slot.sn = sn; slot.state = 'checking'; slot.why = ''; ggRenderKit(); ggKitFocusNext();
   try{
-    const r = await sheetPost({action: 'gimbalPartCheck', serial: sn, parent: ggKitParent});
+    const r = await sheetPost({action: 'gimbalPartCheck', serial: sn, parent: ggKitParent, style: st});
     slot.state = r.state === 'linked' ? 'ready' : r.state; slot.why = r.why || '';
     if(r.state === 'notFinished') ggPopup('<b>' + locEsc(sn) + '</b> (' + locEsc(ggCfg.names[st] || st) + ') isn\u2019t ready to link.<br><br>' + locEsc(r.why));
     else if(r.state === 'bad') ggPopup('<b>' + locEsc(sn) + '</b> can\u2019t be used.<br><br>' + locEsc(r.why));
@@ -6439,7 +6447,7 @@ async function ggKitAdd(sn, slotIndex){
   ggRenderKit();
 }
 async function ggKitLinkAll(){
-  const parts = ggKitSlots.filter(x => x.state !== 'linked' && x.sn).map(x => x.sn);
+  const parts = ggKitSlots.filter(x => x.state !== 'linked' && x.sn).map(x => ({sn: x.sn, style: x.style}));
   const btn = document.getElementById('btnGgLinkAll'); if(btn){ btn.disabled = true; btn.textContent = 'Linking\u2026'; }
   try{
     const r = await sheetPost({action: 'gimbalLinkParts', parent: ggKitParent, parts: parts, person: document.getElementById('ggPerson').value.trim()});
@@ -6447,7 +6455,7 @@ async function ggKitLinkAll(){
       ggPopup('<b>All ' + r.linked.length + ' parts linked into ' + locEsc(ggKitParent) + '.</b><br><br>Scan ' + locEsc(ggKitParent) + ' again to sign it out of Link.', 'ok');
       await ggShowKit(ggKitParent);
     }else if(r.status === 'rejected'){
-      r.problems.forEach(pr => { const sl = ggKitSlots.find(x => x.sn === pr.serial); if(sl){ sl.state = /finish its stations/i.test(pr.why) ? 'notFinished' : 'bad'; sl.why = pr.why; } });
+      r.problems.forEach(pr => { const sl = ggKitSlots.find(x => x.sn === String(pr.serial).toUpperCase()); if(sl){ sl.state = /finish its stations/i.test(pr.why) ? 'notFinished' : 'bad'; sl.why = pr.why; } });
       ggRenderKit();
       ggPopup('<b>Nothing was linked.</b> Fix these first:<br><br>' + r.problems.map(pr => '<span class="loc-mono">' + locEsc(pr.serial) + '</span>: ' + locEsc(pr.why)).join('<br><br>'));
     }else{ ggPopup(locEsc(r.message || 'Could not link.')); ggRenderKit(); }
@@ -6461,7 +6469,7 @@ document.getElementById('ggKitPanel').addEventListener('keydown', e => {
   if(!v) return;
   ggPopupClose();
   if(v === ggKitParent || ggStyleOf(v) === ggCfg.parent){ ggScan(v); return; }   // scanning the D here signs it out of Link
-  if(!GG_SERIAL_RE.test(v)){ ggPopup('<b>' + locEsc(v) + '</b> is not a gimbal serial.'); return; }
+  if(/^(H2[B-F]|CMA)\d{4}/.test(v)){ ggPopup('<b>' + locEsc(v) + '</b> is a headset or optical module serial, not a gimbal part.'); return; }
   ggKitAdd(v, Number(inp.dataset.slot));
 });
 document.getElementById('ggKitPanel').addEventListener('click', e => {
@@ -6476,9 +6484,9 @@ async function ggScan(raw){
   const person = document.getElementById('ggPerson').value.trim();
   if(!sn) return;
   if(!person){ msg.innerHTML = '<span class="gg-bad">Enter your initials first.</span>'; document.getElementById('ggPerson').focus(); return; }
-  if(!GG_SERIAL_RE.test(sn)){ msg.innerHTML = '<span class="gg-bad">' + locEsc(sn) + ' is not a gimbal serial (they start with GG1, GG2 \u2026). Headsets are scanned on the Station Sign In/Out tab.</span>'; return; }
+  if(/^(H2[B-F]|CMA)\d{4}/.test(sn)){ msg.innerHTML = '<span class="gg-bad">' + locEsc(sn) + ' is a headset or optical module serial. Headsets are scanned on Headset Line \u2192 Sign In / Out.</span>'; return; }
   ggPopupClose();
-  // while a parent's link form is open, scanning a part puts it in the form
+  // while a parent's link form is open, scanning a part puts it in the form (supplier serials included)
   if(ggKitParent && sn !== ggKitParent && ggStyleOf(sn) !== ggCfg.parent){ msg.textContent = ''; ggKitAdd(sn); return; }
   const auto = document.getElementById('ggAutoDetect').checked;
   msg.textContent = 'Checking ' + sn + '\u2026';
@@ -6557,7 +6565,7 @@ document.getElementById('ggShipInput').addEventListener('keydown', e => {
   const raw = e.target.value.trim().toUpperCase(); e.target.value = '';
   const msg = document.getElementById('ggShipMsg');
   if(!raw) return;
-  if(!GG_SERIAL_RE.test(raw)){ msg.innerHTML = '<span class="gg-bad">' + locEsc(raw) + ' is not a gimbal serial.</span>'; return; }
+  if(!GG_SERIAL_RE.test(raw) && !ggParentOf[raw]){ const t = '<b>' + locEsc(raw) + '</b> isn\u2019t a gimbal serial or a part linked into a unit.'; msg.innerHTML = '<span class="gg-bad">' + t + '</span>'; ggPopup(t); return; }
   const sn = ggParentOf[raw] || raw;
   if(ggStyleOf(sn) !== ggCfg.parent){ const t = '<b>' + raw + '</b> is a ' + locEsc(ggCfg.names[ggStyleOf(raw)] || 'part') + ' that isn\u2019t linked into a ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + ' yet.<br><br>Only finished ' + locEsc(ggCfg.names[ggCfg.parent] || 'parents') + ' ship.'; msg.innerHTML = '<span class="gg-bad">' + t.replace(/<br><br>/g, ' ') + '</span>'; ggPopup(t); return; }
   if(ggBox.indexOf(sn) > -1){ msg.textContent = sn + ' is already in this box.'; return; }
@@ -7185,7 +7193,9 @@ async function runGimbalLocate(serial, withParts){
   try{
     if(!ggConfigLoaded) await ggLoadConfig();
     const [ggSerials, ggSent, ggLinks] = await Promise.all([locateTab('ggSerials'), ggTab('GimbalSentToWH'), ggTab('GimbalLinks')]);
-    const act = ggActiveLinks(ggLinks), style = ggStyleOf(serial), route = ggRoute(style), N = route.length, isParent = style === ggCfg.parent;
+    const act = ggActiveLinks(ggLinks);
+    const genRow = ggSerials.slice(1).find(r => locCell(r[4]).toUpperCase() === serial), linkRow = ggLinks.slice(1).find(r => locCell(r[2]).toUpperCase() === serial);
+    const style = (genRow && locCell(genRow[1]).toUpperCase()) || (linkRow && locCell(linkRow[3]).toUpperCase()) || ggStyleOf(serial), route = ggRoute(style), N = route.length, isParent = style === ggCfg.parent;
     const evOf = async sn => ((await sheetPost({action: 'getGimbalSerialEvents', serial: sn})).events || [])
       .map(e => ({sn: sn, event: locCell(e.event), person: locCell(e.person), st: Number(stationNumberFromLabel(locCell(e.station)) || 0), t: locDate(e.dateTime), comment: locCell(e.comment)})).filter(e => e.t).sort((a, b) => a.t - b.t);
     const events = await evOf(serial);
@@ -7264,7 +7274,7 @@ async function runLocate(query){
   msg.textContent = 'Looking up ' + serial + '\u2026';
   out.innerHTML = '';
   const btn = document.getElementById('btnLocate');
-  if(GG_SERIAL_RE.test(serial)){ btn.disabled = true; try{ await runGimbalLocate(serial); }finally{ btn.disabled = false; } return; }
+  if(GG_SERIAL_RE.test(serial) || (!/^(H2[B-F]|CMA)/.test(serial) && GG_OUTSIDE_RE.test(serial) && serial.length >= 6)){ btn.disabled = true; try{ await runGimbalLocate(serial); }finally{ btn.disabled = false; } return; }
   btn.disabled = true;
   try{
     const [serialRows, opticalRows, sentRows, holdRows, countRows, scrapRows, holdsRows] = await Promise.all(
