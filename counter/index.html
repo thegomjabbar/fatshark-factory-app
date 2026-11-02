@@ -87,12 +87,14 @@ ol.steps>li::before{content:counter(s);width:34px;height:34px;border-radius:50%;
 <script>
 const $ = s => document.querySelector(s);
 const base = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '');
-const DEFAULT = 'fatshark-camera1.local:8080';
+const DEFAULT = '192.168.1.214:8080';
 const store = { get(k){ try{ return localStorage.getItem(k); }catch{ return null; } }, set(k, v){ try{ localStorage.setItem(k, v); }catch{} } };
 function clean(a){ a = (a || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, ''); if(a && !/:\d+$/.test(a)) a += ':8080'; return a || DEFAULT; }
 function setAddr(a){ a = clean(a); $('#addr').value = a; $('#open').href = 'http://' + a + '/';
   const host = a.replace(/:\d+$/, ''); $('#sshCmd').textContent = `ssh username@${host}`; }
-setAddr(store.get('partcounter.addr') || DEFAULT);
+const fromLink = new URLSearchParams(location.search).get('addr');
+if(fromLink){ store.set('partcounter.addr', clean(fromLink)); }
+setAddr(fromLink || store.get('partcounter.addr') || DEFAULT);
 $('#saveAddr').onclick = () => { setAddr($('#addr').value); store.set('partcounter.addr', $('#addr').value); toast('Saved on this computer'); };
 $('#addr').addEventListener('keydown', e => { if(e.key === 'Enter') $('#saveAddr').click(); });
 $('#getCmd').textContent = `curl -fsSL ${base}get.sh | bash -s -- ${base}`;
