@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Part Counter · Fat Shark</title>
+<style>
+:root{
+  --bg:#110e1c; --panel:#1a1630; --panel2:#241f40; --well:#0d0b17; --line:#352e5c;
+  --text:#efecff; --dim:#aaa2d4; --accent:#b9a7ff; --ink:#1b1240; --ok:#4ade80; --warn:#fbbf24;
+  --sans:"Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono:ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--sans)}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+header{display:flex;align-items:center;gap:14px;padding:14px 22px;background:var(--panel);border-bottom:2px solid var(--line)}
+.brand{font-weight:800;font-size:20px;letter-spacing:.04em}
+.brand span{color:var(--accent)}
+.chip{padding:5px 12px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);font-size:14px;color:var(--dim)}
+.chip b{color:var(--text)}
+.spacer{flex:1}
+main{max-width:920px;margin:0 auto;padding:26px 20px 50px;display:grid;gap:20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+h1{font-size:26px;margin:0 0 6px}
+h2{font-size:19px;margin:0 0 12px}
+p{margin:0 0 10px}
+.dim{color:var(--dim)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:50px;padding:10px 20px;border-radius:10px;border:2px solid var(--line);
+  background:var(--panel2);font-weight:650;font-size:16px;cursor:pointer;text-decoration:none;color:var(--text)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--ink)}
+.btn.huge{min-height:66px;font-size:21px;padding:14px 28px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input[type=text]{background:var(--well);border:2px solid var(--line);border-radius:10px;padding:12px 14px;font-size:17px;min-width:0;flex:1}
+.field{display:grid;gap:6px;color:var(--dim);font-size:14.5px}
+ol.steps{margin:0;padding:0;list-style:none;counter-reset:s;display:grid;gap:16px}
+ol.steps>li{counter-increment:s;display:grid;grid-template-columns:38px 1fr;gap:12px}
+ol.steps>li::before{content:counter(s);width:34px;height:34px;border-radius:50%;background:var(--accent);color:var(--ink);font-weight:800;display:grid;place-items:center}
+.cmd{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px}
+.cmd code{display:block;background:var(--well);border:2px solid var(--line);border-radius:10px;padding:12px 14px;font:14.5px var(--mono);overflow-x:auto;white-space:nowrap}
+.note{padding:12px 14px;border-radius:10px;background:var(--well);border-left:4px solid var(--warn);font-size:15px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--accent);color:var(--ink);padding:12px 20px;border-radius:10px;font-weight:700;box-shadow:0 8px 30px #0008}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">FAT SHARK <span>Part Counter</span></div>
+  <div class="spacer"></div>
+  <span class="chip">latest version <b id="ver">…</b></span>
+</header>
+
+<main>
+  <section class="card">
+    <h1>Open the counter</h1>
+    <p class="dim">The counter runs on the Raspberry Pi at the station. This computer must be on the same network as the Pi.</p>
+    <div class="field" style="margin:14px 0">Counter address
+      <div class="row"><input type="text" id="addr" spellcheck="false" aria-label="Counter address"><button class="btn" id="saveAddr">Save</button></div>
+    </div>
+    <a class="btn primary huge" id="open" target="_blank" rel="noopener">Open Part Counter</a>
+    <p class="dim" style="margin-top:12px;font-size:14.5px">If it won't open: check the Pi is powered and on the network, then try its number address instead (for example <code>192.168.1.50:8080</code>). Ask IT to reserve that address so it never changes.</p>
+  </section>
+
+  <section class="card">
+    <h2>Set up a new Pi, or update one</h2>
+    <ol class="steps">
+      <li><div><b>Get the Pi ready.</b> Raspberry Pi OS (64-bit) with SSH on, the camera connected, the official 27W power supply, and a network connection with internet.</div></li>
+      <li><div><b>Log into the Pi</b> from any computer (PowerShell on Windows, Terminal on Mac), using the Pi's username and name:
+        <div class="cmd"><code id="sshCmd">ssh username@fatshark-camera1.local</code><button class="btn" data-copy="sshCmd">Copy</button></div></div></li>
+      <li><div><b>Paste this line on the Pi</b> and press Enter. It installs the first time and updates every time after, keeping saved parts and the count log.
+        <div class="cmd"><code id="getCmd">…</code><button class="btn primary" data-copy="getCmd">Copy</button></div></div></li>
+      <li><div><b>Open the counter</b> with the button at the top of this page.</div></li>
+    </ol>
+    <p class="note" style="margin-top:18px">Already running? Inside the counter, open <b>Detection and camera settings</b>, then <b>Software</b>, and press <b>Update now</b>. No typing needed.</p>
+  </section>
+
+  <section class="card">
+    <h2>Manual download</h2>
+    <p class="dim">For copying onto a Pi by hand.</p>
+    <a class="btn" href="partcounter.zip" download>Download partcounter.zip</a>
+  </section>
+</main>
+<div id="toast" hidden></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const base = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '');
+const DEFAULT = 'fatshark-camera1.local:8080';
+const store = { get(k){ try{ return localStorage.getItem(k); }catch{ return null; } }, set(k, v){ try{ localStorage.setItem(k, v); }catch{} } };
+function clean(a){ a = (a || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, ''); if(a && !/:\d+$/.test(a)) a += ':8080'; return a || DEFAULT; }
+function setAddr(a){ a = clean(a); $('#addr').value = a; $('#open').href = 'http://' + a + '/';
+  const host = a.replace(/:\d+$/, ''); $('#sshCmd').textContent = `ssh username@${host}`; }
+setAddr(store.get('partcounter.addr') || DEFAULT);
+$('#saveAddr').onclick = () => { setAddr($('#addr').value); store.set('partcounter.addr', $('#addr').value); toast('Saved on this computer'); };
+$('#addr').addEventListener('keydown', e => { if(e.key === 'Enter') $('#saveAddr').click(); });
+$('#getCmd').textContent = `curl -fsSL ${base}get.sh | bash -s -- ${base}`;
+document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
+  const t = $('#' + b.dataset.copy).textContent;
+  try{ await navigator.clipboard.writeText(t); toast('Copied'); }
+  catch{ const r = document.createRange(); r.selectNodeContents($('#' + b.dataset.copy)); getSelection().removeAllRanges(); getSelection().addRange(r); toast('Press Ctrl+C to copy'); }
+});
+fetch('version.txt', {cache:'no-store'}).then(r => r.ok ? r.text() : '?').then(v => $('#ver').textContent = v.trim()).catch(() => $('#ver').textContent = '?');
+let tt; function toast(m){ const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, 2000); }
+</script>
+</body>
+</html>
