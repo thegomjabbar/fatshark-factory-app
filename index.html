@@ -6420,7 +6420,7 @@ async function ggShowKit(parent, kitPromise){
   ggKitLoading = false;
   ggRenderKit(); ggKitFocusNext();
 }
-let ggKitLoading = false;
+let ggKitLoading = false, ggKitPendingSignIn = null;   // a unit waiting for its parts before it's signed in
 function ggKitFocusNext(){   // the cursor goes to the next empty slot, so the scanner just keeps going
   const inp = document.querySelector('#ggKitPanel .gg-slot-in');
   if(inp) inp.focus(); else document.getElementById('ggScanInput').focus();
@@ -6476,8 +6476,15 @@ async function ggKitLinkAll(){
   try{
     const r = await sheetPost({action: 'gimbalLinkParts', parent: ggKitParent, parts: parts, person: document.getElementById('ggPerson').value.trim()});
     if(r.status === 'ok'){
-      ggPopup('<b>All ' + r.linked.length + ' parts linked into ' + locEsc(ggKitParent) + '.</b><br><br>Scan ' + locEsc(ggKitParent) + ' again to sign it out of Link.', 'ok');
-      await ggShowKit(ggKitParent);
+      const unit = ggKitParent, stName = ggRoute(ggStyleOf(unit))[(ggKitFor(ggStyleOf(unit)) || {linkStation: 1}).linkStation - 1] || 'the station';
+      if(ggKitPendingSignIn === unit){
+        ggKitPendingSignIn = null;
+        await ggScan(unit);   // now it signs in, with its parts linked
+        ggPopup('<b>All ' + r.linked.length + ' parts linked into ' + locEsc(unit) + '</b>, and it is signed into <b>' + locEsc(stName) + '</b>.<br><br>Scan ' + locEsc(unit) + ' again when it\u2019s done to sign it out.', 'ok');
+        return;
+      }
+      ggPopup('<b>All ' + r.linked.length + ' parts linked into ' + locEsc(unit) + '.</b><br><br>Scan ' + locEsc(unit) + ' again to sign it out of ' + locEsc(stName) + '.', 'ok');
+      await ggShowKit(unit);
     }else if(r.status === 'rejected'){
       r.problems.forEach(pr => { const sl = ggKitSlots.find(x => x.sn === String(pr.serial).toUpperCase()); if(sl){ sl.state = /finish its stations/i.test(pr.why) ? 'notFinished' : 'bad'; sl.why = pr.why; } });
       ggRenderKit();
@@ -6485,7 +6492,7 @@ async function ggKitLinkAll(){
     }else{ ggPopup(locEsc(r.message || 'Could not link.')); ggRenderKit(); }
   }catch(e){ ggPopup('Could not link: ' + locEsc(e.message)); ggRenderKit(); }
 }
-function ggHideKit(){ ggKitParent = null; document.getElementById('ggKitPanel').style.display = 'none'; document.getElementById('ggScanLabel').textContent = 'Scan or type a gimbal serial number, then press Enter'; }
+function ggHideKit(){ ggKitParent = null; ggKitPendingSignIn = null; document.getElementById('ggKitPanel').style.display = 'none'; document.getElementById('ggScanLabel').textContent = 'Scan or type a gimbal serial number, then press Enter'; }
 document.getElementById('ggKitPanel').addEventListener('keydown', e => {
   const inp = e.target.closest && e.target.closest('.gg-slot-in'); if(!inp || e.key !== 'Enter') return;
   e.preventDefault();
@@ -6523,7 +6530,7 @@ async function ggScan(raw){
   try{
     const r = await sheetPost({action: 'gimbalScanAction', serial: sn, autoMode: auto, selectedStation: String(ggSelected), person: person});
     const unit = r.serialUsed || sn, st = ggStyleOf(unit), via = unit !== sn ? ' (scanned ' + sn + ', a part inside it)' : '';
-    if(isParent && ggKitParent === sn && !(r.atLink || r.reason === 'kitIncomplete')) ggHideKit();   // not a Link sign-in after all
+    if(isParent && ggKitParent === sn && !(r.atLink || r.reason === 'kitIncomplete' || r.reason === 'linkFirst')) ggHideKit();   // not a Link sign-in after all
     if(r.status === 'ok'){
       const dur = r.duration ? formatDuration(r.duration) : '', stName = ggStationName(r.targetStation, st);
       msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + unit + ' (' + locEsc(ggCfg.names[st] || st) + ') ' + (r.event === 'MoveIn' ? 'signed into ' : 'signed out of ') + locEsc(stName) + '</b>' + via +
@@ -6537,6 +6544,11 @@ async function ggScan(raw){
       else if(ggKitParent === unit && r.event === 'MoveOut') ggHideKit();
     }else{
       let text;
+      if(r.reason === 'linkFirst'){
+        ggKitPendingSignIn = unit; ggShowKit(unit, kitP);
+        msg.innerHTML = '<b>Link the parts for ' + locEsc(unit) + ' first.</b> It signs into ' + locEsc(r.stationName || 'the station') + ' as soon as they\u2019re linked.';
+        return;
+      }
       if(r.reason === 'kitIncomplete'){ text = '<b>' + locEsc(unit) + ' can\u2019t leave the Link station yet.</b><br><br>It still needs ' + locEsc((r.kit && r.kit.missing || []).join(', ') || 'parts') + '.<br>Scan them into the form, then press <b>Link all parts</b>.'; ggShowKit(unit, kitP); }
       else if(r.status === 'ignored') text = '<b>' + locEsc(sn) + '</b> was just scanned.<br><br>The double scan was ignored.';
       else if(r.status === 'complete') text = st === ggCfg.parent ? '<b>' + locEsc(unit) + '</b> has already finished every station.<br><br>Ship it from <b>Ship to warehouse</b>.'
