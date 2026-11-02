@@ -24,6 +24,14 @@ chmod +x "$DIR/install.sh" "$DIR/app.py"
 echo "$BASE" > "$DIR/data/update_url.txt"      # lets the Update button in the app find new versions
 
 if [ -f /etc/systemd/system/partcounter.service ]; then
+echo "== Allowing the counter's Shut down / Restart buttons =="
+RULE_USER="${SUDO_USER:-$USER}"
+TMPR="$(mktemp)"
+echo "$RULE_USER ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff, /usr/bin/systemctl reboot" > "$TMPR"
+if sudo visudo -cf "$TMPR" >/dev/null; then
+  sudo install -m 0440 -o root -g root "$TMPR" /etc/sudoers.d/partcounter
+fi
+rm -f "$TMPR"
   echo "== Restarting the counter =="
   sudo systemctl enable partcounter >/dev/null 2>&1 || true
   sudo systemctl restart partcounter
