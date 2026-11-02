@@ -1925,7 +1925,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <div class="field"><span class="om-live-fieldlab">&nbsp;</span><button class="secondary" id="btnGgAddPart" style="width:100%;">Add a part type (next GG number)</button></div>
     </div>
     <div id="ggStationList"></div>
-    <div class="btnrow" style="display:flex; gap:8px;"><button class="secondary" id="btnGgAddStation">Add station</button></div>
+    <div class="btnrow" style="display:flex; gap:8px;"><button class="secondary" id="btnGgAddStation">Add station</button><button class="secondary" id="btnGgAddComponent">Add a component (supplier serial, e.g. camera)</button></div>
+    <div id="ggKitEdit"></div>
     <h3 style="margin:14px 0 6px; font-size:13px;">Linking</h3>
     <div class="row3">
       <label class="field"><span>Parent (ships)</span><select id="ggParentSel"></select></label>
@@ -6167,8 +6168,28 @@ async function sendTestSummary(){
 // =====================================================================
 const GG_SERIAL_RE = /^GG[A-Z0-9]{1,3}\d{4}[A-Z0-9]{6}$/;   // GG1…GG4, GGM …
 const GG_PERSON_KEY = 'gg-person-v1';
-let ggCfg = {parent: 'GG4', linkStation: 1, names: {GG1: 'Subassembly A', GG2: 'Subassembly B', GG3: 'Subassembly C', GG4: 'Subassembly D', GGM: 'Motor'},
-  routes: {GG1: ['Laser Mark', 'Build', 'Test'], GG2: ['Laser Mark', 'Build', 'Test'], GG3: ['Assembly', 'Test'], GG4: ['Link', 'Assemble', 'Final Test'], GGM: []}, needs: {GG1: 1, GG2: 1, GG3: 1, GGM: 4}};
+let ggCfg = {parent: 'GG4', linkStation: 1, names: {GG1: 'Subassembly A', GG2: 'Subassembly B', GG3: 'Subassembly C', GG4: 'Subassembly D', GGM: 'Motor', CAM: 'Camera', GPS: 'GPS'},
+  routes: {GG1: ['Laser Mark', 'Build', 'Test'], GG2: ['Laser Mark', 'Build', 'Test'], GG3: ['Assembly', 'Test'], GG4: ['Link', 'Assemble', 'Final Test'], GGM: [], CAM: [], GPS: []}, needs: {GG1: 1, GG2: 1, GG3: 1, GGM: 4},
+  kits: {GG1: {linkStation: 2, needs: {CAM: 1, GPS: 1}}}, examples: {CAM: 'A260705215', GPS: 'AL9017030470200'}};
+// "A260705215" -> A + 9 digits; scans that fit a component's example go into that component's slot
+function ggPatternOf(example){
+  const ex = String(example || '').trim().toUpperCase(); if(!ex) return null;
+  const m = ex.match(/^([A-Z]*)(.*)$/), rest = m[2];
+  return new RegExp('^' + m[1] + (/^\d+$/.test(rest) ? '\\d{' + rest.length + '}' : '[A-Z0-9\\-]{' + rest.length + '}') + '$');
+}
+function ggPatternText(example){
+  const ex = String(example || '').trim().toUpperCase(); if(!ex) return '';
+  const m = ex.match(/^([A-Z]*)(.*)$/);
+  return (m[1] ? m[1] + ' + ' : '') + m[2].length + (/^\d+$/.test(m[2]) ? ' digits' : ' characters');
+}
+function ggStyleByPattern(sn, styles){ const ex = ggCfg.examples || {}; return styles.find(st => { const re = ggPatternOf(ex[st]); return re && re.test(sn); }) || ''; }
+// what a part takes and at which of its stations (the parent uses needs/linkStation)
+function ggKitFor(st){
+  if(st === ggCfg.parent) return {linkStation: ggCfg.linkStation, needs: ggCfg.needs};
+  const k = (ggCfg.kits || {})[st];
+  return k && k.needs && Object.values(k.needs).some(n => n > 0) ? {linkStation: Number(k.linkStation) || 1, needs: k.needs} : null;
+}
+function ggIsGgStyle(st){ return /^GG[A-Z0-9]{1,3}$/.test(st); }
 let ggConfigLoaded = false;
 let ggSub = 'status', ggData = null, ggRecent = [], ggBox = [], ggLastShip = null, ggBatch = [], ggTimer = null;
 let ggPart = 'GG1', ggSelected = 1, ggKitParent = null;
@@ -6182,14 +6203,14 @@ async function ggTab(name){
   catch(e){ if(/not found/i.test(e.message)) return []; throw e; }
 }
 async function ggLoadConfig(){
-  try{ const r = await sheetPost({action: 'getGimbalConfig'}); if(r && r.routes){ ggCfg = {parent: r.parent, linkStation: r.linkStation, names: r.names || {}, routes: r.routes, needs: r.needs || {}}; ggConfigLoaded = true; } }catch(e){}
+  try{ const r = await sheetPost({action: 'getGimbalConfig'}); if(r && r.routes){ ggCfg = {parent: r.parent, linkStation: r.linkStation, names: r.names || {}, routes: r.routes, needs: r.needs || {}, kits: r.kits || {}, examples: r.examples || {}}; ggConfigLoaded = true; } }catch(e){}
   ['ggParentName1', 'ggParentName2'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = ggCfg.names[ggCfg.parent] || ggCfg.parent; });
   ggFillStyleSelect(); ggRenderChips(); ggRenderStationEditor();
 }
 function ggFillStyleSelect(){
   const sel = document.getElementById('ggStyle'); if(!sel) return;
   const keep = sel.value;
-  sel.innerHTML = ggStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggCfg.names[st] || st) + '</option>').join('');
+  sel.innerHTML = ggStyles().filter(ggIsGgStyle).map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggCfg.names[st] || st) + '</option>').join('');
   if(keep && ggCfg.routes[keep]) sel.value = keep;
 }
 function ggShowSub(name){
@@ -6225,12 +6246,14 @@ function ggActiveLinks(linkRows){   // {parentOf, partsOf}
   });
   return {parentOf, partsOf};
 }
-function ggFreeStyles(){ return Object.keys(ggCfg.needs).filter(st => Array.isArray(ggCfg.routes[st]) && !ggCfg.routes[st].length); }
-function ggOurs(sn){ return GG_SERIAL_RE.test(sn) && (ggCfg.routes[ggStyleOf(sn)] !== undefined || ggCfg.needs[ggStyleOf(sn)]); }
+function ggFreeStyles(needs){ return Object.keys(needs || ggCfg.needs).filter(st => Array.isArray(ggCfg.routes[st]) && !ggCfg.routes[st].length); }
+function ggOurs(sn){ return GG_SERIAL_RE.test(sn) && ggCfg.routes[ggStyleOf(sn)] !== undefined; }
+let ggKitNeeds = {};   // the needs of the assembly whose parts form is open
 const GG_OUTSIDE_RE = /^[A-Z0-9][A-Z0-9._\-\/]{2,39}$/;
-function ggKitOf(parts){
+function ggKitOf(parts, needs){
+  needs = needs || ggCfg.needs;
   const have = {}; (parts || []).forEach(p => { have[p.style] = (have[p.style] || 0) + 1; });
-  const rows = Object.keys(ggCfg.needs).map(st => ({st, need: ggCfg.needs[st], have: have[st] || 0}));
+  const rows = Object.keys(needs).filter(st => needs[st] > 0).map(st => ({st, need: needs[st], have: have[st] || 0}));
   return {rows, complete: rows.every(r => r.have >= r.need)};
 }
 
@@ -6325,7 +6348,7 @@ function ggRenderChips(){
   pr.innerHTML = withStations.map(st => '<button class="gg-part-btn' + (st === ggPart ? ' active' : '') + '" data-ggpart="' + st + '">' + locEsc(ggCfg.names[st] || st) + ' \u00b7 ' + st + (st === ggCfg.parent ? ' (parent)' : '') + '</button>').join('');
   const route = ggRoute(ggPart); if(ggSelected > route.length) ggSelected = 1;
   row.innerHTML = route.map((nm, i) => '<button class="gg-station-btn' + (i + 1 === ggSelected ? ' active' : '') + '" data-ggstation="' + (i + 1) + '"><b>' + (i + 1) + '</b><span>' + locEsc(nm) + '</span>' +
-    (ggPart === ggCfg.parent && i + 1 === ggCfg.linkStation ? '<span class="gg-stage">\u{1F517} links parts</span>' : '<span class="gg-stage">' + ggPart + '</span>') + '</button>').join('');
+    (ggKitFor(ggPart) && i + 1 === ggKitFor(ggPart).linkStation ? '<span class="gg-stage">\u{1F517} links parts</span>' : '<span class="gg-stage">' + ggPart + '</span>') + '</button>').join('');
   const here = document.getElementById('ggCurrentlyHere'), name = ggPartName(ggPart) + ', ' + ggStationName(ggSelected, ggPart);
   if(!ggData){ here.textContent = 'Press Refresh station status to see what is signed in at ' + name + '.'; return; }
   const list = (ggData.at[ggPart] && ggData.at[ggPart][ggSelected]) || [];
@@ -6369,9 +6392,9 @@ document.addEventListener('keydown', e => {   // Enter or Esc closes it; the nex
 let ggKitSlots = [];   // [{style, sn, state: ''|'checking'|'ready'|'notFinished'|'bad'|'linked', why}]
 function ggKitSlotsFor(linked){
   const slots = [];
-  Object.keys(ggCfg.needs).forEach(st => {
+  Object.keys(ggKitNeeds).forEach(st => {
     const mine = (linked || []).filter(p => p.style === st);
-    for(let i = 0; i < ggCfg.needs[st]; i++){
+    for(let i = 0; i < (ggKitNeeds[st] || 0); i++){
       const l = mine[i];
       slots.push(l ? {style: st, sn: l.sn, state: 'linked', why: 'Linked', linkId: l.linkId} : {style: st, sn: '', state: '', why: ''});
     }
@@ -6380,10 +6403,11 @@ function ggKitSlotsFor(linked){
 }
 async function ggShowKit(parent, kitPromise){
   const fresh = ggKitParent !== parent;
-  ggKitParent = parent; ggPart = ggStyleOf(parent) || ggCfg.parent; ggSelected = ggCfg.linkStation; ggRenderChips();
+  const myKit = ggKitFor(ggStyleOf(parent)) || {linkStation: ggCfg.linkStation, needs: ggCfg.needs};
+  ggKitParent = parent; ggKitNeeds = myKit.needs; ggPart = ggStyleOf(parent) || ggCfg.parent; ggSelected = myKit.linkStation; ggRenderChips();
   document.getElementById('ggKitPanel').style.display = '';
   if(fresh){ ggKitSlots = ggKitSlotsFor([]); ggKitLoading = true; ggRenderKit(); ggKitFocusNext(); }
-  document.getElementById('ggScanLabel').textContent = 'Scan the parts for ' + parent + ' into the form above (any order), or scan ' + parent + ' here to sign it out of Link';
+  document.getElementById('ggScanLabel').textContent = 'Scan the parts for ' + parent + ' into the form above (any order), or scan ' + parent + ' here to sign it out of ' + (ggRoute(ggStyleOf(parent))[myKit.linkStation - 1] || 'this station');
   let r;
   try{ r = await (kitPromise || sheetPost({action: 'gimbalKit', parent: parent})); }
   catch(e){ ggKitLoading = false; ggRenderKit(); ggPopup('Could not load the parts already linked to ' + locEsc(parent) + ':<br><br>' + locEsc(e.message)); return; }
@@ -6407,13 +6431,13 @@ function ggRenderKit(){
   const allLinked = ggKitSlots.every(x => x.state === 'linked');
   const canLink = open.length && filled.length === open.length && open.every(x => x.state === 'ready');
   const firstEmpty = ggKitSlots.findIndex(x => !x.sn);
-  let html = '<h3>\u{1F517} Parts for ' + locEsc(ggCfg.names[ggCfg.parent] || ggCfg.parent) + ' <span class="loc-mono">' + locEsc(parent) + '</span></h3>';
-  Object.keys(ggCfg.needs).forEach(st => {
+  let html = '<h3>\u{1F517} Parts for ' + locEsc(ggCfg.names[ggStyleOf(parent)] || ggStyleOf(parent)) + ' <span class="loc-mono">' + locEsc(parent) + '</span></h3>';
+  Object.keys(ggKitNeeds).filter(st => ggKitNeeds[st] > 0).forEach(st => {
     const group = ggKitSlots.map((x, i) => Object.assign({i: i}, x)).filter(x => x.style === st);
     html += '<div class="gg-slot-group"><div class="lab">' + locEsc(ggPartName(st)) + ' \u2014 ' + group.filter(x => x.state === 'linked' || x.state === 'ready').length + ' of ' + group.length + ' ready</div><div class="gg-slots">' +
       group.map((x, n) => '<div class="gg-slot ' + x.state + (x.i === firstEmpty ? ' next' : '') + '">' +
         (x.sn ? (x.state !== 'linked' ? '<button class="x" data-gg-slot-clear="' + x.i + '" title="Remove from the form">\u00d7</button>' : '') + '<div class="sn">' + locEsc(x.sn) + '</div><div class="why">' + (x.state === 'checking' ? 'Checking\u2026' : (x.state === 'linked' ? '\u2713 ' : x.state === 'ready' ? '\u2713 ' : '\u26a0 ') + locEsc(x.why)) + '</div>'
-          : '<input type="text" class="gg-slot-in" data-slot="' + x.i + '" autocomplete="off" spellcheck="false" placeholder="Scan ' + locEsc(ggCfg.names[st] || st) + (group.length > 1 ? ' ' + (n + 1) + ' of ' + group.length : '') + '\u2026">') + '</div>').join('') + '</div></div>';
+          : '<input type="text" class="gg-slot-in" data-slot="' + x.i + '" autocomplete="off" spellcheck="false" placeholder="Scan ' + locEsc(ggCfg.names[st] || st) + (group.length > 1 ? ' ' + (n + 1) + ' of ' + group.length : '') + '\u2026' + ((ggCfg.examples || {})[st] ? ' (' + locEsc(ggPatternText(ggCfg.examples[st])) + ')' : '') + '">') + '</div>').join('') + '</div></div>';
   });
   html += allLinked ? '<div class="hint" style="font-size:14px;"><b style="color:#1d7a3f;">All parts are linked.</b> Scan ' + locEsc(parent) + ' again to sign it out of Link.</div>'
     : '<div class="btnrow" style="display:flex; gap:8px; flex-wrap:wrap;"><button class="accent" id="btnGgLinkAll"' + (canLink ? '' : ' disabled') + '>Link all parts (' + filled.length + ' of ' + open.length + ')</button><button class="secondary" id="btnGgKitClose">Close</button></div>' +
@@ -6428,15 +6452,15 @@ function ggRenderKit(){
 async function ggKitAdd(sn, slotIndex){
   let st = ggStyleOf(sn);
   if(!ggOurs(sn)){
-    const free = ggFreeStyles(), want0 = ggKitSlots[slotIndex];
-    st = want0 && free.indexOf(want0.style) > -1 ? want0.style : (free.find(f => ggKitSlots.some(x => x.style === f && !x.sn)) || free[0] || '');
+    const free = ggFreeStyles(ggKitNeeds), want0 = ggKitSlots[slotIndex];
+    st = ggStyleByPattern(sn, free) || (want0 && free.indexOf(want0.style) > -1 ? want0.style : (free.find(f => ggKitSlots.some(x => x.style === f && !x.sn)) || free[0] || ''));
     if(!st || /^(H2[B-F]|CMA)\d{4}/.test(sn) || !GG_OUTSIDE_RE.test(sn)){ ggPopup('<b>' + locEsc(sn) + '</b> isn\u2019t a serial this form can take.' + (st ? '' : ' No part type accepts supplier serials.')); return; }
   }
   if(ggKitSlots.some(x => x.sn === sn)){ ggPopup(sn + ' is already in this form.', 'info'); return; }
-  if(!ggCfg.needs[st]){ ggPopup('<b>' + sn + '</b> is a ' + locEsc(ggCfg.names[st] || st) + ', which doesn\u2019t go into a ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + '.'); return; }
+  if(!ggKitNeeds[st]){ ggPopup('<b>' + sn + '</b> is a ' + locEsc(ggCfg.names[st] || st) + ', which doesn\u2019t go into a ' + locEsc(ggCfg.names[ggStyleOf(ggKitParent)] || 'this unit') + '.'); return; }
   const want = ggKitSlots[slotIndex];
   const slot = want && want.style === st && !want.sn ? want : ggKitSlots.find(x => x.style === st && !x.sn);   // a part scanned into another part's slot goes where it belongs
-  if(!slot){ ggPopup(ggKitParent + ' already has all ' + ggCfg.needs[st] + ' \u00d7 ' + locEsc(ggCfg.names[st] || st) + ' in the form. Remove one (\u00d7) first if it\u2019s the wrong part.', 'info'); return; }
+  if(!slot){ ggPopup(ggKitParent + ' already has all ' + ggKitNeeds[st] + ' \u00d7 ' + locEsc(ggCfg.names[st] || st) + ' in the form. Remove one (\u00d7) first if it\u2019s the wrong part.', 'info'); return; }
   slot.sn = sn; slot.state = 'checking'; slot.why = ''; ggRenderKit(); ggKitFocusNext();
   try{
     const r = await sheetPost({action: 'gimbalPartCheck', serial: sn, parent: ggKitParent, style: st});
@@ -6468,7 +6492,7 @@ document.getElementById('ggKitPanel').addEventListener('keydown', e => {
   const v = inp.value.trim().toUpperCase(); inp.value = '';
   if(!v) return;
   ggPopupClose();
-  if(v === ggKitParent || ggStyleOf(v) === ggCfg.parent){ ggScan(v); return; }   // scanning the D here signs it out of Link
+  if(v === ggKitParent || ggStyleOf(v) === ggStyleOf(ggKitParent) || (ggOurs(v) && ggKitFor(ggStyleOf(v)) && !ggKitNeeds[ggStyleOf(v)])){ ggScan(v); return; }   // the unit itself: sign it out
   if(/^(H2[B-F]|CMA)\d{4}/.test(v)){ ggPopup('<b>' + locEsc(v) + '</b> is a headset or optical module serial, not a gimbal part.'); return; }
   ggKitAdd(v, Number(inp.dataset.slot));
 });
@@ -6487,14 +6511,14 @@ async function ggScan(raw){
   if(/^(H2[B-F]|CMA)\d{4}/.test(sn)){ msg.innerHTML = '<span class="gg-bad">' + locEsc(sn) + ' is a headset or optical module serial. Headsets are scanned on Headset Line \u2192 Sign In / Out.</span>'; return; }
   ggPopupClose();
   // while a parent's link form is open, scanning a part puts it in the form (supplier serials included)
-  if(ggKitParent && sn !== ggKitParent && ggStyleOf(sn) !== ggCfg.parent){ msg.textContent = ''; ggKitAdd(sn); return; }
+  if(ggKitParent && sn !== ggKitParent && ggStyleOf(sn) !== ggStyleOf(ggKitParent) && !(ggOurs(sn) && ggKitFor(ggStyleOf(sn)) && !ggKitNeeds[ggStyleOf(sn)])){ msg.textContent = ''; ggKitAdd(sn); return; }
   const auto = document.getElementById('ggAutoDetect').checked;
   msg.textContent = 'Checking ' + sn + '\u2026';
-  const isParent = ggStyleOf(sn) === ggCfg.parent;
+  const snKit = ggOurs(sn) ? ggKitFor(ggStyleOf(sn)) : null, isParent = !!snKit;
   const kitP = isParent ? sheetPost({action: 'gimbalKit', parent: sn}) : null;   // in parallel with the sign-in
   if(kitP) kitP.catch(() => {});
-  // open the parts form straight away; it closes again below if this scan isn't a Link sign-in
-  const openedEarly = isParent && auto && ggKitParent !== sn && ggData && ggCfg.linkStation === 1 && !Object.values((ggData.at[ggCfg.parent]) || {}).flat().some(x => x.sn === sn);
+  // open the parts form straight away when the very first station takes parts; it closes again below if not
+  const openedEarly = isParent && auto && ggKitParent !== sn && ggData && snKit.linkStation === 1 && !Object.values((ggData.at[ggStyleOf(sn)]) || {}).flat().some(x => x.sn === sn);
   if(openedEarly) ggShowKit(sn, kitP);
   try{
     const r = await sheetPost({action: 'gimbalScanAction', serial: sn, autoMode: auto, selectedStation: String(ggSelected), person: person});
@@ -6771,6 +6795,15 @@ function ggRenderStationEditor(){
   document.getElementById('ggStationList').innerHTML = (ggRoute(ggEditPart).length ? '' : '<div class="hint" style="margin-bottom:6px;">No stations: this part is ready to link as soon as its serial exists. Add a station if it needs one.</div>') + ggRoute(ggEditPart).map((s, i) => '<div class="gg-st-row"><b>' + (i + 1) + '</b><input type="text" class="gg-st-name" value="' + locEsc(s) + '"><button class="secondary" data-gg-del="' + i + '" style="padding:4px 10px;">\u00d7</button></div>').join('');
   const ps = document.getElementById('ggParentSel'); ps.innerHTML = ggStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggCfg.names[st] || st) + '</option>').join(''); ps.value = ggCfg.parent;
   const ls = document.getElementById('ggLinkStation'); if(document.activeElement !== ls) ls.value = ggCfg.linkStation;
+  // parts linked into the part being edited (any part with stations can take parts, e.g. camera + GPS into A)
+  const ke = document.getElementById('ggKitEdit'), myRoute = ggRoute(ggEditPart), k = (ggCfg.kits || {})[ggEditPart] || {linkStation: Math.min(2, Math.max(1, myRoute.length)), needs: {}};
+  if(ggEditPart === ggCfg.parent) ke.innerHTML = '<div class="hint" style="margin-top:10px;">This is the parent (the part that ships): set what it takes under <b>Linking</b> below.</div>';
+  else if(!myRoute.length) ke.innerHTML = '<div class="hint" style="margin-top:10px;">This part has no stations, so it is a component: it takes no parts, and supplier serials are accepted for it when it\u2019s linked.</div>' +
+    '<div class="row3"><label class="field"><span>Example serial (optional)</span><input type="text" id="ggEditExample" autocomplete="off" value="' + locEsc((ggCfg.examples || {})[ggEditPart] || '') + '" placeholder="e.g. A260705215"></label>' +
+    '<div class="hint" style="padding-top:20px;" id="ggExampleText">' + ((ggCfg.examples || {})[ggEditPart] ? 'Serials like this: <b>' + locEsc(ggPatternText(ggCfg.examples[ggEditPart])) + '</b>. Scans that fit go into this component\u2019s slot automatically.' : 'With an example, scans that fit its pattern go into this component\u2019s slot automatically.') + '</div><div></div></div>';
+  else ke.innerHTML = '<h3 style="margin:14px 0 6px; font-size:13px;">Parts linked into ' + locEsc(ggCfg.names[ggEditPart] || ggEditPart) + '</h3><div class="row3"><label class="field"><span>Linked at its station #</span><input type="number" id="ggKitStation" min="1" max="12" value="' + (k.linkStation || 1) + '"></label><div class="hint" style="padding-top:20px;">(' + locEsc(myRoute.map((n, i) => (i + 1) + ' ' + n).join(', ')) + ')</div><div></div></div>' +
+    '<div class="row3">' + ggStyles().filter(st => st !== ggEditPart && st !== ggCfg.parent).map(st => '<label class="field"><span>' + locEsc(ggCfg.names[st] || st) + ' (' + st + ')</span><input type="number" class="gg-kitneed" data-st="' + st + '" min="0" max="20" value="' + ((k.needs || {})[st] || 0) + '"></label>').join('') + '</div>' +
+    '<div class="hint">' + locEsc(ggCfg.names[ggEditPart] || ggEditPart) + ' can\u2019t leave that station until every part above (with a number over 0) is linked. 0 everywhere = it takes no parts.</div>';
   document.getElementById('ggNeedsList').innerHTML = ggStyles().filter(st => st !== ggCfg.parent).map(st => '<label class="field"><span>' + locEsc(ggCfg.names[st] || st) + ' (' + st + ') per ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + '</span><input type="number" class="gg-need" data-st="' + st + '" min="0" max="20" value="' + (ggCfg.needs[st] || 0) + '"></label>').join('');
 }
 function ggCaptureEditor(){   // keep what was typed before switching parts
@@ -6778,12 +6811,27 @@ function ggCaptureEditor(){   // keep what was typed before switching parts
   if(list.length || ggCfg.routes[ggEditPart]) ggCfg.routes[ggEditPart] = list;
   ggCfg.names[ggEditPart] = document.getElementById('ggEditName').value.trim() || ggCfg.names[ggEditPart] || ggEditPart;
   document.querySelectorAll('.gg-need').forEach(i => { ggCfg.needs[i.dataset.st] = Number(i.value) || 0; });
+  const exIn = document.getElementById('ggEditExample');
+  if(exIn){ ggCfg.examples = ggCfg.examples || {}; const v = exIn.value.trim().toUpperCase(); if(v) ggCfg.examples[ggEditPart] = v; else delete ggCfg.examples[ggEditPart]; }
+  const ks = document.getElementById('ggKitStation');
+  if(ks){ ggCfg.kits = ggCfg.kits || {}; const kn = {}; document.querySelectorAll('.gg-kitneed').forEach(i => { const n = Number(i.value) || 0; if(n > 0) kn[i.dataset.st] = n; });
+    if(Object.keys(kn).length) ggCfg.kits[ggEditPart] = {linkStation: Number(ks.value) || 1, needs: kn}; else delete ggCfg.kits[ggEditPart]; }
   ggCfg.parent = document.getElementById('ggParentSel').value || ggCfg.parent;
   ggCfg.linkStation = Number(document.getElementById('ggLinkStation').value) || 1;
 }
 document.getElementById('ggEditPart').addEventListener('change', e => { ggCaptureEditor(); ggEditPart = e.target.value; ggRenderStationEditor(); });
 document.getElementById('ggParentSel').addEventListener('change', () => { ggCaptureEditor(); ggRenderStationEditor(); });
 document.getElementById('btnGgAddStation').addEventListener('click', () => { ggCaptureEditor(); ggCfg.routes[ggEditPart].push(''); ggRenderStationEditor(); });
+document.getElementById('btnGgAddComponent').addEventListener('click', () => {
+  ggCaptureEditor();
+  const code = (prompt('Short code for the component (2\u20136 letters/numbers, e.g. CAM, GPS, ESC):') || '').trim().toUpperCase();
+  if(!code) return;
+  if(!/^[A-Z][A-Z0-9]{1,5}$/.test(code)){ alert('Use 2\u20136 letters or numbers, starting with a letter.'); return; }
+  if(ggCfg.routes[code]){ alert(code + ' already exists.'); return; }
+  const name = (prompt('Name for ' + code + ' (shown everywhere):', code) || code).trim();
+  ggCfg.routes[code] = []; ggCfg.names[code] = name; ggRenderStationEditor();
+  document.getElementById('ggStationsMsg').textContent = name + ' (' + code + ') added. Pick the part it goes into, set how many under "Parts linked into", then Save.';
+});
 document.getElementById('btnGgAddPart').addEventListener('click', () => {
   ggCaptureEditor();
   const next = 'GG' + (Math.max(0, ...ggStyles().map(s => Number(s.slice(2)) || 0)) + 1);
@@ -6801,14 +6849,14 @@ document.getElementById('btnGgSaveStations').addEventListener('click', async () 
   try{
     const r = await sheetPost({action: 'setGimbalConfig', config: ggCfg});
     if(r.status === 'error') throw new Error(r.message);
-    ggCfg = {parent: r.parent, linkStation: r.linkStation, names: r.names, routes: r.routes, needs: r.needs};
+    ggCfg = {parent: r.parent, linkStation: r.linkStation, names: r.names, routes: r.routes, needs: r.needs, kits: r.kits || {}, examples: r.examples || {}};
     ggRenderStationEditor(); ggRenderChips(); ggFillStyleSelect();
     msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Saved for every computer and the TV.</b> Parts are linked at ' + locEsc(ggCfg.names[ggCfg.parent] || ggCfg.parent) + ' station ' + ggCfg.linkStation + ' (' + locEsc(ggRoute(ggCfg.parent)[ggCfg.linkStation - 1] || '') + ').';
   }catch(e){ msg.textContent = /unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Could not save: ' + e.message; }
 });
 
 // ---------- Settings: add an order (headsets → Goals, gimbals → GimbalGoals) ----------
-function goalStyles(){ return document.getElementById('goalLine').value === 'gimbal' ? ggStyles().map(st => [st, st + ' \u2014 ' + (ggCfg.names[st] || st)]) : ['H2B', 'H2C', 'H2D', 'H2E', 'H2F'].map(st => [st, st]); }
+function goalStyles(){ return document.getElementById('goalLine').value === 'gimbal' ? ggStyles().filter(ggIsGgStyle).map(st => [st, st + ' \u2014 ' + (ggCfg.names[st] || st)]) : ['H2B', 'H2C', 'H2D', 'H2E', 'H2F'].map(st => [st, st]); }
 function goalFillStyles(){
   const sel = document.getElementById('goalStyle'), keep = sel.value;
   sel.innerHTML = goalStyles().map(x => '<option value="' + x[0] + '">' + locEsc(x[1]) + '</option>').join('');
@@ -7195,13 +7243,14 @@ async function runGimbalLocate(serial, withParts){
     const [ggSerials, ggSent, ggLinks] = await Promise.all([locateTab('ggSerials'), ggTab('GimbalSentToWH'), ggTab('GimbalLinks')]);
     const act = ggActiveLinks(ggLinks);
     const genRow = ggSerials.slice(1).find(r => locCell(r[4]).toUpperCase() === serial), linkRow = ggLinks.slice(1).find(r => locCell(r[2]).toUpperCase() === serial);
-    const style = (genRow && locCell(genRow[1]).toUpperCase()) || (linkRow && locCell(linkRow[3]).toUpperCase()) || ggStyleOf(serial), route = ggRoute(style), N = route.length, isParent = style === ggCfg.parent;
+    const style = (genRow && locCell(genRow[1]).toUpperCase()) || (linkRow && locCell(linkRow[3]).toUpperCase()) || ggStyleOf(serial), route = ggRoute(style), N = route.length;
+    const myKit = ggKitFor(style), isParent = !!myKit || !!(act.partsOf[serial] || []).length;
     const evOf = async sn => ((await sheetPost({action: 'getGimbalSerialEvents', serial: sn})).events || [])
       .map(e => ({sn: sn, event: locCell(e.event), person: locCell(e.person), st: Number(stationNumberFromLabel(locCell(e.station)) || 0), t: locDate(e.dateTime), comment: locCell(e.comment)})).filter(e => e.t).sort((a, b) => a.t - b.t);
     const events = await evOf(serial);
     const gen = ggSerials.slice(1).find(r => locCell(r[4]).toUpperCase() === serial);
     const ship = ggSent.slice(1).find(r => locCell(r[0]).toUpperCase() === serial);
-    if(!gen && !events.length && !ship){
+    if(!gen && !events.length && !ship && !linkRow && !(act.partsOf[serial] || []).length){
       const near = ggSerials.slice(1).map(r => locCell(r[4]).toUpperCase()).filter(sn => sn.indexOf(serial) > -1).slice(0, 12);
       msg.innerHTML = 'No record of <b class="loc-mono">' + locEsc(serial) + '</b> on the gimbal tabs.' + (near.length ? '<div class="loc-suggest">' + near.map(sn => '<button class="secondary" data-loc="' + sn + '">' + sn + '</button>').join('') + '</div>' : '');
       return;
@@ -7239,13 +7288,14 @@ async function runGimbalLocate(serial, withParts){
     else if(parent) status = {c: 'var(--accent)', big: 'Inside ' + (ggCfg.names[ggStyleOf(parent)] || 'parent') + ' ' + parent, sub: 'This ' + (ggCfg.names[style] || 'part') + ' is linked into ' + parent + '. Click it below to see where the unit is now.'};
     else if(last && /movein/i.test(last.event)) status = {c: '#1d7a3f', big: 'At Station ' + last.st + ' \u2014 ' + (route[last.st - 1] || '?'), sub: 'Signed in by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago (' + locFmt(last.t) + ')'};
     else if(last && /moveout/i.test(last.event)) status = last.st >= N
-      ? {c: '#c7851a', big: isParent ? 'Finished, waiting to ship to the warehouse' : 'Finished its stations, waiting to be linked', sub: 'Signed out of ' + (route[last.st - 1] || '') + ' by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago'}
+      ? {c: '#c7851a', big: style === ggCfg.parent ? 'Finished, waiting to ship to the warehouse' : 'Finished its stations, waiting to be linked', sub: 'Signed out of ' + (route[last.st - 1] || '') + ' by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago'}
       : {c: '#c7851a', big: 'Between stations, waiting for Station ' + (last.st + 1) + ' \u2014 ' + (route[last.st] || '?'), sub: 'Signed out of ' + (route[last.st - 1] || '') + ' by ' + (last.person || 'unknown') + ' ' + formatDuration(Date.now() - last.t) + ' ago'};
     const done = [...new Set(events.filter(e => /moveout/i.test(e.event)).map(e => e.st))].sort((a, b) => a - b);
-    const kit = isParent ? ggKitOf(parts) : null;
+    const kit = isParent ? ggKitOf(parts, myKit ? myKit.needs : null) : null;
     const facts = [['Serial', serial, true], ['Part', locEsc(ggPartName(style))], ['Work order', gen && locCell(gen[2]) ? locEsc(gen[2]) : '\u2014'],
       ['Generated', gen ? (locFmt(locDate(gen[5])) || locEsc(locCell(gen[5]))) : '\u2014'], ['Stations completed', done.length ? done.join(', ') + ' of ' + N : 'None'],
       isParent ? ['Parts', kit.rows.map(x => locEsc(ggCfg.names[x.st] || x.st) + ' ' + x.have + '/' + x.need).join(', ') + (kit.complete ? ' \u2713' : '')] : ['Inside', parent ? link(parent) : (ggCfg.needs[style] ? 'Not linked yet' : '\u2014')],
+      ...(isParent && style !== ggCfg.parent ? [['Inside', parent ? link(parent) : (ggCfg.needs[style] ? 'Not linked yet' : '\u2014')]] : []),
       ['Order', ship ? locEsc(customerAlias(locCell(ship[3]))) : '\u2014'], ['Box', ship ? locEsc(locCell(ship[4])) : '\u2014']];
     out.innerHTML =
       '<div class="panel"><h2>' + locEsc(ggCfg.names[style] || 'Gimbal') + ' ' + locEsc(serial) + '</h2>' +
