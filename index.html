@@ -1847,8 +1847,8 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   </div>
 
   <div class="panel" id="shiftSummaryPanel">
-    <h2>End-of-shift summary</h2>
-    <p class="hint">Station activity, headsets finished, parts scrapped and holds for one shift, from the Log, Part Scrap and Holds tabs. Works for any day, including history moved to the Log Archive.</p>
+    <h2>Daily production report</h2>
+    <p class="hint">The full day for both lines: headsets and gimbals finished per shift, each station’s units, average and median cycle time, fastest and slowest, <b>outliers</b> (units that took far longer than normal, with serial and operator), operators per station, parts scrapped and holds. Built by the sheet’s script, exactly like the emailed report.</p>
     <div class="row3">
       <label class="field"><span>Day</span><input type="date" id="ssDay"></label>
       <label class="field"><span>Shift</span><select id="ssShift"></select></label>
@@ -5826,8 +5826,8 @@ function currentShiftName(){
 function localDayKeyLoc(d){ return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 (function initShiftSummary(){
   document.getElementById('ssDay').value = localDayKeyLoc(new Date());
-  document.getElementById('ssShift').innerHTML = SHIFT_DEFS.map(d => '<option value="' + d.name + '">' + d.name + ' (' + d.start + '\u2013' + d.end + ')</option>').join('') + '<option value="all">Whole day</option>';
-  document.getElementById('ssShift').value = currentShiftName();
+  document.getElementById('ssShift').innerHTML = '<option value="all">Whole day (split by shift)</option>' + SHIFT_DEFS.map(d => '<option value="' + d.name + '">' + d.name + ' only (' + d.start + '\u2013' + d.end + ')</option>').join('');
+  document.getElementById('ssShift').value = 'all';
   document.getElementById('btnSsRun').addEventListener('click', buildShiftSummary);
   document.getElementById('btnSsPrint').addEventListener('click', printShiftSummary);
   document.getElementById('btnSsCsv').addEventListener('click', downloadShiftSummaryCsv);
@@ -5849,128 +5849,63 @@ async function fetchLogRowsForWindow(win){
     return (await sheetPost({action: 'getRecentLogRows', maxRows: 20000})).rows || [];
   }
 }
+// The daily report is built by the sheet's script (the same one the emails use), so the screen and
+// the email always match: station performance, outliers, operators, totals per shift, gimbal line.
 async function buildShiftSummary(){
   const msg = document.getElementById('ssMsg'), body = document.getElementById('ssBody');
-  const cfg = sheetConfig();
-  if(!cfg.url || !cfg.token){ msg.textContent = 'No sheet connection.'; return; }
-  const day = document.getElementById('ssDay').value;
+  const day = document.getElementById('ssDay').value, shift = document.getElementById('ssShift').value;
   if(!day){ msg.textContent = 'Pick a day.'; return; }
-  const win = shiftWindow(day, document.getElementById('ssShift').value);
-  msg.textContent = 'Building\u2026'; body.innerHTML = '';
-  let logRows, scrapRows, holdRows;
+  const btn = document.getElementById('btnSsRun'); btn.disabled = true; msg.textContent = 'Building the report\u2026'; body.innerHTML = '';
   try{
-    [logRows, scrapRows, holdRows] = await Promise.all([
-      fetchLogRowsForWindow(win),
-      sheetPost({action: 'getFullSheet', sheet: PART_SCRAP_TAB}).then(j => j.rows || []).catch(() => []),
-      sheetPost({action: 'getFullSheet', sheet: HOLDS_TAB}).then(j => j.rows || []).catch(() => [])
-    ]);
-  }catch(e){ msg.textContent = 'Could not build the summary: ' + e.message; return; }
-  const inWin = t => t && t >= win.from && t < win.to;
-  const events = logRows.map(r => ({sn: locCell(r[1]).toUpperCase(), event: locCell(r[2]), person: locCell(r[3]), station: String(stationNumberFromLabel(locCell(r[4])) || ''), t: locDate(r[5])}))
-    .filter(e => e.sn && e.t).sort((a, b) => a.t - b.t);
-  if(logFetchFellBack && events.length && events[0].t > win.from) msg.textContent = 'Note: the sheet\u2019s script needs the latest Code.gs to look up older days, so this only reaches back to ' + locFmt(events[0].t) + '.';
-  else msg.textContent = '';
-  // time at station: pair each sign-out with that unit's previous sign-in at the same station
-  const openIn = {}, durByStation = {};
-  events.forEach(e => {
-    const k = e.sn + '|' + e.station;
-    if(/movein/i.test(e.event)) openIn[k] = e.t;
-    else if(/moveout/i.test(e.event) && openIn[k]){ if(inWin(e.t)) (durByStation[e.station] = durByStation[e.station] || []).push(e.t - openIn[k]); delete openIn[k]; }
-  });
-  const w = events.filter(e => inWin(e.t));
-  const stations = ['1','2','3','4','5','6'].map(n => {
-    const ins = w.filter(e => e.station === n && /movein/i.test(e.event)).length;
-    const outs = w.filter(e => e.station === n && /moveout/i.test(e.event)).length;
-    const d = (durByStation[n] || []).slice().sort((a, b) => a - b);
-    return {n: n, name: STATION_LABELS[n] || ('Station ' + n), ins: ins, outs: outs, median: d.length ? d[Math.floor(d.length / 2)] : null};
-  });
-  const finished = w.filter(e => e.station === '6' && /moveout/i.test(e.event));
-  const byStyle = {};
-  finished.forEach(e => { const st = (e.sn.match(/^H2[A-Z]/) || ['Other'])[0]; byStyle[st] = (byStyle[st] || 0) + 1; });
-  const byOp = {};
-  w.forEach(e => { const k = e.person || 'unknown'; byOp[k] = byOp[k] || {ins: 0, outs: 0}; if(/movein/i.test(e.event)) byOp[k].ins++; else byOp[k].outs++; });
-  // first pass = a unit got through (the station / the whole line) with no part replaced
-  const scrappedAt = {};
-  scrapRows.slice(1).forEach(r => { const sn = locCell(r[2]).toUpperCase(); if(!sn) return; scrappedAt[sn] = scrappedAt[sn] || {}; scrappedAt[sn][String(stationNumberFromLabel(locCell(r[4])) || '')] = true; scrappedAt[sn].any = true; });
-  stations.forEach(st => {
-    const units = [...new Set(w.filter(e => e.station === st.n && /moveout/i.test(e.event)).map(e => e.sn))];
-    st.fpy = units.length ? Math.round(units.filter(sn => !(scrappedAt[sn] && scrappedAt[sn][st.n])).length / units.length * 100) : null;
-  });
-  const finishedUnits = [...new Set(finished.map(e => e.sn))];
-  const fpy = finishedUnits.length ? Math.round(finishedUnits.filter(sn => !(scrappedAt[sn] && scrappedAt[sn].any)).length / finishedUnits.length * 100) : null;
-  const scraps = scrapRows.slice(1).map(r => ({t: locDate(r[1]), sn: locCell(r[2]).toUpperCase(), part: locCell(r[5]), qty: Number(r[6]) || 1, reason: locCell(r[7]), pn: partNumberFor(r[5], locCell(r[11]))})).filter(x => inWin(x.t));
-  const byPart = {};
-  scraps.forEach(x => { const k = x.part; byPart[k] = byPart[k] || {pn: x.pn, qty: 0}; byPart[k].qty += x.qty; });
-  const holdsPlaced = holdRows.slice(1).filter(r => inWin(locDate(r[7])));
-  const holdsReleased = holdRows.slice(1).filter(r => /released/i.test(locCell(r[8])) && inWin(locDate(r[10])));
-  const isNow = new Date() >= win.from && new Date() < win.to;
-  ssLast = {day: day, win: win, stations: stations, finished: finished.length, fpy: fpy, byStyle: byStyle, byOp: byOp, scraps: scraps, byPart: byPart,
-    holdsPlaced: holdsPlaced.length, holdsReleased: holdsReleased.length, openHolds: openHolds.length, moves: w.length};
-  const scrapParts = scraps.reduce((a, x) => a + x.qty, 0);
-  body.innerHTML =
-    '<h3 style="margin-top:4px;">' + locEsc(new Date(day + 'T12:00:00').toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric'})) + ' \u00b7 ' + locEsc(win.label) + (isNow ? ' \u00b7 in progress' : '') + '</h3>' +
-    '<div class="ss-grid">' +
-      '<div class="ss-stat"><div class="v">' + finished.length + '</div><div class="k">Headsets finished (out of Station 6)</div></div>' +
-      '<div class="ss-stat"><div class="v">' + (fpy === null ? '\u2014' : fpy + '%') + '</div><div class="k">First pass (no parts replaced)</div></div>' +
-      '<div class="ss-stat"><div class="v">' + w.length + '</div><div class="k">Sign ins and outs</div></div>' +
-      '<div class="ss-stat"><div class="v">' + scrapParts + '</div><div class="k">Parts scrapped</div></div>' +
-      '<div class="ss-stat"><div class="v">' + holdsPlaced.length + ' / ' + holdsReleased.length + '</div><div class="k">Holds placed / released</div></div>' +
-    '</div>' +
-    '<div class="ss-cols"><div>' +
-      '<h3>By station</h3><div class="tablewrap"><table><thead><tr><th>Station</th><th>Signed in</th><th>Signed out</th><th>First pass</th><th>Median time</th></tr></thead><tbody>' +
-      stations.map(st => '<tr><td>' + locEsc(st.name) + '</td><td>' + st.ins + '</td><td>' + st.outs + '</td><td>' + (st.fpy === null ? '\u2014' : st.fpy + '%') + '</td><td>' + (st.median ? formatDuration(st.median) : '\u2014') + '</td></tr>').join('') + '</tbody></table></div>' +
-      '<h3>Finished by style</h3><div class="hint" style="font-size:14px;">' + (Object.keys(byStyle).sort().map(k => '<b>' + k + '</b> ' + byStyle[k]).join(' &nbsp; ') || 'None') + '</div>' +
-    '</div><div>' +
-      '<h3>By operator</h3><div class="tablewrap"><table><thead><tr><th>Operator</th><th>Sign ins</th><th>Sign outs</th></tr></thead><tbody>' +
-      (Object.keys(byOp).sort((a, b) => (byOp[b].ins + byOp[b].outs) - (byOp[a].ins + byOp[a].outs)).map(k => '<tr><td>' + locEsc(k) + '</td><td>' + byOp[k].ins + '</td><td>' + byOp[k].outs + '</td></tr>').join('') || '<tr><td colspan="3">No activity</td></tr>') + '</tbody></table></div>' +
-      '<h3>Parts scrapped</h3><div class="tablewrap"><table><thead><tr><th>Part #</th><th>Part</th><th>Qty</th></tr></thead><tbody>' +
-      (Object.keys(byPart).sort((a, b) => byPart[b].qty - byPart[a].qty).map(k => '<tr><td class="loc-mono">' + locEsc(byPart[k].pn) + '</td><td>' + locEsc(k) + '</td><td>' + byPart[k].qty + '</td></tr>').join('') || '<tr><td colspan="3">None</td></tr>') + '</tbody></table></div>' +
-    '</div></div>' +
-    '<h3>Right now</h3><div class="hint" style="font-size:14px;">' + openHolds.length + ' unit(s) on hold &nbsp;\u00b7&nbsp; ' + (document.getElementById('stuckCount').textContent || '0 units') + ' stuck</div>';
-  document.getElementById('btnSsPrint').disabled = false;
-  document.getElementById('btnSsCsv').disabled = false;
+    const r = await sheetPost({action: 'getDayReport', day: day, shift: shift});
+    if(r.status === 'error') throw new Error(r.message);
+    ssLast = r;
+    body.innerHTML = '<div style="background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; overflow-x:auto;">' + r.html + '</div>';
+    msg.textContent = '';
+    document.getElementById('btnSsPrint').disabled = false; document.getElementById('btnSsCsv').disabled = false;
+  }catch(e){ msg.textContent = /unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first (the report is built by the sheet\u2019s script).' : 'Could not build the report: ' + e.message; }
+  finally{ btn.disabled = false; }
 }
 function printShiftSummary(){
   if(!ssLast) return;
-  const html = document.getElementById('ssBody').innerHTML;
   const w = window.open('', '_blank');
   if(!w){ document.getElementById('ssMsg').textContent = 'The print window was blocked. Allow pop-ups for this page and try again.'; return; }
-  w.document.write('<!doctype html><html><head><title>Shift summary ' + ssLast.day + '</title><style>' +
-    'body{font-family:Inter,system-ui,sans-serif;color:#1c1830;margin:24px;} h1{font-size:18px;margin:0 0 4px;} h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8b3fe0;margin:14px 0 6px;}' +
-    '.ss-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;} .ss-stat{border:1px solid #ddd6ee;border-radius:6px;padding:8px 10px;} .ss-stat .v{font-size:20px;font-weight:800;} .ss-stat .k{font-size:10px;text-transform:uppercase;color:#6c6584;}' +
-    '.ss-cols{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;} table{border-collapse:collapse;width:100%;font-size:12px;} th,td{border-bottom:1px solid #ddd6ee;padding:4px 6px;text-align:left;} th{color:#6c6584;font-size:10px;text-transform:uppercase;}' +
-    '.hint{color:#1c1830;} .loc-mono{font-family:monospace;}</style></head><body><h1>Fat Shark headset line \u00b7 end-of-shift summary</h1>' + html +
-    '<p style="margin-top:18px;color:#6c6584;font-size:11px;">Printed ' + new Date().toLocaleString() + '</p></body></html>');
-  w.document.close();
-  w.focus();
-  setTimeout(() => w.print(), 300);
+  w.document.write('<!doctype html><html><head><title>Daily production report ' + ssLast.day + '</title><style>body{margin:18px;} @page{size:letter; margin:0.5in;} tr{page-break-inside:avoid;}</style></head><body>' + ssLast.html + '</body></html>');
+  w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
 }
 function downloadShiftSummaryCsv(){
   if(!ssLast) return;
-  const L = [];
-  L.push(['End-of-shift summary', ssLast.day, ssLast.win.label]);
-  L.push([]);
-  L.push(['Headsets finished (out of Station 6)', ssLast.finished]);
-  L.push(['First pass yield (no parts replaced)', ssLast.fpy === null ? '' : ssLast.fpy + '%']);
-  Object.keys(ssLast.byStyle).sort().forEach(k => L.push(['  ' + k, ssLast.byStyle[k]]));
-  L.push(['Sign ins and outs', ssLast.moves]);
-  L.push(['Parts scrapped', ssLast.scraps.reduce((a, x) => a + x.qty, 0)]);
-  L.push(['Holds placed', ssLast.holdsPlaced]);
-  L.push(['Holds released', ssLast.holdsReleased]);
-  L.push(['Units on hold now', ssLast.openHolds]);
-  L.push([]);
-  L.push(['Station', 'Signed in', 'Signed out', 'First pass', 'Median time at station']);
-  ssLast.stations.forEach(st => L.push([st.name, st.ins, st.outs, st.fpy === null ? '' : st.fpy + '%', st.median ? formatDuration(st.median) : '']));
-  L.push([]);
-  L.push(['Operator', 'Sign ins', 'Sign outs']);
-  Object.keys(ssLast.byOp).forEach(k => L.push([k, ssLast.byOp[k].ins, ssLast.byOp[k].outs]));
-  L.push([]);
-  L.push(['Part number', 'Part', 'Qty scrapped']);
-  Object.keys(ssLast.byPart).forEach(k => L.push([ssLast.byPart[k].pn, k, ssLast.byPart[k].qty]));
-  const csv = '\ufeff' + L.map(r => r.map(csvCell).join(',')).join('\r\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));
-  a.download = 'shift-summary-' + ssLast.day + '-' + ssLast.win.label.split(' (')[0].replace(/\s+/g, '-').toLowerCase() + '.csv';
+  const R = ssLast, rows = [], q = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
+  const mins = ms => ms === null || ms === undefined ? '' : (ms / 60000).toFixed(1);
+  rows.push(['Daily production report', R.dayLabel, R.window].map(q).join(','));
+  rows.push('');
+  const block = (title, line) => {
+    rows.push(q(title));
+    rows.push(['Station'].concat(R.shifts).concat(['Units', 'Avg cycle (min)', 'Median (min)', 'Fastest (min)', 'Slowest (min)', 'Outliers']).map(q).join(','));
+    line.stations.forEach(s => rows.push([s.label].concat(R.shifts.map(x => s.byShift[x] || 0)).concat([s.units, mins(s.avg), mins(s.med), mins(s.min), mins(s.max), s.outlierCount]).map(q).join(',')));
+    rows.push('');
+    rows.push(['Outliers: station', 'Serial', 'Operator', 'Cycle (min)', 'Station median (min)', 'Signed out'].map(q).join(','));
+    line.stations.forEach(s => s.outliers.forEach(o => rows.push([s.label, o.sn, o.person, mins(o.d), mins(s.med), new Date(o.t).toLocaleString()].map(q).join(','))));
+    rows.push('');
+    rows.push(['Operator', 'Station', 'Units', 'Avg cycle (min)', 'Median (min)'].map(q).join(','));
+    line.operators.forEach(o => rows.push([o.person, o.station, o.units, mins(o.avg), mins(o.med)].map(q).join(',')));
+    rows.push('');
+  };
+  rows.push(['Headsets finished', R.headset.finished].concat(R.shifts.map(s => s + ': ' + (R.headset.finishedByShift[s] || 0))).map(q).join(','));
+  rows.push(['First pass %', R.headset.fpy === null ? '' : R.headset.fpy].map(q).join(','));
+  rows.push('');
+  block('HEADSET LINE', R.headset);
+  rows.push(['Parts scrapped: part #', 'Part', 'Qty'].map(q).join(','));
+  R.headset.parts.forEach(p => rows.push([p.pn, p.part, p.qty].map(q).join(',')));
+  rows.push('');
+  if(R.gimbal && !R.gimbal.error){
+    rows.push([R.gimbal.parentName + ' finished', R.gimbal.finished].concat(R.shifts.map(s => s + ': ' + (R.gimbal.finishedByShift[s] || 0))).map(q).join(','));
+    rows.push(['Linked'].concat(R.gimbal.links.map(l => l.name + ': ' + l.count)).concat(['Shipped: ' + R.gimbal.shipped]).map(q).join(','));
+    rows.push('');
+    block('GIMBAL LINE', R.gimbal);
+  }
+  const blob = new Blob([rows.join('\r\n')], {type: 'text/csv'}), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'daily-report-' + R.day + '.csv';
   document.body.appendChild(a); a.click(); a.remove();
 }
 
@@ -6301,7 +6236,13 @@ async function ggRefreshStatus(){
   const shippedBy = {}; shipped.forEach(x => { if(ggCountsForOrder(x.order, x.sn)) shippedBy[x.order] = (shippedBy[x.order] || 0) + 1; });
   const parentWip = Object.values(at[P] || {}).reduce((a, l) => a + l.length, 0) + Object.values(waiting[P] || {}).reduce((a, n) => a + n, 0);
   const pName = ggCfg.names[P] || P;
-  const kpis = [[pName + ' on the line', parentWip], ['Finished today', finished.filter(e => localDayKeyLoc(e.t) === todayKey).length], ['Finished, last 7 days', finished.filter(e => e.t >= weekAgo).length],
+  // "built" = every part that finished all its stations (A, B, C …) plus finished D's, with a split by part
+  const shortName = st => String(ggCfg.names[st] || st).replace(/^Subassembly /, 'Sub ');
+  const built = finished.concat(partsDone), builtIn = pred => { const by = {}; built.filter(pred).forEach(e => { const st = ggStyleOf(e.sn); by[st] = (by[st] || 0) + 1; }); return by; };
+  const bToday = builtIn(e => localDayKeyLoc(e.t) === todayKey), bWeek = builtIn(e => e.t >= weekAgo);
+  const split = by => ggStyles().filter(st => by[st]).map(st => shortName(st) + ' ' + by[st]).join(' \u00b7 ') || 'nothing yet';
+  const sum = by => Object.values(by).reduce((a, b) => a + b, 0);
+  const kpis = [[pName + ' on the line', parentWip], ['Built today \u00b7 ' + split(bToday), sum(bToday)], ['Built, last 7 days \u00b7 ' + split(bWeek), sum(bWeek)],
     ['Shipped, last 7 days', shipped.filter(x => x.t && x.t >= weekAgo).length], ['Open orders', goals.filter(g => (shippedBy[g.label] || 0) < g.target).length],
     ['Avg lead time, 7 days', leads.length ? formatDuration(leads.reduce((a, b) => a + b, 0) / leads.length) : '\u2014']];
   document.getElementById('ggKpis').innerHTML = kpis.map(k => '<div class="ss-stat"><div class="v">' + k[1] + '</div><div class="k">' + locEsc(k[0]) + '</div></div>').join('');
