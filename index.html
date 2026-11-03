@@ -6409,7 +6409,7 @@ async function ggShowKit(parent, kitPromise){
   if(fresh){ ggKitSlots = ggKitSlotsFor([]); ggKitLoading = true; ggRenderKit(); ggKitFocusNext(); }
   document.getElementById('ggScanLabel').textContent = 'Scan the parts for ' + parent + ' into the form above (any order), or scan ' + parent + ' here to sign it out of ' + (ggRoute(ggStyleOf(parent))[myKit.linkStation - 1] || 'this station');
   let r;
-  try{ r = await (kitPromise || sheetPost({action: 'gimbalKit', parent: parent})); }
+  try{ r = await (kitPromise || sheetPost({action: 'gimbalKit', parent: parent})); ggKitInUse = r.inUse || {}; }
   catch(e){ ggKitLoading = false; ggRenderKit(); ggPopup('Could not load the parts already linked to ' + locEsc(parent) + ':<br><br>' + locEsc(e.message)); return; }
   if(ggKitParent !== parent) return;
   const linked = (r.parts || []).map(p => ({sn: p.sn, style: p.style || ggStyleOf(p.sn), linkId: p.linkId}));
@@ -6420,7 +6420,7 @@ async function ggShowKit(parent, kitPromise){
   ggKitLoading = false;
   ggRenderKit(); ggKitFocusNext();
 }
-let ggKitLoading = false, ggKitPendingSignIn = null;   // a unit waiting for its parts before it's signed in
+let ggKitLoading = false, ggKitPendingSignIn = null, ggKitInUse = {};   // serial -> unit it is already inside   // a unit waiting for its parts before it's signed in
 function ggKitFocusNext(){   // the cursor goes to the next empty slot, so the scanner just keeps going
   const inp = document.querySelector('#ggKitPanel .gg-slot-in');
   if(inp) inp.focus(); else document.getElementById('ggScanInput').focus();
@@ -6461,6 +6461,11 @@ async function ggKitAdd(sn, slotIndex){
   const want = ggKitSlots[slotIndex];
   const slot = want && want.style === st && !want.sn ? want : ggKitSlots.find(x => x.style === st && !x.sn);   // a part scanned into another part's slot goes where it belongs
   if(!slot){ ggPopup(ggKitParent + ' already has all ' + ggKitNeeds[st] + ' \u00d7 ' + locEsc(ggCfg.names[st] || st) + ' in the form. Remove one (\u00d7) first if it\u2019s the wrong part.', 'info'); return; }
+  if(!ggOurs(sn)){
+    const inside = ggKitInUse[sn], nm = ggCfg.names[st] || st;
+    if(inside && inside !== ggKitParent){ slot.sn = sn; slot.state = 'bad'; slot.why = sn + ' is already inside ' + inside + '. Unlink it there first, or use a different ' + nm + '.'; ggRenderKit(); ggKitFocusNext(); ggPopup('<b>' + locEsc(sn) + '</b> can\u2019t be used.<br><br>' + locEsc(slot.why)); return; }
+    slot.sn = sn; slot.state = 'ready'; slot.why = 'Supplier serial accepted as a ' + nm + '. Ready to link.'; ggRenderKit(); ggKitFocusNext(); return;
+  }
   slot.sn = sn; slot.state = 'checking'; slot.why = ''; ggRenderKit(); ggKitFocusNext();
   try{
     const r = await sheetPost({action: 'gimbalPartCheck', serial: sn, parent: ggKitParent, style: st});
@@ -6474,17 +6479,24 @@ async function ggKitLinkAll(){
   const parts = ggKitSlots.filter(x => x.state !== 'linked' && x.sn).map(x => ({sn: x.sn, style: x.style}));
   const btn = document.getElementById('btnGgLinkAll'); if(btn){ btn.disabled = true; btn.textContent = 'Linking\u2026'; }
   try{
-    const r = await sheetPost({action: 'gimbalLinkParts', parent: ggKitParent, parts: parts, person: document.getElementById('ggPerson').value.trim()});
+    const person = document.getElementById('ggPerson').value.trim();
+    const r = await sheetPost({action: 'gimbalLinkParts', parent: ggKitParent, parts: parts, person: person, signIn: ggKitPendingSignIn === ggKitParent});
     if(r.status === 'ok'){
-      const unit = ggKitParent, stName = ggRoute(ggStyleOf(unit))[(ggKitFor(ggStyleOf(unit)) || {linkStation: 1}).linkStation - 1] || 'the station';
-      if(ggKitPendingSignIn === unit){
+      const unit = ggKitParent, stName = r.stationName || ggRoute(ggStyleOf(unit))[(ggKitFor(ggStyleOf(unit)) || {linkStation: 1}).linkStation - 1] || 'the station';
+      // the form shows the parts as linked straight from the reply (no reload)
+      ggKitSlots.forEach(x => { if(x.sn && x.state !== 'linked'){ x.state = 'linked'; x.why = 'Linked'; ggKitInUse[x.sn] = unit; } });
+      ggRenderKit();
+      if(r.signedIn){
         ggKitPendingSignIn = null;
-        await ggScan(unit);   // now it signs in, with its parts linked
+        const st = ggStyleOf(unit), n = Number(r.targetStation) || 1;
+        document.getElementById('ggMsg').innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + unit + ' (' + locEsc(ggCfg.names[st] || st) + ') signed into ' + locEsc(ggStationName(n, st)) + '</b> with its parts linked.';
+        ggRecent.unshift({time: new Date().toLocaleTimeString(), sn: unit, st: st, n: n, event: 'MoveIn', person: person, dur: ''}); ggRenderRecent();
+        if(ggData && ggData.at[st]){ ggData.at[st][n] = (ggData.at[st][n] || []).filter(x => x.sn !== unit); ggData.at[st][n].push({sn: unit, t: new Date()}); }
+        ggRenderChips();
         ggPopup('<b>All ' + r.linked.length + ' parts linked into ' + locEsc(unit) + '</b>, and it is signed into <b>' + locEsc(stName) + '</b>.<br><br>Scan ' + locEsc(unit) + ' again when it\u2019s done to sign it out.', 'ok');
         return;
       }
       ggPopup('<b>All ' + r.linked.length + ' parts linked into ' + locEsc(unit) + '.</b><br><br>Scan ' + locEsc(unit) + ' again to sign it out of ' + locEsc(stName) + '.', 'ok');
-      await ggShowKit(unit);
     }else if(r.status === 'rejected'){
       r.problems.forEach(pr => { const sl = ggKitSlots.find(x => x.sn === String(pr.serial).toUpperCase()); if(sl){ sl.state = /finish its stations/i.test(pr.why) ? 'notFinished' : 'bad'; sl.why = pr.why; } });
       ggRenderKit();
@@ -6905,9 +6917,15 @@ ggRenderStationEditor();
 // =====================================================================
 // CUSTOMER DISPLAY NAMES (Settings) — choose the name shown for each customer
 // =====================================================================
+// A work order (WO-530-534 - H2E) keeps its number unless a display name was chosen for it in Settings
+function woAliasKey(text){ return String(text || '').replace(/\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})\s*$/i, '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 function aliasCustomerOf(label){
   const text = String(label || '').trim();
-  if(!text || /^WO[\s\-_#]*\d/i.test(text)) return null;
+  if(!text) return null;
+  if(/^WO[\s\-_#]*\d/i.test(text)){   // work orders are listed too, one row per work order
+    const sm = text.match(/^(.*?)\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})$/i);
+    return {cust: (sm ? sm[1] : text).trim(), style: sm ? sm[2].toUpperCase() : '', wo: true};
+  }
   const sm = text.match(/^(.*?)\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})$/i);
   const body = sm ? sm[1].trim() : text;
   const us = body.indexOf('_');
@@ -6924,7 +6942,7 @@ async function loadAliasEditor(){
   const add = (rows, line) => rows.slice(1).forEach(r => {
     const c = aliasCustomerOf(r[0]); if(!c || !c.cust) return;
     const key = c.cust.toUpperCase().replace(/[^A-Z0-9]/g, ''); if(!key) return;
-    const e = seen[key] = seen[key] || {cust: c.cust, lines: new Set(), style: c.style};
+    const e = seen[key] = seen[key] || {cust: c.cust, lines: new Set(), style: c.style, wo: !!c.wo};
     e.lines.add(line);
   });
   add(goals, 'Headsets'); add(gimbal, 'Gimbals');
@@ -6934,7 +6952,7 @@ async function loadAliasEditor(){
     const e = seen[k];
     const custom = CUSTOMER_ALIAS_CUSTOM[k] || '';
     const saved = CUSTOMER_ALIAS_CUSTOM[k]; delete CUSTOMER_ALIAS_CUSTOM[k];   // read the automatic name without the custom one
-    const auto = customerAliasBase(e.cust, e.style);
+    const auto = e.wo ? e.cust : customerAliasBase(e.cust, e.style);   // a work order shows its own number unless named
     if(saved) CUSTOMER_ALIAS_CUSTOM[k] = saved;
     return '<tr><td><b>' + locEsc(e.cust) + '</b></td><td>' + [...e.lines].join(', ') + '</td><td><input type="text" class="alias-input" data-key="' + k + '" value="' + locEsc(custom) + '" placeholder="' + locEsc(auto) + ' (automatic)" maxlength="40" style="width:100%;"></td></tr>';
   }).join('');
@@ -8939,7 +8957,10 @@ function customerAliasBase(name, style){
 function customerAlias(label){
   const text = String(label || '').trim();
   if(!text) return text;
-  if(/^WO[\s\-_#]*\d/i.test(text)) return text;
+  if(/^WO[\s\-_#]*\d/i.test(text)){
+    const named = CUSTOMER_ALIAS_CUSTOM[woAliasKey(text)], sm = text.match(/\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})\s*$/i);
+    return named ? named + (sm ? ' \u00b7 ' + sm[1].toUpperCase() : '') : text;
+  }
   const styleMatch = text.match(/^(.*?)\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})$/i);
   const body = styleMatch ? styleMatch[1].trim() : text;
   const style = styleMatch ? ' \u00b7 ' + styleMatch[2].toUpperCase() : '';
