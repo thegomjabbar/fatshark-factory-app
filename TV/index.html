@@ -1808,10 +1808,14 @@ function renderGimbalSlide(g){
   (g.serials || []).slice(1).forEach(r => { const sn = tvCell(r[4]).toUpperCase(), st = styleOf(sn); if(sn && st in ready && !routeOf(st).length && cfg.needs[st] && !inParent.has(sn) && !shippedSns.has(sn)) ready[st]++; });   // parts with no stations (motors)
   const parentWip = Object.values(at[P] || {}).reduce((a, b) => a + b, 0);
   const pName = cfg.names[P] || P;
+  // "built" = every part that finished all its stations (A, B, C …) plus finished D's, split by part
+  const builtBy = since => { const by = {}; ev.forEach(e => { const st = styleOf(e.sn), r = routeOf(st); if(e.event === 'MoveOut' && r.length && e.st === r.length && e.t.getTime() >= since){ by[st] = (by[st] || 0) + 1; } }); return by; };
+  const builtSum = by => Object.values(by).reduce((a, b) => a + b, 0);
+  const builtSplit = by => styles.filter(st => by[st]).map(st => String(cfg.names[st] || st).replace(/^Subassembly /, 'Sub ') + ' ' + by[st]).join(' \u00b7 ') || 'Nothing yet';
   const kpis = [
     {v: parentWip, l: pName + ' on the line', s: stuck ? stuck + ' stuck over ' + TV_STUCK_HOURS + 'h' : 'None stuck', c: stuck ? 'var(--red)' : 'var(--purple)'},
-    {v: finished.filter(e => e.t >= today).length, l: 'Finished today', s: 'Out of ' + routeOf(P)[routeOf(P).length - 1], c: 'var(--green)'},
-    {v: finished.filter(e => e.t.getTime() >= week).length, l: 'Finished, 7 days', s: pName + ' units', c: 'var(--cyan)'},
+    {v: builtSum(builtBy(today.getTime())), l: 'Built today', s: builtSplit(builtBy(today.getTime())), c: 'var(--green)'},
+    {v: builtSum(builtBy(week)), l: 'Built, 7 days', s: builtSplit(builtBy(week)), c: 'var(--cyan)'},
     {v: sent.filter(x => x.t && x.t.getTime() >= week).length, l: 'Shipped, 7 days', s: 'To the warehouse', c: 'var(--amber)'},
     {v: styles.filter(st => st !== P && cfg.needs[st]).reduce((a, st) => a + ready[st], 0), l: 'Parts ready to link', s: 'Waiting for a ' + pName, c: 'var(--purple)'}
   ];
