@@ -1924,6 +1924,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <label class="field"><span>Part name</span><input type="text" id="ggEditName" autocomplete="off"></label>
       <div class="field"><span class="om-live-fieldlab">&nbsp;</span><button class="secondary" id="btnGgAddPart" style="width:100%;">Add a part type (next GG number)</button></div>
     </div>
+    <div class="btnrow" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:-4px 0 8px;">
+      <button class="secondary" id="btnGgPartOff">Turn this part off</button>
+      <button class="danger" id="btnGgPartDelete">Delete this part type</button>
+      <span class="hint" id="ggPartOffNote"></span>
+    </div>
     <div id="ggStationList"></div>
     <div class="btnrow" style="display:flex; gap:8px;"><button class="secondary" id="btnGgAddStation">Add station</button><button class="secondary" id="btnGgAddComponent">Add a component (supplier serial, e.g. camera)</button></div>
     <div id="ggKitEdit"></div>
@@ -3966,7 +3971,9 @@ function styleFromSerial(sn){
   return (sn || '').trim().slice(0, 3).toUpperCase();
 }
 function styleFromCustomerLabel(label){
-  // Goals labels look like "CST1 - H2C" — style is whatever follows the last " - ".
+  // Goals labels look like "CST1 - H2C", but "WO-OVERBUILD-H2C" or "Name H2C" are read the same way.
+  const m = String(label || '').trim().match(/(?:\s*-\s*|\s+)(H2[B-F]|GG[A-Z0-9]{1,3})\s*$/i);
+  if(m) return m[1].toUpperCase();
   const parts = (label || '').split(' - ');
   return (parts[parts.length - 1] || '').trim().toUpperCase();
 }
@@ -3978,9 +3985,7 @@ function normalizeCustomerText(text){
 }
 function customerNameFromGoalLabel(label){
   // Strip the trailing " - H2X" style suffix off a Goals label, leaving just the customer/order name.
-  const parts = (label || '').split(' - ');
-  if(parts.length > 1 && /^H2[B-F]$/i.test(parts[parts.length - 1].trim())) parts.pop();
-  return normalizeCustomerText(parts.join(' - '));
+  return normalizeCustomerText(String(label || '').trim().replace(/(?:\s*-\s*|\s+)(H2[B-F])\s*$/i, ''));
 }
 function customerNameFromSentField(customerField){
   // SentToWH's Customer column historically stores just the plain name (e.g. "CST1"), not the
@@ -3997,8 +4002,22 @@ function matchingSentRowsFor(goalLabel){
     customerNameFromSentField(r.customer) === custName && styleFromSerial(r.sn) === style
   );
 }
+// The Count tab's open-orders table (what the sheet itself says is open, with its shipped / remaining)
+let countOrderMap = null;   // normalized label -> {shipped, target, remaining}
+function countKey(label){ return String(label || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 function shippedCountFor(goalLabel){
+  const c = countOrderMap && countOrderMap[countKey(goalLabel)];
+  if(c) return c.shipped;
   return matchingSentRowsFor(goalLabel).length;
+}
+function remainingFor(goal){
+  const c = countOrderMap && countOrderMap[countKey(goal.label)];
+  if(c) return c.remaining;
+  return Math.max(0, goal.target - matchingSentRowsFor(goal.label).length);
+}
+function isOpenGoal(goal){
+  if(countOrderMap) return !!countOrderMap[countKey(goal.label)] && countOrderMap[countKey(goal.label)].remaining > 0;   // not in the sheet's open table = done
+  return matchingSentRowsFor(goal.label).length < goal.target;
 }
 
 document.getElementById('btnDiagnoseCount').addEventListener('click', () => {
@@ -4059,11 +4078,16 @@ async function refreshScanOutData(){
     goalsList = goalsRes.goals || [];
     logStatusMap = logRes.log || {};
     sentToWHRows = sentRes.rows || [];
+    try{
+      const orders = hsOrdersFromCount(await loadCountSheetRaw(true) || []);
+      countOrderMap = orders ? {} : null;
+      (orders || []).forEach(o => { countOrderMap[countKey(o.label)] = {shipped: o.shipped, target: o.target, remaining: o.remaining !== null && o.remaining !== undefined ? o.remaining : Math.max(0, o.target - o.shipped)}; });
+    }catch(e){ countOrderMap = null; }
     populateScanCustomerSelect();
-    const activeCount = goalsList.filter(g => shippedCountFor(g.label) < g.target).length;
+    const activeCount = goalsList.filter(isOpenGoal).length;
     badge.className = 'badge ok';
     badge.innerHTML = '<span class="dot"></span>Loaded ' + new Date().toLocaleTimeString();
-    msg.textContent = activeCount + ' active goal(s) (of ' + goalsList.length + ' total) shown below, ' + Object.keys(logStatusMap).length +
+    msg.textContent = activeCount + ' open order(s) (of ' + goalsList.length + ' on the Goals tab' + (countOrderMap ? ', as the Count tab lists them' : '') + ') shown below, ' + Object.keys(logStatusMap).length +
       ' serial(s) in Log, ' + sentToWHRows.length + ' already in SentToWH.';
     updateGoalSummary();
   }catch(e){
@@ -4080,11 +4104,11 @@ function populateScanCustomerSelect(){
   sel.innerHTML = '';
   // "Active" = target not yet fully shipped. Fully-completed goals are hidden here so the
   // list stays short and easy to scan — they're still visible/editable in the Goals sheet itself.
-  const activeGoals = goalsList.filter(g => shippedCountFor(g.label) < g.target);
+  const activeGoals = goalsList.filter(isOpenGoal);
   activeGoals.forEach(g => {
     const opt = document.createElement('option');
     opt.value = g.label;
-    const remaining = g.target - shippedCountFor(g.label);
+    const remaining = remainingFor(g);
     opt.textContent = customerAlias(g.label) + ' (' + remaining + ' remaining of ' + g.target + (g.dueDate ? ', due ' + g.dueDate : '') + ')';
     sel.appendChild(opt);
   });
@@ -4105,7 +4129,7 @@ function updateGoalSummary(){
   box.innerHTML = 'Style required: <b>' + styleFromCustomerLabel(label) + '</b> &nbsp;&middot;&nbsp; ' +
     'Already shipped: <b>' + shipped + '</b> / ' + goal.target + ' &nbsp;&middot;&nbsp; ' +
     'In current box (not yet pushed): <b>' + inBox + '</b> &nbsp;&middot;&nbsp; ' +
-    'Remaining after this box: <b>' + Math.max(0, goal.target - shipped - inBox) + '</b>';
+    'Remaining after this box: <b>' + Math.max(0, remainingFor(goal) - inBox) + '</b>';
 }
 
 function renderScanBox(){
@@ -6138,7 +6162,7 @@ async function ggTab(name){
   catch(e){ if(/not found/i.test(e.message)) return []; throw e; }
 }
 async function ggLoadConfig(){
-  try{ const r = await sheetPost({action: 'getGimbalConfig'}); if(r && r.routes){ ggCfg = {parent: r.parent, linkStation: r.linkStation, names: r.names || {}, routes: r.routes, needs: r.needs || {}, kits: r.kits || {}, examples: r.examples || {}}; ggConfigLoaded = true; } }catch(e){}
+  try{ const r = await sheetPost({action: 'getGimbalConfig'}); if(r && r.routes){ ggCfg = {parent: r.parent, linkStation: r.linkStation, names: r.names || {}, routes: r.routes, needs: r.needs || {}, kits: r.kits || {}, examples: r.examples || {}}; ggEd = ggEdFrom(r); ggConfigLoaded = true; } }catch(e){}
   ['ggParentName1', 'ggParentName2'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = ggCfg.names[ggCfg.parent] || ggCfg.parent; });
   ggFillStyleSelect(); ggRenderChips(); ggRenderStationEditor();
 }
@@ -6751,72 +6775,109 @@ document.getElementById('btnGgPrintLabels').addEventListener('click', () => {
 
 
 // ---------- Settings: gimbal parts and stations ----------
+// The editor works on its own full copy of the setup, including parts that are switched off; every
+// floor screen keeps using ggCfg, which only has the parts that are on.
+let ggEd = null;
+function ggEdFrom(r){
+  const c = JSON.parse(JSON.stringify(r || ggCfg));
+  return {parent: c.parent, linkStation: c.linkStation, names: c.names || {}, routes: c.allRoutes || c.routes || {}, needs: c.allNeeds || c.needs || {}, kits: c.allKits || c.kits || {}, examples: c.examples || {}, off: c.off || []};
+}
+function edStyles(){ if(!ggEd) ggEd = ggEdFrom(); const k = x => { const n = Number(x.slice(2)); return isNaN(n) ? 100 : n; }; return Object.keys(ggEd.routes).sort((a, b) => (/^GG/.test(a) ? 0 : 1) - (/^GG/.test(b) ? 0 : 1) || k(a) - k(b) || (a < b ? -1 : 1)); }
+function edRoute(st){ if(!ggEd) ggEd = ggEdFrom(); return Array.isArray(ggEd.routes[st]) ? ggEd.routes[st] : []; }
+function edIsOff(st){ return (ggEd.off || []).indexOf(st) > -1; }
 let ggEditPart = 'GG1';
 function ggRenderStationEditor(){
   const sel = document.getElementById('ggEditPart'); if(!sel) return;
-  if(!ggCfg.routes[ggEditPart]) ggEditPart = ggStyles()[0];
-  sel.innerHTML = ggStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggCfg.names[st] || st) + (st === ggCfg.parent ? ' (parent)' : '') + '</option>').join(''); sel.value = ggEditPart;
-  const nm = document.getElementById('ggEditName'); if(document.activeElement !== nm) nm.value = ggCfg.names[ggEditPart] || '';
-  document.getElementById('ggStationList').innerHTML = (ggRoute(ggEditPart).length ? '' : '<div class="hint" style="margin-bottom:6px;">No stations: this part is ready to link as soon as its serial exists. Add a station if it needs one.</div>') + ggRoute(ggEditPart).map((s, i) => '<div class="gg-st-row"><b>' + (i + 1) + '</b><input type="text" class="gg-st-name" value="' + locEsc(s) + '"><button class="secondary" data-gg-del="' + i + '" style="padding:4px 10px;">\u00d7</button></div>').join('');
-  const ps = document.getElementById('ggParentSel'); ps.innerHTML = ggStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggCfg.names[st] || st) + '</option>').join(''); ps.value = ggCfg.parent;
-  const ls = document.getElementById('ggLinkStation'); if(document.activeElement !== ls) ls.value = ggCfg.linkStation;
+  if(!ggEd) ggEd = ggEdFrom();
+  if(!ggEd.routes[ggEditPart]) ggEditPart = edStyles()[0];
+  sel.innerHTML = edStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggEd.names[st] || st) + (st === ggEd.parent ? ' (parent)' : '') + (edIsOff(st) ? ' (switched off)' : '') + '</option>').join(''); sel.value = ggEditPart;
+  const offBtn = document.getElementById('btnGgPartOff'), delBtn = document.getElementById('btnGgPartDelete'), offNote = document.getElementById('ggPartOffNote');
+  const isParent = ggEditPart === ggEd.parent;
+  offBtn.style.display = isParent ? 'none' : ''; delBtn.style.display = isParent ? 'none' : '';
+  offBtn.textContent = edIsOff(ggEditPart) ? 'Turn this part back on' : 'Turn this part off';
+  offBtn.className = edIsOff(ggEditPart) ? 'accent' : 'secondary';
+  offNote.innerHTML = isParent ? '' : edIsOff(ggEditPart) ? '<b style="color:#8a5a0b;">Switched off:</b> hidden from every screen, can\u2019t be scanned, and no unit asks for it. Its stations and settings are kept for when you turn it back on.' : '';
+  const nm = document.getElementById('ggEditName'); if(document.activeElement !== nm) nm.value = ggEd.names[ggEditPart] || '';
+  document.getElementById('ggStationList').innerHTML = (edRoute(ggEditPart).length ? '' : '<div class="hint" style="margin-bottom:6px;">No stations: this part is ready to link as soon as its serial exists. Add a station if it needs one.</div>') + edRoute(ggEditPart).map((s, i) => '<div class="gg-st-row"><b>' + (i + 1) + '</b><input type="text" class="gg-st-name" value="' + locEsc(s) + '"><button class="secondary" data-gg-del="' + i + '" style="padding:4px 10px;">\u00d7</button></div>').join('');
+  const ps = document.getElementById('ggParentSel'); ps.innerHTML = edStyles().map(st => '<option value="' + st + '">' + st + ' \u2014 ' + locEsc(ggEd.names[st] || st) + '</option>').join(''); ps.value = ggEd.parent;
+  const ls = document.getElementById('ggLinkStation'); if(document.activeElement !== ls) ls.value = ggEd.linkStation;
   // parts linked into the part being edited (any part with stations can take parts, e.g. camera + GPS into A)
-  const ke = document.getElementById('ggKitEdit'), myRoute = ggRoute(ggEditPart), k = (ggCfg.kits || {})[ggEditPart] || {linkStation: Math.min(2, Math.max(1, myRoute.length)), needs: {}};
-  if(ggEditPart === ggCfg.parent) ke.innerHTML = '<div class="hint" style="margin-top:10px;">This is the parent (the part that ships): set what it takes under <b>Linking</b> below.</div>';
+  const ke = document.getElementById('ggKitEdit'), myRoute = edRoute(ggEditPart), k = (ggEd.kits || {})[ggEditPart] || {linkStation: Math.min(2, Math.max(1, myRoute.length)), needs: {}};
+  if(ggEditPart === ggEd.parent) ke.innerHTML = '<div class="hint" style="margin-top:10px;">This is the parent (the part that ships): set what it takes under <b>Linking</b> below.</div>';
   else if(!myRoute.length) ke.innerHTML = '<div class="hint" style="margin-top:10px;">This part has no stations, so it is a component: it takes no parts, and supplier serials are accepted for it when it\u2019s linked.</div>' +
-    '<div class="row3"><label class="field"><span>Example serial (optional)</span><input type="text" id="ggEditExample" autocomplete="off" value="' + locEsc((ggCfg.examples || {})[ggEditPart] || '') + '" placeholder="e.g. A260705215"></label>' +
-    '<div class="hint" style="padding-top:20px;" id="ggExampleText">' + ((ggCfg.examples || {})[ggEditPart] ? 'Serials like this: <b>' + locEsc(ggPatternText(ggCfg.examples[ggEditPart])) + '</b>. Scans that fit go into this component\u2019s slot automatically.' : 'With an example, scans that fit its pattern go into this component\u2019s slot automatically.') + '</div><div></div></div>';
-  else ke.innerHTML = '<h3 style="margin:14px 0 6px; font-size:13px;">Parts linked into ' + locEsc(ggCfg.names[ggEditPart] || ggEditPart) + '</h3><div class="row3"><label class="field"><span>Linked at its station #</span><input type="number" id="ggKitStation" min="1" max="12" value="' + (k.linkStation || 1) + '"></label><div class="hint" style="padding-top:20px;">(' + locEsc(myRoute.map((n, i) => (i + 1) + ' ' + n).join(', ')) + ')</div><div></div></div>' +
-    '<div class="row3">' + ggStyles().filter(st => st !== ggEditPart && st !== ggCfg.parent).map(st => '<label class="field"><span>' + locEsc(ggCfg.names[st] || st) + ' (' + st + ')</span><input type="number" class="gg-kitneed" data-st="' + st + '" min="0" max="20" value="' + ((k.needs || {})[st] || 0) + '"></label>').join('') + '</div>' +
-    '<div class="hint">' + locEsc(ggCfg.names[ggEditPart] || ggEditPart) + ' can\u2019t leave that station until every part above (with a number over 0) is linked. 0 everywhere = it takes no parts.</div>';
-  document.getElementById('ggNeedsList').innerHTML = ggStyles().filter(st => st !== ggCfg.parent).map(st => '<label class="field"><span>' + locEsc(ggCfg.names[st] || st) + ' (' + st + ') per ' + locEsc(ggCfg.names[ggCfg.parent] || 'parent') + '</span><input type="number" class="gg-need" data-st="' + st + '" min="0" max="20" value="' + (ggCfg.needs[st] || 0) + '"></label>').join('');
+    '<div class="row3"><label class="field"><span>Example serial (optional)</span><input type="text" id="ggEditExample" autocomplete="off" value="' + locEsc((ggEd.examples || {})[ggEditPart] || '') + '" placeholder="e.g. A260705215"></label>' +
+    '<div class="hint" style="padding-top:20px;" id="ggExampleText">' + ((ggEd.examples || {})[ggEditPart] ? 'Serials like this: <b>' + locEsc(ggPatternText(ggEd.examples[ggEditPart])) + '</b>. Scans that fit go into this component\u2019s slot automatically.' : 'With an example, scans that fit its pattern go into this component\u2019s slot automatically.') + '</div><div></div></div>';
+  else ke.innerHTML = '<h3 style="margin:14px 0 6px; font-size:13px;">Parts linked into ' + locEsc(ggEd.names[ggEditPart] || ggEditPart) + '</h3><div class="row3"><label class="field"><span>Linked at its station #</span><input type="number" id="ggKitStation" min="1" max="12" value="' + (k.linkStation || 1) + '"></label><div class="hint" style="padding-top:20px;">(' + locEsc(myRoute.map((n, i) => (i + 1) + ' ' + n).join(', ')) + ')</div><div></div></div>' +
+    '<div class="row3">' + edStyles().filter(st => st !== ggEditPart && st !== ggEd.parent && !edIsOff(st)).map(st => '<label class="field"><span>' + locEsc(ggEd.names[st] || st) + ' (' + st + ')</span><input type="number" class="gg-kitneed" data-st="' + st + '" min="0" max="20" value="' + ((k.needs || {})[st] || 0) + '"></label>').join('') + '</div>' +
+    '<div class="hint">' + locEsc(ggEd.names[ggEditPart] || ggEditPart) + ' can\u2019t leave that station until every part above (with a number over 0) is linked. 0 everywhere = it takes no parts.</div>';
+  document.getElementById('ggNeedsList').innerHTML = edStyles().filter(st => st !== ggEd.parent && !edIsOff(st)).map(st => '<label class="field"><span>' + locEsc(ggEd.names[st] || st) + ' (' + st + ') per ' + locEsc(ggEd.names[ggEd.parent] || 'parent') + '</span><input type="number" class="gg-need" data-st="' + st + '" min="0" max="20" value="' + (ggEd.needs[st] || 0) + '"></label>').join('');
 }
 function ggCaptureEditor(){   // keep what was typed before switching parts
+  if(!ggEd) ggEd = ggEdFrom();
   const list = [...document.querySelectorAll('.gg-st-name')].map(i => i.value);
-  if(list.length || ggCfg.routes[ggEditPart]) ggCfg.routes[ggEditPart] = list;
-  ggCfg.names[ggEditPart] = document.getElementById('ggEditName').value.trim() || ggCfg.names[ggEditPart] || ggEditPart;
-  document.querySelectorAll('.gg-need').forEach(i => { ggCfg.needs[i.dataset.st] = Number(i.value) || 0; });
+  if(list.length || ggEd.routes[ggEditPart]) ggEd.routes[ggEditPart] = list;
+  ggEd.names[ggEditPart] = document.getElementById('ggEditName').value.trim() || ggEd.names[ggEditPart] || ggEditPart;
+  document.querySelectorAll('.gg-need').forEach(i => { ggEd.needs[i.dataset.st] = Number(i.value) || 0; });
   const exIn = document.getElementById('ggEditExample');
-  if(exIn){ ggCfg.examples = ggCfg.examples || {}; const v = exIn.value.trim().toUpperCase(); if(v) ggCfg.examples[ggEditPart] = v; else delete ggCfg.examples[ggEditPart]; }
+  if(exIn){ ggEd.examples = ggEd.examples || {}; const v = exIn.value.trim().toUpperCase(); if(v) ggEd.examples[ggEditPart] = v; else delete ggEd.examples[ggEditPart]; }
   const ks = document.getElementById('ggKitStation');
-  if(ks){ ggCfg.kits = ggCfg.kits || {}; const kn = {}; document.querySelectorAll('.gg-kitneed').forEach(i => { const n = Number(i.value) || 0; if(n > 0) kn[i.dataset.st] = n; });
-    if(Object.keys(kn).length) ggCfg.kits[ggEditPart] = {linkStation: Number(ks.value) || 1, needs: kn}; else delete ggCfg.kits[ggEditPart]; }
-  ggCfg.parent = document.getElementById('ggParentSel').value || ggCfg.parent;
-  ggCfg.linkStation = Number(document.getElementById('ggLinkStation').value) || 1;
+  if(ks){ ggEd.kits = ggEd.kits || {}; const kn = {}; document.querySelectorAll('.gg-kitneed').forEach(i => { const n = Number(i.value) || 0; if(n > 0) kn[i.dataset.st] = n; });
+    if(Object.keys(kn).length) ggEd.kits[ggEditPart] = {linkStation: Number(ks.value) || 1, needs: kn}; else delete ggEd.kits[ggEditPart]; }
+  ggEd.parent = document.getElementById('ggParentSel').value || ggEd.parent;
+  ggEd.linkStation = Number(document.getElementById('ggLinkStation').value) || 1;
 }
 document.getElementById('ggEditPart').addEventListener('change', e => { ggCaptureEditor(); ggEditPart = e.target.value; ggRenderStationEditor(); });
 document.getElementById('ggParentSel').addEventListener('change', () => { ggCaptureEditor(); ggRenderStationEditor(); });
-document.getElementById('btnGgAddStation').addEventListener('click', () => { ggCaptureEditor(); ggCfg.routes[ggEditPart].push(''); ggRenderStationEditor(); });
+document.getElementById('btnGgAddStation').addEventListener('click', () => { ggCaptureEditor(); ggEd.routes[ggEditPart].push(''); ggRenderStationEditor(); });
+document.getElementById('btnGgPartOff').addEventListener('click', () => {
+  ggCaptureEditor(); ggEd.off = ggEd.off || [];
+  const nm = ggEd.names[ggEditPart] || ggEditPart;
+  if(edIsOff(ggEditPart)) ggEd.off = ggEd.off.filter(x => x !== ggEditPart);
+  else ggEd.off.push(ggEditPart);
+  ggRenderStationEditor();
+  document.getElementById('ggStationsMsg').innerHTML = '<b>' + locEsc(nm) + '</b> will be switched ' + (edIsOff(ggEditPart) ? 'off' : 'back on') + ' when you press <b>Save parts and stations</b>.';
+});
+document.getElementById('btnGgPartDelete').addEventListener('click', () => {
+  const nm = ggEd.names[ggEditPart] || ggEditPart, code = ggEditPart;
+  if(!confirm('Delete ' + nm + ' (' + code + ') from the setup?\n\nIts stations and settings are removed. Serials and history already in the sheet are kept.\nIf you might need it again, use "Turn this part off" instead.\n\nThe change is made when you press Save.')) return;
+  ggCaptureEditor();
+  delete ggEd.routes[code]; delete ggEd.needs[code]; delete (ggEd.kits || {})[code]; delete (ggEd.examples || {})[code];
+  Object.keys(ggEd.kits || {}).forEach(k => { delete ggEd.kits[k].needs[code]; });
+  ggEd.off = (ggEd.off || []).filter(x => x !== code);
+  ggEditPart = edStyles()[0]; ggRenderStationEditor();
+  document.getElementById('ggStationsMsg').innerHTML = '<b>' + locEsc(nm) + '</b> will be deleted when you press <b>Save parts and stations</b>.';
+});
 document.getElementById('btnGgAddComponent').addEventListener('click', () => {
   ggCaptureEditor();
   const code = (prompt('Short code for the component (2\u20136 letters/numbers, e.g. CAM, GPS, ESC):') || '').trim().toUpperCase();
   if(!code) return;
   if(!/^[A-Z][A-Z0-9]{1,5}$/.test(code)){ alert('Use 2\u20136 letters or numbers, starting with a letter.'); return; }
-  if(ggCfg.routes[code]){ alert(code + ' already exists.'); return; }
+  if(ggEd.routes[code]){ alert(code + ' already exists.'); return; }
   const name = (prompt('Name for ' + code + ' (shown everywhere):', code) || code).trim();
-  ggCfg.routes[code] = []; ggCfg.names[code] = name; ggRenderStationEditor();
+  ggEd.routes[code] = []; ggEd.names[code] = name; ggRenderStationEditor();
   document.getElementById('ggStationsMsg').textContent = name + ' (' + code + ') added. Pick the part it goes into, set how many under "Parts linked into", then Save.';
 });
 document.getElementById('btnGgAddPart').addEventListener('click', () => {
   ggCaptureEditor();
-  const next = 'GG' + (Math.max(0, ...ggStyles().map(s => Number(s.slice(2)) || 0)) + 1);
-  ggCfg.routes[next] = ['Laser Mark', 'Build', 'Test']; ggCfg.names[next] = 'New part'; ggEditPart = next; ggRenderStationEditor();
+  const next = 'GG' + (Math.max(0, ...edStyles().map(s => Number(s.slice(2)) || 0)) + 1);
+  ggEd.routes[next] = ['Laser Mark', 'Build', 'Test']; ggEd.names[next] = 'New part'; ggEditPart = next; ggRenderStationEditor();
   document.getElementById('ggStationsMsg').textContent = next + ' added. Name it, set its stations and how many go into each parent, then Save.';
 });
 document.getElementById('ggStationList').addEventListener('click', e => {
   const b = e.target.closest('[data-gg-del]'); if(!b) return;
-  ggCaptureEditor(); ggCfg.routes[ggEditPart].splice(Number(b.getAttribute('data-gg-del')), 1); ggRenderStationEditor();
+  ggCaptureEditor(); ggEd.routes[ggEditPart].splice(Number(b.getAttribute('data-gg-del')), 1); ggRenderStationEditor();
 });
 document.getElementById('btnGgSaveStations').addEventListener('click', async () => {
   const msg = document.getElementById('ggStationsMsg');
   ggCaptureEditor();
-  Object.keys(ggCfg.routes).forEach(st => { ggCfg.routes[st] = ggCfg.routes[st].map(x => String(x).trim()).filter(Boolean); });   // a part may have no stations (e.g. motors)
+  Object.keys(ggEd.routes).forEach(st => { ggEd.routes[st] = ggEd.routes[st].map(x => String(x).trim()).filter(Boolean); });   // a part may have no stations (e.g. motors)
   try{
-    const r = await sheetPost({action: 'setGimbalConfig', config: ggCfg});
+    const r = await sheetPost({action: 'setGimbalConfig', config: ggEd});
     if(r.status === 'error') throw new Error(r.message);
-    ggCfg = {parent: r.parent, linkStation: r.linkStation, names: r.names, routes: r.routes, needs: r.needs, kits: r.kits || {}, examples: r.examples || {}};
-    ggRenderStationEditor(); ggRenderChips(); ggFillStyleSelect();
-    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Saved for every computer and the TV.</b> Parts are linked at ' + locEsc(ggCfg.names[ggCfg.parent] || ggCfg.parent) + ' station ' + ggCfg.linkStation + ' (' + locEsc(ggRoute(ggCfg.parent)[ggCfg.linkStation - 1] || '') + ').';
+    ggCfg = {parent: r.parent, linkStation: r.linkStation, names: r.names, routes: r.routes, needs: r.needs, kits: r.kits || {}, examples: r.examples || {}};   // floor screens: parts that are on
+    ggEd = ggEdFrom(r);   // the editor: every part
+    ggRenderStationEditor(); ggRenderChips(); ggFillStyleSelect(); if(typeof goalFillStyles === 'function') goalFillStyles();
+    msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Saved for every computer and the TV.</b> Parts are linked at ' + locEsc(ggEd.names[ggEd.parent] || ggEd.parent) + ' station ' + ggEd.linkStation + ' (' + locEsc(edRoute(ggEd.parent)[ggEd.linkStation - 1] || '') + ').';
   }catch(e){ msg.textContent = /unknown action/i.test(e.message) ? 'Deploy the latest Code.gs first.' : 'Could not save: ' + e.message; }
 });
 
@@ -6863,7 +6924,7 @@ function woAliasKey(text){ return String(text || '').replace(/\s*-\s*(H2[A-F]|GG
 function aliasCustomerOf(label){
   const text = String(label || '').trim();
   if(!text) return null;
-  if(/^WO[\s\-_#]*\d/i.test(text)){   // work orders are listed too, one row per work order
+  if(/^WO(?:[\s\-_#]|\d)/i.test(text)){   // work orders are listed too, one row per work order
     const sm = text.match(/^(.*?)\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})$/i);
     return {cust: (sm ? sm[1] : text).trim(), style: sm ? sm[2].toUpperCase() : '', wo: true};
   }
@@ -8898,7 +8959,7 @@ function customerAliasBase(name, style){
 function customerAlias(label){
   const text = String(label || '').trim();
   if(!text) return text;
-  if(/^WO[\s\-_#]*\d/i.test(text)){
+  if(/^WO(?:[\s\-_#]|\d)/i.test(text)){
     const named = CUSTOMER_ALIAS_CUSTOM[woAliasKey(text)], sm = text.match(/\s*-\s*(H2[A-F]|GG[A-Z0-9]{1,3})\s*$/i);
     return named ? named + (sm ? ' \u00b7 ' + sm[1].toUpperCase() : '') : text;
   }
