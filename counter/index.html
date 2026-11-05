@@ -63,8 +63,9 @@ ol.steps>li::before{content:counter(s);width:34px;height:34px;border-radius:50%;
     <p class="dim" style="margin-top:12px;font-size:14.5px">If it won't open: check the Pi is powered and on the network, then try its number address instead (for example <code>192.168.1.50:8080</code>). Ask IT to reserve that address so it never changes.</p>
   </section>
 
-  <section class="card">
-    <h2>Set up a new Pi, or update one</h2>
+  <details class="card">
+    <summary style="cursor:pointer;font-weight:700;font-size:16px;color:var(--dim)">Engineering only: set up or update a Pi</summary>
+    <div style="margin-top:14px">
     <ol class="steps">
       <li><div><b>Get the Pi ready.</b> Raspberry Pi OS (64-bit) with SSH on, the camera connected, the official 27W power supply, and a network connection with internet.</div></li>
       <li><div><b>Log into the Pi</b> from any computer (PowerShell on Windows, Terminal on Mac), using the Pi's username and name:
@@ -73,14 +74,10 @@ ol.steps>li::before{content:counter(s);width:34px;height:34px;border-radius:50%;
         <div class="cmd"><code id="getCmd">…</code><button class="btn primary" data-copy="getCmd">Copy</button></div></div></li>
       <li><div><b>Open the counter</b> with the button at the top of this page.</div></li>
     </ol>
-    <p class="note" style="margin-top:18px">Already running? Inside the counter, open <b>Detection and camera settings</b>, then <b>Software</b>, and press <b>Update now</b>. No typing needed.</p>
-  </section>
+    <p class="note" style="margin-top:18px">Already running? In the counter, click the shark, then <b>System → Update now</b>. No typing needed.</p>
+    </div>
+  </details>
 
-  <section class="card">
-    <h2>Manual download</h2>
-    <p class="dim">For copying onto a Pi by hand.</p>
-    <a class="btn" href="partcounter.zip" download>Download partcounter.zip</a>
-  </section>
 </main>
 <div id="toast" hidden></div>
 
