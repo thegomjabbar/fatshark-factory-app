@@ -421,11 +421,30 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     position:relative;
   }
   .label .qr-block canvas, .label .qr-block img{display:block; margin:0 auto; width:auto; height:auto;}
+  .label-print-panel{margin-top:14px; padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--panel, #fff);}
+  .label-print-panel h3{margin:0 0 10px; font-size:14px;}
+  .label-print-row{display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:12px;}
+  .label-print-preview{display:flex; justify-content:flex-start; overflow:auto; padding:6px 2px;}
+  .label-print-preview .label, .label-print-preview iframe{box-shadow:0 2px 10px rgba(0,0,0,.12); border:1px solid #ccc !important;}
   .label .meta div{font-size:9.5px; margin-bottom:2px; white-space:nowrap;}
   .label .meta .serial{font-weight:700; font-size:10.5px; margin-top:3px;}
   .label .content-row{display:flex; flex-direction:row; align-items:center; flex:1; margin-top:3mm; gap:5mm; padding-left:3mm;}
   .label .cut-zone{position:relative; padding:6mm; flex:none;}
   .label .qr-row{display:flex; flex-direction:column; align-items:center; gap:4mm;}
+  /* 4x6 (tall) serial labels: portrait layout, everything larger, QR pair side by side */
+  .label.tall{padding:0.22in;}
+  .label.tall .meta div{font-size:calc(9.5px * var(--lm)); margin-bottom:5px;}
+  .label.tall .meta .serial{font-size:calc(10.5px * var(--lm));}
+  .label.tall .spec-block{position:static; display:flex; gap:9mm; justify-content:flex-start; margin-top:3mm; padding-bottom:3mm; border-bottom:1px solid #111;}
+  .label.tall .spec-row{margin-top:0; font-size:calc(9.5px * var(--ls));}
+  .label.tall .content-row{flex-direction:column; justify-content:space-evenly; gap:4mm; padding-left:0; margin-top:2mm;}
+  .label.tall .cut-zone{padding:calc(6mm * var(--ls));}
+  .label.tall .qr-row{flex-direction:row; gap:12mm;}
+  .label.tall .qr-caption{font-size:calc(9px * var(--ls));}
+  .label.tall .letter-col{flex:none; gap:3mm;}
+  .label.tall .serial-under-letter{font-size:calc(12.5px * var(--ls));}
+  .label.tall .extra-qr{margin:0;}
+  .label.tall .extra-qr .extra-cap{font-size:calc(5pt * var(--ls));}
   .label .qr-block{text-align:center;}
   .label .extra-qr{flex:none; align-self:center; text-align:center; margin:0 2mm 0 0;}
   .label .extra-qr .extra-cap{font-size:5pt; margin-top:.5mm;}
@@ -1176,9 +1195,9 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   </div>
 
   <div class="panel">
-    <h2>Print</h2>
-    <p class="hint">Stickers print at a fixed 4in &times; 3in. Logo and SKU map live in Settings (click the shark icon, top-left).</p>
-    <div class="btnrow">
+    <h2>Preview &amp; print</h2>
+    <p class="hint">Pick the size and orientation that match the roll in the Rollo: the preview below changes straight away. Logo and SKU map live in Settings (click the shark icon, top-left).</p>
+    <div class="label-print-row"><label class="field" style="max-width:340px; margin:0;"><span>Label size &amp; orientation</span><select class="rollo-size-sel" id="shipSizeSel" style="font-size:15px; padding:8px 10px;"><option value="4x3">4 &times; 3 in</option><option value="4x6">4 &times; 6 in (vertical)</option><option value="6x4">6 &times; 4 in (horizontal)</option></select></label>
       <button class="accent" id="btnShipPrint">Print shipping labels</button>
     </div>
     <div class="labels-preview" id="shipLabelsPreview"></div>
@@ -1254,6 +1273,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       <button class="secondary" id="btnCheckStation6Now" disabled>Check against Station 6 now</button>
       <button class="accent" id="btnFinalizeBox" disabled>Finalize box &amp; push to sheet</button>
       <button class="secondary" id="btnPrintBoxLabel" style="display:none;">Print box label (QR manifest)</button>
+      <div id="boxLabelPanel" class="label-print-panel" style="display:none;">
+        <h3>Box label: preview &amp; print</h3>
+        <div class="label-print-row"><label class="field" style="max-width:340px; margin:0;"><span>Label size &amp; orientation</span><select class="rollo-size-sel" style="font-size:15px; padding:8px 10px;"><option value="4x3">4 &times; 3 in</option><option value="4x6">4 &times; 6 in (vertical)</option><option value="6x4">6 &times; 4 in (horizontal)</option></select></label><button class="accent" id="btnPrintBoxLabel2">Print box label</button></div>
+        <div class="label-print-preview" id="boxLabelPreview"></div>
+      </div>
     </div>
     <div class="hint" id="scanFinalizeMsg"></div>
   </div>
@@ -1655,6 +1679,11 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         <button class="accent" id="btnGgShip" disabled>Check &amp; ship this box</button>
         <button class="secondary" id="btnGgClearBox">Clear box</button>
         <button class="secondary" id="btnGgPrintBox" style="display:none;">Print box label</button>
+        <div id="ggBoxLabelPanel" class="label-print-panel" style="display:none;">
+          <h3>Box label: preview &amp; print</h3>
+          <div class="label-print-row"><label class="field" style="max-width:340px; margin:0;"><span>Label size &amp; orientation</span><select class="rollo-size-sel" style="font-size:15px; padding:8px 10px;"><option value="4x3">4 &times; 3 in</option><option value="4x6">4 &times; 6 in (vertical)</option><option value="6x4">6 &times; 4 in (horizontal)</option></select></label><button class="accent" id="btnGgPrintBox2">Print box label</button></div>
+          <div class="label-print-preview" id="ggBoxLabelPreview"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -2191,6 +2220,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     <div class="btnrow">
       <button class="accent" id="btnSheetSave">Save connection</button>
       <button class="secondary" id="btnSheetPull">Pull headset serials now (dedupe)</button>
+        <div class="hint" id="autoSyncMsg" style="margin-top:6px;">Automatic sync: every 2 hours, and right after the connection comes back.</div>
       <button class="secondary" id="btnSheetTest">Test connection</button>
     </div>
     <div class="hint" id="sheetMsg"></div>
@@ -3299,8 +3329,7 @@ function updateUndoButtonState(){
 function renderLabelPreviews(){
   const wrap = document.getElementById('labelsPreview');
   wrap.innerHTML = '';
-  const w = parseFloat(document.getElementById('labelW').value) || 4;
-  const h = parseFloat(document.getElementById('labelH').value) || 4;
+  const [w, h] = serialLabelWH();
   const dual = document.getElementById('dualQR').checked;
   const qrMm = parseFloat(document.getElementById('qrMm').value) || 10.5;
   const fiducials = document.getElementById('fiducials').checked;
@@ -3321,6 +3350,10 @@ function buildLabelEl(r, wIn, hIn, dual, idPrefix, qrMm, fiducials){
   el.className = 'label';
   el.style.width = wIn + 'in';
   el.style.height = hIn + 'in';
+  // a tall label (4x6 Rollo) gets the portrait layout; wide labels (4x3) are exactly as before
+  const tall = hIn > wIn * 1.2, ls = tall ? Math.max(1, Math.min(1.9, wIn / 2.5)) : 1;
+  if(tall){ el.classList.add('tall'); el.style.setProperty('--ls', ls); el.style.setProperty('--lm', Math.min(ls, 1.42)); }
+  const qrScale = tall ? ls * 1.32 : 1;
   const meta = document.createElement('div');
   meta.className = 'meta';
   meta.innerHTML = `
@@ -3395,7 +3428,7 @@ function buildLabelEl(r, wIn, hIn, dual, idPrefix, qrMm, fiducials){
   bigLetter.className = 'style-letter';
   const letter = r.bigMark || (r.productCode || '?').slice(-1).toUpperCase();   // gimbals pass e.g. "G1"
   bigLetter.textContent = letter;
-  bigLetter.style.fontSize = Math.min(wIn, hIn) * 0.32 * (letter.length > 1 ? 0.62 : 1) + 'in';
+  bigLetter.style.fontSize = (tall ? wIn * 0.3 : Math.min(wIn, hIn) * 0.32) * (letter.length > 1 ? 0.62 : 1) + 'in';
   letterCol.appendChild(bigLetter);
 
   const serialUnderLetter = document.createElement('div');
@@ -3417,14 +3450,14 @@ function buildLabelEl(r, wIn, hIn, dual, idPrefix, qrMm, fiducials){
     const isWhite = spec.headsetColor === 'white';
     const swatchFill = isWhite ? '#fff' : '#111';
     const colorAbbrev = isWhite ? 'WHT' : 'BLK';
-    const barWidthMm = spec.strapWidth === '1"' ? 5 : 3.75;
+    const barWidthMm = (spec.strapWidth === '1"' ? 5 : 3.75) * ls;
 
     specBlock.innerHTML = `
       <div class="spec-row"><span>${colorAbbrev}</span><span class="spec-swatch" style="background:${swatchFill};"></span></div>
       <div class="spec-row"><span>${spec.strapWidth} STRAP</span><span class="spec-bar" style="width:${barWidthMm}mm;"></span></div>
       <div class="spec-row"><span>${spec.logo ? 'FAT SHARK LOGO' : 'NO LOGO'}</span><span class="spec-symbol">${spec.logo ? '\u2713' : '\u2715'}</span></div>
     `;
-    el.appendChild(specBlock);
+    if(tall) el.insertBefore(specBlock, contentRow); else el.appendChild(specBlock);
   }
 
   // Render QR at a fixed high-res canvas (crisp for print), then force the *display* size
@@ -3433,8 +3466,8 @@ function buildLabelEl(r, wIn, hIn, dual, idPrefix, qrMm, fiducials){
   const RENDER_PX = 300;
   setTimeout(() => {
     const targets = [];
-    for(let c=0;c<copies;c++) targets.push([document.getElementById(idPrefix + '-qr-' + c), qrMm]);
-    if(r.extraQrMm > 0) targets.push([document.getElementById(idPrefix + '-qrx'), r.extraQrMm]);
+    for(let c=0;c<copies;c++) targets.push([document.getElementById(idPrefix + '-qr-' + c), qrMm * qrScale]);
+    if(r.extraQrMm > 0) targets.push([document.getElementById(idPrefix + '-qrx'), r.extraQrMm * qrScale]);
     for(const [target, mmSize] of targets){
       if(!target) continue;
       const qrMm = mmSize;
@@ -3553,8 +3586,7 @@ function buildOpticalLabelEl(r, wIn, hIn, dual, idPrefix, qrMm, fiducials){
 }
 let opticalLabelsBuilt = [];
 document.getElementById('btnOpticalBuildLabels').addEventListener('click', () => {
-  const w = parseFloat(document.getElementById('labelW').value) || 4;
-  const h = parseFloat(document.getElementById('labelH').value) || 3;
+  const [w, h] = serialLabelWH();
   const dual = document.getElementById('dualQR').checked;
   const qrMm = parseFloat(document.getElementById('opticalQrMm').value) || 8;
   const fiducials = document.getElementById('fiducials').checked;
@@ -3569,8 +3601,7 @@ document.getElementById('btnOpticalBuildLabels').addEventListener('click', () =>
 });
 document.getElementById('btnOpticalPrint').addEventListener('click', () => {
   if(!opticalLabelsBuilt.length) return;
-  const w = parseFloat(document.getElementById('labelW').value) || 4;
-  const h = parseFloat(document.getElementById('labelH').value) || 3;
+  const [w, h] = serialLabelWH();
   const dual = document.getElementById('dualQR').checked;
   const qrMm = parseFloat(document.getElementById('opticalQrMm').value) || 8;
   const fiducials = document.getElementById('fiducials').checked;
@@ -3615,8 +3646,7 @@ document.getElementById('btnBuildReprintLabels').addEventListener('click', () =>
     dateGenerated: dateStr,
     person: person
   }));
-  const w = parseFloat(document.getElementById('labelW').value) || 4;
-  const h = parseFloat(document.getElementById('labelH').value) || 4;
+  const [w, h] = serialLabelWH();
   const dual = document.getElementById('dualQR').checked;
   const qrMm = parseFloat(document.getElementById('qrMm').value) || 10.5;
   const fiducials = document.getElementById('fiducials').checked;
@@ -3630,8 +3660,7 @@ document.getElementById('btnBuildReprintLabels').addEventListener('click', () =>
 });
 document.getElementById('btnPrintReprintLabels').addEventListener('click', () => {
   if(!reprintBatch.length) return;
-  const w = parseFloat(document.getElementById('labelW').value) || 4;
-  const h = parseFloat(document.getElementById('labelH').value) || 4;
+  const [w, h] = serialLabelWH();
   const dual = document.getElementById('dualQR').checked;
   const qrMm = parseFloat(document.getElementById('qrMm').value) || 10.5;
   const fiducials = document.getElementById('fiducials').checked;
@@ -3655,8 +3684,7 @@ document.getElementById('btnPrintReprintLabels').addEventListener('click', () =>
 });
 
 document.getElementById('btnPrint').addEventListener('click', () => {
-  const w = parseFloat(document.getElementById('labelW').value) || 4;
-  const h = parseFloat(document.getElementById('labelH').value) || 4;
+  const [w, h] = serialLabelWH();
   const dual = document.getElementById('dualQR').checked;
   const qrMm = parseFloat(document.getElementById('qrMm').value) || 10.5;
   const fiducials = document.getElementById('fiducials').checked;
@@ -4593,7 +4621,7 @@ document.getElementById('btnFinalizeBox').addEventListener('click', async () => 
       // reflect locally so goal totals stay correct without a full refetch
       currentBox.forEach(item => sentToWHRows.push({sn: item.sn, date: dateStr, person: person, customer: customerNameOnly, countedPerBox: item.position}));
       lastFinalizedBox = {customer: customerNameOnly, style: style, serials: serialsInBox, date: dateStr, qty: serialsInBox.length};
-      document.getElementById('btnPrintBoxLabel').style.display = 'inline-block';
+      document.getElementById('boxLabelPanel').style.display = ''; renderBoxLabelPreview();
       currentBox = [];
       renderScanBox(); // sets finalizeBtn.disabled = true again since the box is now empty
       msg.textContent = 'Box pushed to the sheet successfully (' + rows.length + ' units). Ready for the next box.';
@@ -4607,9 +4635,45 @@ document.getElementById('btnFinalizeBox').addEventListener('click', async () => 
   }
 });
 
+// ONE size for the SHIPPING labels (Shipping Labels tab + the Ship to Warehouse box stickers, headset
+// and gimbal): 4x3, 4x6 vertical or 6x4 horizontal, remembered on this computer. Serial labels are not
+// affected: they always print at their own setting (4x3).
+const ROLLO_SIZES = {'4x3': {w: 4, h: 3}, '4x6': {w: 4, h: 6}, '6x4': {w: 6, h: 4}};
+function rolloSize(){ const v = localStorage.getItem('rollo-size'); return ROLLO_SIZES[v] ? v : '4x3'; }
+function boxLabelSize(){ return Object.assign({}, ROLLO_SIZES[rolloSize()]); }
+function serialLabelWH(){
+  return [parseFloat(document.getElementById('labelW').value) || 4, parseFloat(document.getElementById('labelH').value) || 3];
+}
+// live previews of the box labels (headset QR manifest, gimbal box) at the chosen size
+function renderBoxLabelPreview(){
+  const wrap = document.getElementById('boxLabelPreview'); if(!wrap || !lastFinalizedBox) return;
+  const {w, h} = boxLabelSize(); wrap.innerHTML = '';
+  wrap.appendChild(buildBoxLabelEl(lastFinalizedBox, w, h, 'boxlabelprev'));
+}
+function ggRenderBoxLabelPreview(){
+  const wrap = document.getElementById('ggBoxLabelPreview'); if(!wrap || !ggLastShip) return;
+  const {w, h} = boxLabelSize(), f = document.createElement('iframe');
+  f.style.cssText = 'width:' + w + 'in; height:' + h + 'in; border:0; background:#fff;';
+  f.srcdoc = ggBoxLabelDoc(ggLastShip, false);
+  wrap.innerHTML = ''; wrap.appendChild(f);
+}
+function applyRolloSize(v){
+  localStorage.setItem('rollo-size', ROLLO_SIZES[v] ? v : '4x3');
+  document.querySelectorAll('.rollo-size-sel').forEach(o => { o.value = rolloSize(); });
+  const sw = document.getElementById('shipLabelW'), sh = document.getElementById('shipLabelH');
+  if(sw && sh){ sw.value = boxLabelSize().w; sh.value = boxLabelSize().h; }
+  ['renderShipPreview', 'renderBoxLabelPreview', 'ggRenderBoxLabelPreview'].forEach(n => { try{ if(typeof window[n] === 'function') window[n](); }catch(e){} });
+}
+(function(){
+  if(!localStorage.getItem('rollo-size')){   // carry over a choice made on the earlier box or shipping pickers
+    const old = localStorage.getItem('box-label-size') || localStorage.getItem('ship-label-size'); if(old) localStorage.setItem('rollo-size', old);
+  }
+  document.querySelectorAll('.rollo-size-sel').forEach(sel => { sel.value = rolloSize(); sel.addEventListener('change', () => applyRolloSize(sel.value)); });
+})();
+document.getElementById('btnPrintBoxLabel2').addEventListener('click', () => document.getElementById('btnPrintBoxLabel').click());
 document.getElementById('btnPrintBoxLabel').addEventListener('click', () => {
   if(!lastFinalizedBox) return;
-  const w = 4, h = 3;
+  const {w, h} = boxLabelSize();
   const area = document.getElementById('printArea');
   area.innerHTML = '';
   let styleTag = document.getElementById('printPageStyle');
@@ -4630,7 +4694,9 @@ function buildBoxLabelEl(boxData, wIn, hIn, idPrefix){
   el.style.height = hIn + 'in';
   el.style.alignItems = 'center';
   el.style.textAlign = 'center';
-  el.style.padding = '0.18in 0.25in';
+  const tall = hIn > wIn * 1.2, k = tall ? 1.7 : Math.max(1, hIn / 3);   // 4x6: portrait, larger; 6x4: the 4x3 design scaled up
+  el.style.padding = tall ? '0.3in 0.25in' : '0.18in 0.25in';
+  if(tall) el.style.justifyContent = 'space-between';
   el.style.fontFamily = 'var(--mono)';
 
   const logoWrap = document.createElement('div');
@@ -4641,7 +4707,7 @@ function buildBoxLabelEl(boxData, wIn, hIn, idPrefix){
   if(logoDataUrl){
     const img = document.createElement('img');
     img.src = logoDataUrl;
-    img.style.maxHeight = (hIn * 0.16) + 'in';
+    img.style.maxHeight = (tall ? 0.75 : hIn * 0.16) + 'in';
     img.style.maxWidth = '85%';
     img.style.objectFit = 'contain';
     logoWrap.appendChild(img);
@@ -4650,7 +4716,7 @@ function buildBoxLabelEl(boxData, wIn, hIn, idPrefix){
     word.textContent = 'UNUSUAL MACHINES';
     word.style.fontFamily = 'var(--sans)';
     word.style.fontWeight = '700';
-    word.style.fontSize = '12px';
+    word.style.fontSize = (12 * k) + 'px';
     word.style.letterSpacing = '.04em';
     word.style.color = '#111';
     logoWrap.appendChild(word);
@@ -4665,8 +4731,8 @@ function buildBoxLabelEl(boxData, wIn, hIn, idPrefix){
 
   const info = document.createElement('div');
   info.style.marginBottom = '0.1in';
-  info.innerHTML = `<div style="font-weight:800; font-size:15px; color:#111;">${boxData.customer}</div>
-    <div style="font-size:11px; color:#111; margin-top:2px;">Style <b>${boxData.style}</b> &nbsp;&middot;&nbsp; Qty <b>${boxData.qty}</b> &nbsp;&middot;&nbsp; ${boxData.date}</div>`;
+  info.innerHTML = `<div style="font-weight:800; font-size:${15 * k}px; color:#111;">${boxData.customer}</div>
+    <div style="font-size:${11 * k}px; color:#111; margin-top:${2 * k}px;">Style <b>${boxData.style}</b> &nbsp;&middot;&nbsp; Qty <b>${boxData.qty}</b> &nbsp;&middot;&nbsp; ${boxData.date}</div>`;
   el.appendChild(info);
 
   const qrWrap = document.createElement('div');
@@ -4677,13 +4743,13 @@ function buildBoxLabelEl(boxData, wIn, hIn, idPrefix){
   el.appendChild(qrWrap);
 
   const footer = document.createElement('div');
-  footer.style.fontSize = '9.5px';
+  footer.style.fontSize = (9.5 * k) + 'px';
   footer.style.color = '#111';
   footer.style.marginTop = '0.06in';
   footer.textContent = 'Scan for full serial manifest (' + boxData.qty + ' units)';
   el.appendChild(footer);
 
-  const qrMm = Math.min(wIn, hIn) * 25.4 * 0.42; // sized to comfortably fill the remaining label space
+  const qrMm = tall ? wIn * 25.4 * 0.78 : Math.min(wIn, hIn) * 25.4 * (wIn >= 5 ? 0.52 : 0.42); // fills the remaining space (about 3 in on a 4x6, 2 in on a 6x4)
   const manifestText = boxData.serials.join('\n');
   setTimeout(() => {
     const target = document.getElementById(idPrefix + '-qr');
@@ -4715,6 +4781,9 @@ function buildReturnLabelEl(data, wIn, hIn){
   el.className = 'label';
   el.style.width = wIn + 'in';
   el.style.height = hIn + 'in';
+  // 4x3 is the base design, sized from the height. A tall label (4x6) is sized from its width, gives
+  // the box contents the extra room, and puts W.O. / QTY / DATE / OPERATOR in a 2 x 2 grid.
+  const tall = hIn > wIn * 1.2, u = tall ? wIn * 0.75 : hIn;
   el.style.padding = '0';
   el.style.display = 'flex';
   el.style.flexDirection = 'column';
@@ -4738,7 +4807,7 @@ function buildReturnLabelEl(data, wIn, hIn){
   fatSharkWrap.style.justifyContent = 'flex-start';
   const fatSharkImg = document.createElement('img');
   fatSharkImg.src = 'data:image/png;base64,' + FAT_SHARK_LOGO_B64;
-  fatSharkImg.style.maxHeight = (hIn * 0.09) + 'in';
+  fatSharkImg.style.maxHeight = (u * 0.09) + 'in';
   fatSharkImg.style.maxWidth = '100%';
   fatSharkImg.style.objectFit = 'contain';
   fatSharkWrap.appendChild(fatSharkImg);
@@ -4749,7 +4818,7 @@ function buildReturnLabelEl(data, wIn, hIn){
   heading.style.flex = '1';
   heading.style.textAlign = 'center';
   heading.style.fontWeight = '800';
-  heading.style.fontSize = (hIn * 0.1) + 'in';
+  heading.style.fontSize = (u * 0.1) + 'in';
   heading.style.whiteSpace = 'nowrap';
   topRow.appendChild(heading);
 
@@ -4762,7 +4831,7 @@ function buildReturnLabelEl(data, wIn, hIn){
   if(logoDataUrl){
     const img = document.createElement('img');
     img.src = logoDataUrl;
-    img.style.maxHeight = (hIn * 0.09) + 'in';
+    img.style.maxHeight = (u * 0.09) + 'in';
     img.style.maxWidth = '100%';
     img.style.objectFit = 'contain';
     umWrap.appendChild(img);
@@ -4770,7 +4839,7 @@ function buildReturnLabelEl(data, wIn, hIn){
     const word = document.createElement('div');
     word.textContent = 'UNUSUAL MACHINES';
     word.style.fontWeight = '800';
-    word.style.fontSize = (hIn * 0.024) + 'in';
+    word.style.fontSize = (u * 0.024) + 'in';
     word.style.lineHeight = '1.15';
     word.style.textAlign = 'right';
     word.style.width = '100%';
@@ -4791,7 +4860,7 @@ function buildReturnLabelEl(data, wIn, hIn){
   const desc = document.createElement('div');
   desc.className = 'return-desc';
   desc.style.whiteSpace = 'pre-wrap';
-  desc.style.fontSize = (hIn * 0.07) + 'in';
+  desc.style.fontSize = (u * (tall ? 0.085 : 0.07)) + 'in';
   desc.style.lineHeight = '1.5';
   desc.style.flex = '1';
   desc.style.overflow = 'hidden';
@@ -4802,7 +4871,8 @@ function buildReturnLabelEl(data, wIn, hIn){
   // ---- bottom row: work order / quantity / date / operator, all in one strip ----
   const bottomRow = document.createElement('div');
   bottomRow.style.display = 'flex';
-  bottomRow.style.height = (hIn * 0.24) + 'in';
+  bottomRow.style.height = (u * 0.24) + 'in';
+  if(tall){ bottomRow.style.display = 'grid'; bottomRow.style.gridTemplateColumns = '1fr 1fr'; bottomRow.style.height = 'auto'; bottomRow.style.rowGap = '0.06in'; }
   const cols = [
     {label: 'W.O. #', value: data.workOrder},
     {label: 'QTY', value: data.qty},
@@ -4814,7 +4884,8 @@ function buildReturnLabelEl(data, wIn, hIn){
     col.style.flex = '1';
     col.style.minWidth = '0'; // allow flex children to shrink below content size instead of overflowing
     col.style.padding = '0.05in 0.05in';
-    if(i < cols.length - 1) col.style.borderRight = '2px solid #111';
+    if(tall ? i % 2 === 0 : i < cols.length - 1) col.style.borderRight = '2px solid #111';
+    if(tall) col.style.padding = '0.08in 0.12in';
     col.style.display = 'flex';
     col.style.flexDirection = 'column';
     col.style.justifyContent = 'center';
@@ -4822,7 +4893,7 @@ function buildReturnLabelEl(data, wIn, hIn){
     lab.className = 'return-bottom-lab';
     lab.textContent = c.label + ':';
     lab.style.fontWeight = '800';
-    lab.style.fontSize = (hIn * 0.032) + 'in';
+    lab.style.fontSize = (u * 0.032) + 'in';
     lab.style.whiteSpace = 'nowrap';
     lab.style.overflow = 'hidden';
     lab.style.textOverflow = 'ellipsis';
@@ -4831,7 +4902,7 @@ function buildReturnLabelEl(data, wIn, hIn){
     const val = document.createElement('div');
     val.className = 'return-bottom-val';
     val.style.fontWeight = '700';
-    val.style.fontSize = (hIn * 0.042) + 'in';
+    val.style.fontSize = (u * (tall ? 0.06 : 0.042)) + 'in';
     val.style.borderBottom = '1.5px solid #111';
     val.style.minHeight = '1.1em';
     val.style.whiteSpace = 'nowrap';
@@ -5969,6 +6040,7 @@ function connectionOk(){
   document.getElementById('connBannerSub').textContent = 'Scans are saving again. Re-scan any unit you scanned while the banner was red.';
   setTimeout(() => { if(!connDown) b.classList.remove('back'); }, 8000);
   startConnPing(30000);
+  setTimeout(() => autoSyncSerials('reconnected'), 5000);   // catch up on anything missed while it was down
   if(typeof flushPartScrapQueue === 'function') flushPartScrapQueue();
 }
 async function connPing(){
@@ -5979,6 +6051,49 @@ async function connPing(){
   catch(e){ connectionProblem(e.message); }
 }
 function startConnPing(ms){ clearInterval(connPingTimer); connPingTimer = setInterval(connPing, ms); }
+// =====================================================================
+// AUTOMATIC SYNC — every 2 hours, and a few seconds after the connection comes back:
+//  1) saves anything this computer made while offline (optical module / motor serials marked
+//     "Not saved", headset and optical-module batches) — the sheet skips anything already there,
+//     so nothing is ever duplicated;
+//  2) pulls the full headset and optical module serial lists, so serials made on other computers
+//     (or missed during a connection problem) are recognised here without anyone doing it by hand.
+// =====================================================================
+const AUTO_SYNC_MS = 2 * 60 * 60 * 1000;
+let autoSyncBusy = false;
+async function autoSyncSerials(reason){
+  const cfg = sheetConfig();
+  if(autoSyncBusy || !cfg.url || !cfg.token || connDown || !navigator.onLine) return;
+  autoSyncBusy = true;
+  const done = [], line = document.getElementById('autoSyncMsg');
+  try{
+    const pend = rows => (rows || []).filter(r => !r.pushedToSheet);
+    if(pend(omLiveRows).length){ const n = pend(omLiveRows).length; await omLiveRetryUnsaved(); if(!pend(omLiveRows).length) done.push(n + ' optical module serial(s) saved'); }
+    if(typeof mmRows !== 'undefined' && pend(mmRows).length){ const n = pend(mmRows).length; await mmRetryUnsaved(); if(!pend(mmRows).length) done.push(n + ' motor serial(s) saved'); }
+    if(pend(currentBatch).length){
+      const list = pend(currentBatch);
+      try{ await sheetPost({action: 'appendSerials', rows: rowsForSheet(list)}); list.forEach(r => { r.pushedToSheet = true; }); done.push(list.length + ' headset serial(s) saved'); }catch(e){}
+    }
+    if(pend(opticalBatch).length){
+      const list = pend(opticalBatch);
+      try{ await sheetPost({action: 'appendOpticalModules', rows: rowsForOptical(list)}); list.forEach(r => { r.pushedToSheet = true; }); done.push(list.length + ' optical module batch serial(s) saved'); }catch(e){}
+    }
+    const hBefore = librarySet.size, oBefore = opticalLibrarySet.size;
+    await refreshHeadsetHistory(); await refreshOpticalHistory();
+    const hNew = librarySet.size - hBefore, oNew = opticalLibrarySet.size - oBefore;
+    if(hNew || oNew) done.push((hNew + oNew) + ' serial(s) from other computers added');
+    const stamp = new Date().toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
+    localStorage.setItem('auto-sync-last', stamp + ' \u2014 ' + (done.length ? done.join(', ') : 'everything was already up to date'));
+  }catch(e){
+    localStorage.setItem('auto-sync-last', new Date().toLocaleString([], {hour: 'numeric', minute: '2-digit'}) + ' \u2014 could not finish (' + e.message + '); it will try again');
+  }finally{
+    autoSyncBusy = false;
+    if(line) line.innerHTML = 'Automatic sync: every 2 hours, and right after the connection comes back. <b>Last run:</b> ' + locEsc(localStorage.getItem('auto-sync-last') || 'not yet');
+  }
+}
+setInterval(() => autoSyncSerials('timer'), AUTO_SYNC_MS);
+(function(){ const line = document.getElementById('autoSyncMsg'), last = localStorage.getItem('auto-sync-last'); if(line && last) line.innerHTML = 'Automatic sync: every 2 hours, and right after the connection comes back. <b>Last run:</b> ' + locEsc(last); })();
+
 window.addEventListener('offline', () => connectionProblem('this computer is offline'));
 window.addEventListener('online', connPing);
 startConnPing(30000);
@@ -6585,7 +6700,7 @@ document.getElementById('ggShipInput').addEventListener('keydown', e => {
   const size = Number(document.getElementById('ggBoxSize').value) || 10;
   if(ggBox.length >= size){ msg.innerHTML = '<span class="gg-bad">The box is full (' + size + '). Ship it, or raise the box size.</span>'; return; }
   ggBox.push(sn); msg.textContent = sn !== raw ? '\u2713 ' + raw + ' is inside ' + sn + '; added ' + sn + '.' : '';
-  ggLastShip = null; document.getElementById('btnGgPrintBox').style.display = 'none';
+  ggLastShip = null; document.getElementById('btnGgPrintBox').style.display = 'none'; document.getElementById('ggBoxLabelPanel').style.display = 'none';
   ggRenderBox();
 });
 document.getElementById('ggBoxBody').addEventListener('click', e => { const b = e.target.closest('[data-gg-remove]'); if(!b) return; ggBox.splice(Number(b.getAttribute('data-gg-remove')), 1); ggRenderBox(); });
@@ -6607,7 +6722,7 @@ document.getElementById('btnGgShip').addEventListener('click', async () => {
     else if(r.status === 'ok'){
       ggLastShip = {order: order, box: r.box, serials: r.serials || ggBox.slice(), person: person, when: r.dateTime};
       msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 Box ' + r.box + ' recorded: ' + r.shipped + ' unit' + (r.shipped === 1 ? '' : 's') + ' for ' + locEsc(customerAlias(order)) + '.</b> Print the box label.';
-      ggBox = []; ggRenderBox(); document.getElementById('btnGgPrintBox').style.display = ''; ggLoadOrders();
+      ggBox = []; ggRenderBox(); document.getElementById('ggBoxLabelPanel').style.display = ''; ggRenderBoxLabelPreview(); ggLoadOrders();
     }else msg.innerHTML = '<span class="gg-bad">' + locEsc(r.message || 'Could not ship.') + '</span>';
   }catch(e){ msg.innerHTML = '<span class="gg-bad">Could not ship: ' + locEsc(e.message) + '</span>'; }
   finally{ btn.disabled = !ggBox.length; }
@@ -6618,17 +6733,28 @@ function ggQrDataUrl(text){
   new QRCode(holder, {text: text, width: 512, height: 512, correctLevel: QRCode.CorrectLevel.M});
   const c = holder.querySelector('canvas'); return c ? c.toDataURL('image/png') : '';
 }
+function ggBoxLabelDoc(s, forPrint){
+  const qr = ggQrDataUrl(s.serials.join('\n')), sz = boxLabelSize(), big = sz.h === 6, wide = sz.w === 6;
+  // the printed box label carries the real order name for the warehouse, like the headset box labels
+  const css = big
+    ? '@page{size:4in 6in;margin:0}body{margin:0;font-family:Arial,sans-serif}.l{width:4in;height:6in;box-sizing:border-box;padding:.3in .28in;display:flex;flex-direction:column;align-items:center;justify-content:space-between;text-align:center}' +
+      '.big{font-size:30pt;font-weight:800}.qr img{width:3.05in;height:3.05in;display:block}.k{font-size:10pt;color:#555;text-transform:uppercase;margin-top:6px}.v{font-size:16pt;font-weight:700}.cap{font-size:10pt;color:#333;margin-top:4px}'
+    : wide
+    ? '@page{size:6in 4in;margin:0}body{margin:0;font-family:Arial,sans-serif}.l{width:6in;height:4in;box-sizing:border-box;padding:.25in;display:flex;gap:.25in;align-items:center}.l img{width:2.6in;height:2.6in}.t{flex:1}.big{font-size:30pt;font-weight:800}.k{font-size:10pt;color:#555;text-transform:uppercase;margin-top:6px}.v{font-size:15pt;font-weight:700;margin-bottom:6px}'
+    : '@page{size:4in 3in;margin:0}body{margin:0;font-family:Arial,sans-serif}.l{width:4in;height:3in;box-sizing:border-box;padding:.18in;display:flex;gap:.15in}.l img{width:1.5in;height:1.5in}.t{flex:1}.big{font-size:22pt;font-weight:800}.k{font-size:8pt;color:#555;text-transform:uppercase}.v{font-size:11pt;font-weight:700;margin-bottom:6px}';
+  const facts = '<div class="k">Order</div><div class="v">' + locEsc(s.order) + '</div><div class="k">Quantity</div><div class="v">' + s.serials.length + '</div>' +
+    '<div class="k">Packed by / date</div><div class="v">' + locEsc(s.person) + ' \u00b7 ' + locEsc(String(s.when).split(',')[0]) + '</div>';
+  const body = big
+    ? '<div class="l"><div class="big">GIMBAL BOX ' + s.box + '</div><div class="qr"><img src="' + qr + '"><div class="cap">Scan for the serial list (' + s.serials.length + ' units)</div></div><div>' + facts + '</div></div>'
+    : '<div class="l"><div><img src="' + qr + '"><div class="k" style="margin-top:4px;">Scan for serial list</div></div><div class="t"><div class="big">GIMBAL BOX ' + s.box + '</div>' + facts + '</div></div>';
+  return '<!doctype html><html><head><title>Gimbal box ' + s.box + '</title><style>' + css + '</style></head><body>' + body +
+    (forPrint ? '<script>window.onload=function(){setTimeout(function(){window.print();},300)}<\/script>' : '') + '</body></html>';
+}
+document.getElementById('btnGgPrintBox2').addEventListener('click', () => document.getElementById('btnGgPrintBox').click());
 document.getElementById('btnGgPrintBox').addEventListener('click', () => {
   if(!ggLastShip) return;
-  const s = ggLastShip, qr = ggQrDataUrl(s.serials.join('\n'));
   const w = window.open('', '_blank'); if(!w) return;
-  // the printed box label carries the real order name for the warehouse, like the headset box labels
-  w.document.write('<!doctype html><html><head><title>Gimbal box ' + s.box + '</title><style>@page{size:4in 3in;margin:0}body{margin:0;font-family:Arial,sans-serif}' +
-    '.l{width:4in;height:3in;box-sizing:border-box;padding:.18in;display:flex;gap:.15in}.l img{width:1.5in;height:1.5in}.t{flex:1}.big{font-size:22pt;font-weight:800}.k{font-size:8pt;color:#555;text-transform:uppercase}.v{font-size:11pt;font-weight:700;margin-bottom:5px}</style></head><body>' +
-    '<div class="l"><div><img src="' + qr + '"><div class="k" style="margin-top:4px;">Scan for serial list</div></div><div class="t"><div class="big">GIMBAL BOX ' + s.box + '</div>' +
-    '<div class="k">Order</div><div class="v">' + locEsc(s.order) + '</div><div class="k">Quantity</div><div class="v">' + s.serials.length + '</div>' +
-    '<div class="k">Packed by / date</div><div class="v">' + locEsc(s.person) + ' \u00b7 ' + locEsc(String(s.when).split(',')[0]) + '</div></div></div>' +
-    '<script>window.onload=function(){setTimeout(function(){window.print();},300)}<\/script></body></html>');
+  w.document.write(ggBoxLabelDoc(ggLastShip, true));
   w.document.close();
 });
 
@@ -6748,7 +6874,8 @@ function ggLabelRows(){
     productCode: x.style, serialLabel: 'Gimbal Serial Number', bigMark: x.style.replace(/^GG/, 'G')}));
 }
 function ggLabelSettings(){
-  return {w: parseFloat(document.getElementById('labelW').value) || 4, h: parseFloat(document.getElementById('labelH').value) || 4,
+  const [lw, lh] = serialLabelWH();
+  return {w: lw, h: lh,
     dual: document.getElementById('dualQR').checked, qrMm: parseFloat(document.getElementById('qrMm').value) || 10.5,
     fid: document.getElementById('fiducials').checked};
 }
@@ -9113,6 +9240,9 @@ function buildShipLabelEl(data, wIn, hIn){
   el.className = 'label ship-label';
   el.style.width = wIn + 'in';
   el.style.height = hIn + 'in';
+  // 4x3 is the base design, sized from the height. A tall label (4x6) is sized from its width and
+  // laid out in portrait: style and quantity on their own big lines, the box number at the bottom.
+  const tall = hIn > wIn * 1.2, u = tall ? wIn * 0.75 : Math.min(hIn * (hIn > 3.5 ? 1.12 : 1), wIn * 0.75);   // 6x4: a bit larger to use the width
   el.style.fontFamily = 'var(--mono)';
   el.style.alignItems = 'center';
   el.style.justifyContent = 'flex-start';
@@ -9130,14 +9260,15 @@ function buildShipLabelEl(data, wIn, hIn){
     boxBadge.style.right = '0.14in';
     boxBadge.style.fontFamily = 'var(--mono)';
     boxBadge.style.fontWeight = '800';
-    boxBadge.style.fontSize = (hIn * 0.05) + 'in';
+    boxBadge.style.fontSize = (u * (tall ? 0.09 : 0.05)) + 'in';
+    if(tall){ boxBadge.style.position = 'static'; boxBadge.style.marginTop = '0.08in'; boxBadge.style.padding = '0.04in 0.16in'; boxBadge.style.borderWidth = '2.5px'; }
     boxBadge.style.color = '#111';
     boxBadge.style.border = '1.5px solid #111';
     boxBadge.style.borderRadius = '4px';
     boxBadge.style.padding = '0.02in 0.07in';
     boxBadge.style.background = '#fff';
     boxBadge.innerHTML = '<span style="font-size:0.6em;">BOX&nbsp;#</span>' + data.boxNumber;
-    el.appendChild(boxBadge);
+    if(!tall) el.appendChild(boxBadge); else el._boxBadge = boxBadge;
   }
 
   // ---- logo / wordmark, truly centered on the full label ----
@@ -9148,23 +9279,23 @@ function buildShipLabelEl(data, wIn, hIn){
   logoWrap.style.alignItems = 'center';
   logoWrap.style.marginBottom = '0.05in';
   if(logoDataUrl){
-    logoWrap.style.minHeight = (hIn * 0.3) + 'in';
+    logoWrap.style.minHeight = (u * (tall ? 0.34 : 0.3)) + 'in';
     const img = document.createElement('img');
     img.src = logoDataUrl;
-    img.style.maxHeight = (hIn * 0.3) + 'in';
+    img.style.maxHeight = (u * (tall ? 0.34 : 0.3)) + 'in';
     img.style.maxWidth = '90%';
     img.style.objectFit = 'contain';
     logoWrap.appendChild(img);
   }else{
     // Fallback text wordmark: sized + forced to one line so it can never wrap and blow out
     // the label's vertical budget (a real uploaded logo image doesn't have this risk).
-    logoWrap.style.minHeight = (hIn * 0.13) + 'in';
+    logoWrap.style.minHeight = (u * 0.13) + 'in';
     const word = document.createElement('div');
     word.className = 'ship-wordmark';
     word.textContent = 'UNUSUAL MACHINES';
     word.style.fontFamily = 'var(--sans)';
     word.style.fontWeight = '700';
-    word.style.fontSize = (hIn * 0.058) + 'in';
+    word.style.fontSize = (u * (tall ? 0.075 : 0.058)) + 'in';
     word.style.letterSpacing = '.04em';
     word.style.color = '#111';
     word.style.whiteSpace = 'nowrap';
@@ -9187,10 +9318,11 @@ function buildShipLabelEl(data, wIn, hIn){
   heroRow.style.justifyContent = 'center';
   heroRow.style.gap = '0.2in';
   heroRow.style.marginBottom = '0.05in';
+  if(tall){ heroRow.style.flexDirection = 'column'; heroRow.style.alignItems = 'center'; heroRow.style.gap = '0.06in'; heroRow.style.marginBottom = '0.14in'; }
 
   const styleTag = document.createElement('span');
   styleTag.style.fontWeight = '800';
-  styleTag.style.fontSize = (hIn * 0.15) + 'in';
+  styleTag.style.fontSize = (u * (tall ? 0.34 : 0.15)) + 'in';
   styleTag.style.color = '#111';
   styleTag.style.letterSpacing = '.02em';
   styleTag.style.lineHeight = '1';
@@ -9199,10 +9331,10 @@ function buildShipLabelEl(data, wIn, hIn){
 
   const qtyTag = document.createElement('span');
   qtyTag.style.fontWeight = '800';
-  qtyTag.style.fontSize = (hIn * 0.15) + 'in';
+  qtyTag.style.fontSize = (u * (tall ? 0.24 : 0.15)) + 'in';
   qtyTag.style.color = '#111';
   qtyTag.style.lineHeight = '1';
-  qtyTag.innerHTML = `<span style="font-size:${hIn*0.06}in; font-weight:700; color:#111; vertical-align:middle;">QTY&nbsp;</span>${data.qty}`;
+  qtyTag.innerHTML = `<span style="font-size:${u * (tall ? 0.09 : 0.06)}in; font-weight:700; color:#111; vertical-align:middle;">QTY&nbsp;</span>${data.qty}`;
   heroRow.appendChild(qtyTag);
 
   el.appendChild(heroRow);
@@ -9211,7 +9343,7 @@ function buildShipLabelEl(data, wIn, hIn){
   // budgeted for below so it can never overflow the label) ----
   const skuLine = document.createElement('div');
   skuLine.className = 'sku-line';
-  skuLine.style.fontSize = (hIn * 0.095) + 'in';
+  skuLine.style.fontSize = (u * (tall ? 0.11 : 0.095)) + 'in';
   skuLine.style.fontWeight = '700';
   skuLine.style.lineHeight = '1.15';
   skuLine.style.marginBottom = '0.1in';
@@ -9226,7 +9358,7 @@ function buildShipLabelEl(data, wIn, hIn){
 
   // ---- everything else: sized up to actually use the room available, not crammed small ----
   const infoStrip = document.createElement('div');
-  infoStrip.style.fontSize = (hIn * 0.046) + 'in';
+  infoStrip.style.fontSize = (u * (tall ? 0.062 : 0.046)) + 'in';
   infoStrip.style.color = '#111';
   infoStrip.style.letterSpacing = '.02em';
   infoStrip.style.lineHeight = '1.7';
@@ -9236,7 +9368,12 @@ function buildShipLabelEl(data, wIn, hIn){
     `&nbsp;&nbsp;&middot;&nbsp;&nbsp;PACKAGED <b style="color:#111;">${data.dateDisplay}</b>` +
     `<br><span class="wo-so-line" style="font-size:1.08em; white-space:nowrap;">WO <b style="color:#111;">${data.workOrder || '\u2014'}</b>` +
     `&nbsp;&nbsp;&middot;&nbsp;&nbsp;SO# <b style="color:#111;">${data.salesOrder || '\u2014'}</b></span>`;
+  if(tall){   // one fact per line on the tall label
+    infoStrip.innerHTML = `PACKED BY <b style="color:#111;">${data.person || '\u2014'}</b><br>PACKAGED <b style="color:#111;">${data.dateDisplay}</b>` +
+      `<br><span class="wo-so-line" style="white-space:nowrap;">WO <b style="color:#111;">${data.workOrder || '\u2014'}</b></span><br>SO# <b style="color:#111;">${data.salesOrder || '\u2014'}</b>`;
+  }
   el.appendChild(infoStrip);
+  if(tall && el._boxBadge) el.appendChild(el._boxBadge);
 
   const spacerBottom = document.createElement('div');
   spacerBottom.style.flex = '0.5';
@@ -9326,6 +9463,8 @@ function renderShipPreview(){
   wrap.appendChild(el);
   fitShipLabelText(el);
 }
+// sticker size for the shipping labels: remembered on this computer, sets the width / height used to print
+(function(){ document.getElementById('shipLabelW').value = boxLabelSize().w; document.getElementById('shipLabelH').value = boxLabelSize().h; })();
 ['shipStyle','shipSku','shipQty','shipPerson','shipWorkOrder','shipSalesOrder','shipDate','shipBoxStart','shipLabelW','shipLabelH'].forEach(id => {
   document.getElementById(id).addEventListener('input', renderShipPreview);
   document.getElementById(id).addEventListener('change', renderShipPreview);
