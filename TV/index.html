@@ -1804,7 +1804,8 @@ function renderGimbalSlide(g){
   Object.values(latest).forEach(e => {
     const st = styleOf(e.sn), route = routeOf(st);
     if(!at[st] || inParent.has(e.sn)) return;
-    if(e.event === 'MoveIn'){ at[st][e.st] = (at[st][e.st] || 0) + 1; if(now - e.t > TV_STUCK_HOURS * 3600000) stuck++; }
+    if(e.event === 'MoveIn' && e.st > route.length){ if(st !== P && cfg.needs[st]) ready[st]++; }   // signed in at a removed station: already finished
+    else if(e.event === 'MoveIn'){ at[st][e.st] = (at[st][e.st] || 0) + 1; if(now - e.t > TV_STUCK_HOURS * 3600000) stuck++; }
     else if(e.event === 'MoveOut' && e.st < route.length) at[st][e.st + 1] = (at[st][e.st + 1] || 0) + 1;   // waiting for the next station
     else if(e.event === 'MoveOut' && st !== P && cfg.needs[st]) ready[st]++;
   });
