@@ -6103,12 +6103,18 @@ setTimeout(connPing, 4000);
 // HEADSETS BUILT IN A DATE RANGE (Monthly Archive) — the base for the parts
 // forecast in the scrap report.
 // =====================================================================
+// Totals history: "Built History" (counted from Log + Log Archive by the script) when it exists,
+// otherwise the sheet's own "Monthly Archive" — same layout either way.
+async function loadBuiltHistoryRows(){
+  try{ const r = (await sheetPost({action: 'getFullSheet', sheet: 'Built History'})).rows || []; if(r.length >= 3) return r; }catch(e){}
+  return (await sheetPost({action: 'getFullSheet', sheet: 'Monthly Archive'})).rows || [];
+}
 const MONTHLY_ARCHIVE_TAB_NAME = 'Monthly Archive';
 const MONTHS_LC = ['january','february','march','april','may','june','july','august','september','october','november','december'];
 let archiveBuiltCache = null;   // {at, days: {yyyy-mm-dd: headsets}}
 async function headsetsBuiltByDay(){
   if(archiveBuiltCache && Date.now() - archiveBuiltCache.at < 10 * 60000) return archiveBuiltCache.days;
-  const rows = (await sheetPost({action: 'getFullSheet', sheet: MONTHLY_ARCHIVE_TAB_NAME})).rows || [];
+  const rows = await loadBuiltHistoryRows();
   const days = {};
   const header = rows[0] || [];
   for(let c = 0; c < header.length; c++){
@@ -8696,7 +8702,7 @@ async function loadMonthlyArchive(force){
   monthlyArchiveError = null;
   monthlyArchiveDiagnostics = null;
   try{
-    const json = await sheetPost({action: 'getFullSheet', sheet: MONTHLY_ARCHIVE_SHEET_NAME});
+    const json = {rows: await loadBuiltHistoryRows()};
     const rows = json.rows || [];
     const entries = [];
     const monthsFound = [];
