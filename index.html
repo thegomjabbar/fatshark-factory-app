@@ -6080,6 +6080,7 @@ async function autoSyncSerials(reason){
     }
     const hBefore = librarySet.size, oBefore = opticalLibrarySet.size;
     await refreshHeadsetHistory(); await refreshOpticalHistory();
+    if(typeof ggPullLocal === 'function' && ggConfigLoaded) await ggPullLocal();   // gimbal line too
     const hNew = librarySet.size - hBefore, oNew = opticalLibrarySet.size - oBefore;
     if(hNew || oNew) done.push((hNew + oNew) + ' serial(s) from other computers added');
     const stamp = new Date().toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
@@ -6317,6 +6318,44 @@ document.querySelectorAll('[data-ggsub]').forEach(b => b.addEventListener('click
 ['ggPerson', 'ggShipPerson', 'ggGenPerson'].forEach(id => { const el = document.getElementById(id); if(el) el.addEventListener('change', e => localStorage.setItem(GG_PERSON_KEY, e.target.value.trim())); });
 // a shipped row counts toward its order only when it is the order's own style (the parent)
 function ggCountsForOrder(label, sn){ const st = (String(label || '').match(/(GG[A-Z0-9]{1,3})\s*$/i) || [])[1]; return !st || ggStyleOf(sn) === st.toUpperCase(); }
+// =====================================================================
+// LOCAL COPY OF THE GIMBAL LINE (like the headset / optical module serial lists): every part's last
+// scan, the highest station it has signed out of, and what it is inside. Built from the full
+// GimbalLog + GimbalLinks pull (Line Status loads them anyway), topped up every 2 minutes and updated
+// right away by this computer's own scans and links. Lets the parts forms answer instantly.
+// =====================================================================
+let ggLocal = null, ggLocalPulling = null;
+function ggBuildLocal(logRows, linkRows){
+  const info = {};
+  (logRows || []).slice(1).forEach(r => {
+    const sn = locCell(r[1]).toUpperCase(), n = Number(stationNumberFromLabel(locCell(r[4])) || 0), ev = locCell(r[2]);
+    if(!sn || !n || !/^Move(In|Out)$/.test(ev)) return;
+    const x = info[sn] = info[sn] || {last: null, maxDone: 0};
+    x.last = {event: ev, st: n};
+    if(ev === 'MoveOut' && n > x.maxDone) x.maxDone = n;
+  });
+  ggLocal = {info: info, parentOf: ggActiveLinks(linkRows).parentOf, at: Date.now()};
+}
+async function ggPullLocal(){   // full pull of GimbalLog + GimbalLinks
+  if(ggLocalPulling) return ggLocalPulling;
+  ggLocalPulling = (async () => {
+    try{ const [logRows, linkRows] = await Promise.all([ggTab('GimbalLog'), ggTab('GimbalLinks')]); ggBuildLocal(logRows, linkRows); }
+    catch(e){} finally{ ggLocalPulling = null; }
+  })();
+  return ggLocalPulling;
+}
+function ggLocalNote(sn, event, st){   // this computer's own scans, applied straight away
+  if(!ggLocal || !sn || !st) return;
+  const x = ggLocal.info[sn] = ggLocal.info[sn] || {last: null, maxDone: 0};
+  x.last = {event: event, st: st}; if(event === 'MoveOut' && st > x.maxDone) x.maxDone = st;
+}
+function ggLocalReady(sn){   // finished all its stations and not inside anything, by the local copy
+  if(!ggLocal) return false;
+  const x = ggLocal.info[sn], N = ggRoute(ggStyleOf(sn)).length;
+  if(!x || !x.last || !N || ggLocal.parentOf[sn]) return false;
+  return (x.last.event === 'MoveOut' && x.last.st >= N) || (x.last.event === 'MoveIn' && x.last.st > N && x.maxDone >= N);
+}
+setInterval(() => { const c = sheetConfig(); if(ggConfigLoaded && c.url && c.token && !connDown) ggPullLocal(); }, 2 * 60 * 1000);
 function ggActiveLinks(linkRows){   // {parentOf, partsOf}
   const parentOf = {}, partsOf = {};
   (linkRows || []).slice(1).forEach(r => {
@@ -6352,6 +6391,7 @@ async function ggRefreshStatus(){
   try{ [logRows, sentRows, goalRows, linkRows, serRows] = await Promise.all([ggTab('GimbalLog'), ggTab('GimbalSentToWH'), ggTab('GimbalGoals'), ggTab('GimbalLinks'), ggTab('GimbalSerials')]); }
   catch(e){ document.getElementById('ggUpdated').textContent = 'could not load: ' + e.message; return; }
   const P = ggCfg.parent, act = ggActiveLinks(linkRows);
+  ggBuildLocal(logRows, linkRows);
   const ev = logRows.slice(1).map(r => ({sn: locCell(r[1]).toUpperCase(), event: locCell(r[2]), person: locCell(r[3]) || '?', st: Number(stationNumberFromLabel(locCell(r[4])) || 0), t: locDate(r[5])}))
     .filter(e => e.sn && e.t && e.st).sort((a, b) => a.t - b.t);
   const latest = {}; ev.forEach(e => { latest[e.sn] = e; });
@@ -6505,6 +6545,8 @@ async function ggShowKit(parent, kitPromise){
   ggKitSlots = ggKitSlotsFor(linked);
   typed.forEach(t => { if(ggKitSlots.some(x => x.sn === t.sn)) return; const slot = ggKitSlots.find(x => x.style === t.style && !x.sn); if(slot) Object.assign(slot, {sn: t.sn, state: t.state, why: t.why}); });
   ggKitLoading = false;
+  // parts scanned while the form was loading: if they're all in now, link straight away
+  if(ggKitSlots.length && ggKitSlots.every(x => x.state === 'ready' || x.state === 'linked') && ggKitSlots.some(x => x.state === 'ready') && !ggKitLinking) setTimeout(() => ggKitLinkAll(true), 0);
   ggRenderKit(); ggKitFocusNext();
 }
 let ggKitLoading = false, ggKitPendingSignIn = null, ggKitInUse = {}, ggKitReady = new Set(), ggKitWait = null;   // ready = finished parts free to link (checked on screen, no wait)   // serial -> unit it is already inside   // a unit waiting for its parts before it's signed in
@@ -6536,7 +6578,15 @@ function ggRenderKit(){
   panel.innerHTML = html;
   if(keep){ const again = panel.querySelector('.gg-slot-in[data-slot="' + keep.slot + '"]') || panel.querySelector('.gg-slot-in'); if(again){ again.value = keep.value; again.focus(); } }
 }
+// Every scan into the parts form: once the LAST required part is in and every slot is ready, the
+// parts are linked and the unit is signed into its station automatically, no button to press.
+let ggKitLinking = false;
 async function ggKitAdd(sn, slotIndex){
+  await ggKitAddOne(sn, slotIndex);
+  const filled = ggKitSlots.length && ggKitSlots.every(x => x.state === 'ready' || x.state === 'linked');
+  if(filled && ggKitSlots.some(x => x.state === 'ready') && !ggKitLinking && !ggKitLoading) ggKitLinkAll(true);
+}
+async function ggKitAddOne(sn, slotIndex){
   let st = ggStyleOf(sn);
   if(!ggOurs(sn)){
     const free = ggFreeStyles(ggKitNeeds), want0 = ggKitSlots[slotIndex];
@@ -6553,10 +6603,12 @@ async function ggKitAdd(sn, slotIndex){
     if(inside && inside !== ggKitParent){ slot.sn = sn; slot.state = 'bad'; slot.why = sn + ' is already inside ' + inside + '. Unlink it there first, or use a different ' + nm + '.'; ggRenderKit(); ggKitFocusNext(); ggPopup('<b>' + locEsc(sn) + '</b> can\u2019t be used.<br><br>' + locEsc(slot.why)); return; }
     slot.sn = sn; slot.state = 'ready'; slot.why = 'Supplier serial accepted as a ' + nm + '. Ready to link.'; ggRenderKit(); ggKitFocusNext(); return;
   }
-  if(ggKitLoading && ggKitWait){ slot.sn = sn; slot.state = 'checking'; slot.why = ''; ggRenderKit(); ggKitFocusNext(); try{ await ggKitWait; }catch(e){} slot.sn = ''; slot.state = ''; }
+  const localInside = ggLocal && ggLocal.parentOf[sn];
+  if(!(ggKitInUse[sn] || localInside) && (ggKitReady.has(sn) || ggLocalReady(sn))){ slot.sn = sn; slot.state = 'ready'; slot.why = 'Finished all its stations. Ready to link.'; ggRenderKit(); ggKitFocusNext(); return; }
+  if(ggKitLoading && ggKitWait && !localInside){ slot.sn = sn; slot.state = 'checking'; slot.why = ''; ggRenderKit(); ggKitFocusNext(); try{ await ggKitWait; }catch(e){} slot.sn = ''; slot.state = ''; }
   // our own parts: already inside something, or on the "finished and free" list -> answered right here
-  const insideOther = ggKitInUse[sn] && ggKitInUse[sn] !== ggKitParent;
-  if(insideOther){ slot.sn = sn; slot.state = 'bad'; slot.why = sn + ' is already inside ' + ggKitInUse[sn] + '. Unlink it there first, or use a different ' + (ggCfg.names[st] || st) + '.'; ggRenderKit(); ggKitFocusNext(); ggPopup('<b>' + locEsc(sn) + '</b> can\u2019t be used.<br><br>' + locEsc(slot.why)); return; }
+  const insideOther = (ggKitInUse[sn] || localInside) && (ggKitInUse[sn] || localInside) !== ggKitParent;
+  if(insideOther){ slot.sn = sn; slot.state = 'bad'; slot.why = sn + ' is already inside ' + (ggKitInUse[sn] || localInside) + '. Unlink it there first, or use a different ' + (ggCfg.names[st] || st) + '.'; ggRenderKit(); ggKitFocusNext(); ggPopup('<b>' + locEsc(sn) + '</b> can\u2019t be used.<br><br>' + locEsc(slot.why)); return; }
   if(ggKitReady.has(sn)){ slot.sn = sn; slot.state = 'ready'; slot.why = 'Finished all its stations. Ready to link.'; ggRenderKit(); ggKitFocusNext(); return; }
   slot.sn = sn; slot.state = 'checking'; slot.why = ''; ggRenderKit(); ggKitFocusNext();
   try{
@@ -6567,16 +6619,21 @@ async function ggKitAdd(sn, slotIndex){
   }catch(e){ slot.state = 'bad'; slot.why = 'Could not check: ' + e.message; }
   ggRenderKit();
 }
-async function ggKitLinkAll(){
+async function ggKitLinkAll(auto){
+  if(ggKitLinking) return;
   const parts = ggKitSlots.filter(x => x.state !== 'linked' && x.sn).map(x => ({sn: x.sn, style: x.style}));
+  if(!parts.length) return;
+  ggKitLinking = true;
   const btn = document.getElementById('btnGgLinkAll'); if(btn){ btn.disabled = true; btn.textContent = 'Linking\u2026'; }
+  document.getElementById('ggMsg').innerHTML = '<b>Linking ' + parts.map(x => locEsc(x.sn)).join(', ') + ' into ' + locEsc(ggKitParent) + '\u2026</b>';
   try{
     const person = document.getElementById('ggPerson').value.trim();
     const r = await sheetPost({action: 'gimbalLinkParts', parent: ggKitParent, parts: parts, person: person, signIn: ggKitPendingSignIn === ggKitParent});
     if(r.status === 'ok'){
       const unit = ggKitParent, stName = r.stationName || ggRoute(ggStyleOf(unit))[(ggKitFor(ggStyleOf(unit)) || {linkStation: 1}).linkStation - 1] || 'the station';
       // the form shows the parts as linked straight from the reply (no reload)
-      ggKitSlots.forEach(x => { if(x.sn && x.state !== 'linked'){ x.state = 'linked'; x.why = 'Linked'; ggKitInUse[x.sn] = unit; ggKitReady.delete(x.sn); } });
+      ggKitSlots.forEach(x => { if(x.sn && x.state !== 'linked'){ x.state = 'linked'; x.why = 'Linked'; ggKitInUse[x.sn] = unit; ggKitReady.delete(x.sn); if(ggLocal) ggLocal.parentOf[x.sn] = unit; } });
+      if(r.signedIn) ggLocalNote(unit, 'MoveIn', Number(r.targetStation));
       ggRenderKit();
       if(r.signedIn){
         ggKitPendingSignIn = null;
@@ -6585,16 +6642,19 @@ async function ggKitLinkAll(){
         ggRecent.unshift({time: new Date().toLocaleTimeString(), sn: unit, st: st, n: n, event: 'MoveIn', person: person, dur: ''}); ggRenderRecent();
         if(ggData && ggData.at[st]){ ggData.at[st][n] = (ggData.at[st][n] || []).filter(x => x.sn !== unit); ggData.at[st][n].push({sn: unit, t: new Date()}); }
         ggRenderChips();
-        ggPopup('<b>All ' + r.linked.length + ' parts linked into ' + locEsc(unit) + '</b>, and it is signed into <b>' + locEsc(stName) + '</b>.<br><br>Scan ' + locEsc(unit) + ' again when it\u2019s done to sign it out.', 'ok');
+        ggHideKit();   // nothing more to do in the form: the unit is in its station
+        document.getElementById('ggMsg').innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + locEsc(r.linked.join(', ')) + ' linked into ' + unit + ', and ' + unit + ' is signed into ' + locEsc(stName) + '.</b> Scan ' + unit + ' again when it\u2019s done to sign it out.';
         return;
       }
-      ggPopup('<b>All ' + r.linked.length + ' parts linked into ' + locEsc(unit) + '.</b><br><br>Scan ' + locEsc(unit) + ' again to sign it out of ' + locEsc(stName) + '.', 'ok');
+      ggHideKit();   // already in its station: just confirm
+      document.getElementById('ggMsg').innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + locEsc(r.linked.join(', ')) + ' linked into ' + unit + '.</b> Scan ' + unit + ' again when it\u2019s done to sign it out of ' + locEsc(stName) + '.';
     }else if(r.status === 'rejected'){
       r.problems.forEach(pr => { const sl = ggKitSlots.find(x => x.sn === String(pr.serial).toUpperCase()); if(sl){ sl.state = /finish its stations/i.test(pr.why) ? 'notFinished' : 'bad'; sl.why = pr.why; } });
       ggRenderKit();
       ggPopup('<b>Nothing was linked.</b> Fix these first:<br><br>' + r.problems.map(pr => '<span class="loc-mono">' + locEsc(pr.serial) + '</span>: ' + locEsc(pr.why)).join('<br><br>'));
     }else{ ggPopup(locEsc(r.message || 'Could not link.')); ggRenderKit(); }
   }catch(e){ ggPopup('Could not link: ' + locEsc(e.message)); ggRenderKit(); }
+  finally{ ggKitLinking = false; }
 }
 function ggHideKit(){ ggKitParent = null; ggKitPendingSignIn = null; document.getElementById('ggKitPanel').style.display = 'none'; document.getElementById('ggScanLabel').textContent = 'Scan or type a gimbal serial number, then press Enter'; }
 document.getElementById('ggKitPanel').addEventListener('keydown', e => {
@@ -6632,7 +6692,9 @@ async function ggScan(raw){
   const openedEarly = isParent && auto && ggKitParent !== sn && ggData && snKit.linkStation === 1 && !Object.values((ggData.at[ggStyleOf(sn)]) || {}).flat().some(x => x.sn === sn);
   if(openedEarly) ggShowKit(sn, kitP);
   try{
+    if(!ggLocal || Date.now() - ggLocal.at > 120000) ggPullLocal();   // in the background
     const r = await sheetPost({action: 'gimbalScanAction', serial: sn, autoMode: auto, selectedStation: String(ggSelected), person: person});
+    if(r.status === 'ok') ggLocalNote(r.serialUsed || sn, r.event, Number(r.targetStation));
     const unit = r.serialUsed || sn, st = ggStyleOf(unit), via = unit !== sn ? ' (scanned ' + sn + ', a part inside it)' : '';
     if(isParent && ggKitParent === sn && !(r.atLink || r.reason === 'kitIncomplete' || r.reason === 'linkFirst')) ggHideKit();   // not a Link sign-in after all
     if(r.status === 'ok'){
