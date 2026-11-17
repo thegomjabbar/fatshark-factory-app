@@ -6496,7 +6496,7 @@ async function ggShowKit(parent, kitPromise){
   if(fresh){ ggKitSlots = ggKitSlotsFor([]); ggKitLoading = true; ggRenderKit(); ggKitFocusNext(); }
   document.getElementById('ggScanLabel').textContent = 'Scan the parts for ' + parent + ' into the form above (any order), or scan ' + parent + ' here to sign it out of ' + (ggRoute(ggStyleOf(parent))[myKit.linkStation - 1] || 'this station');
   let r;
-  try{ r = await (kitPromise || sheetPost({action: 'gimbalKit', parent: parent})); ggKitInUse = r.inUse || {}; ggKitReady = new Set(r.ready || []); }
+  try{ ggKitWait = kitPromise || sheetPost({action: 'gimbalKit', parent: parent}); r = await ggKitWait; ggKitInUse = r.inUse || {}; ggKitReady = new Set(r.ready || []); }
   catch(e){ ggKitLoading = false; ggRenderKit(); ggPopup('Could not load the parts already linked to ' + locEsc(parent) + ':<br><br>' + locEsc(e.message)); return; }
   if(ggKitParent !== parent) return;
   const linked = (r.parts || []).map(p => ({sn: p.sn, style: p.style || ggStyleOf(p.sn), linkId: p.linkId}));
@@ -6507,7 +6507,7 @@ async function ggShowKit(parent, kitPromise){
   ggKitLoading = false;
   ggRenderKit(); ggKitFocusNext();
 }
-let ggKitLoading = false, ggKitPendingSignIn = null, ggKitInUse = {}, ggKitReady = new Set();   // ready = finished parts free to link (checked on screen, no wait)   // serial -> unit it is already inside   // a unit waiting for its parts before it's signed in
+let ggKitLoading = false, ggKitPendingSignIn = null, ggKitInUse = {}, ggKitReady = new Set(), ggKitWait = null;   // ready = finished parts free to link (checked on screen, no wait)   // serial -> unit it is already inside   // a unit waiting for its parts before it's signed in
 function ggKitFocusNext(){   // the cursor goes to the next empty slot, so the scanner just keeps going
   const inp = document.querySelector('#ggKitPanel .gg-slot-in');
   if(inp) inp.focus(); else document.getElementById('ggScanInput').focus();
@@ -6553,6 +6553,7 @@ async function ggKitAdd(sn, slotIndex){
     if(inside && inside !== ggKitParent){ slot.sn = sn; slot.state = 'bad'; slot.why = sn + ' is already inside ' + inside + '. Unlink it there first, or use a different ' + nm + '.'; ggRenderKit(); ggKitFocusNext(); ggPopup('<b>' + locEsc(sn) + '</b> can\u2019t be used.<br><br>' + locEsc(slot.why)); return; }
     slot.sn = sn; slot.state = 'ready'; slot.why = 'Supplier serial accepted as a ' + nm + '. Ready to link.'; ggRenderKit(); ggKitFocusNext(); return;
   }
+  if(ggKitLoading && ggKitWait){ slot.sn = sn; slot.state = 'checking'; slot.why = ''; ggRenderKit(); ggKitFocusNext(); try{ await ggKitWait; }catch(e){} slot.sn = ''; slot.state = ''; }
   // our own parts: already inside something, or on the "finished and free" list -> answered right here
   const insideOther = ggKitInUse[sn] && ggKitInUse[sn] !== ggKitParent;
   if(insideOther){ slot.sn = sn; slot.state = 'bad'; slot.why = sn + ' is already inside ' + ggKitInUse[sn] + '. Unlink it there first, or use a different ' + (ggCfg.names[st] || st) + '.'; ggRenderKit(); ggKitFocusNext(); ggPopup('<b>' + locEsc(sn) + '</b> can\u2019t be used.<br><br>' + locEsc(slot.why)); return; }
