@@ -2489,7 +2489,8 @@ function showStationToast(event, serial, duration, stationUsed){
 function renderStationRecent(){
   document.getElementById('stationRecentCount').textContent = stationRecentScans.length;
   document.getElementById('stationRecentBody').innerHTML = stationRecentScans.map(s =>
-    '<tr><td>' + s.time + '</td><td>' + s.serial + '</td><td>Station ' + s.station + '</td><td>' + s.event + '</td><td>' + s.person + '</td><td>' + (s.duration || '\u2014') + '</td></tr>'
+    '<tr' + (s.save === 'failed' ? ' style="background:#fdecea;"' : '') + '><td>' + s.time + '</td><td>' + s.serial + '</td><td>Station ' + s.station + '</td><td>' + s.event +
+    (s.save === 'saving' ? ' <span title="Saving to the sheet" style="color:#8a7fa8;">\u23f3</span>' : s.save === 'failed' ? ' <b style="color:#b42318;">NOT SAVED</b>' : '') + '</td><td>' + s.person + '</td><td>' + (s.duration || '\u2014') + '</td></tr>'
   ).join('');
 }
 
@@ -2530,6 +2531,39 @@ document.getElementById('stationWarningOverlay').addEventListener('click', (e) =
   if(e.target.id === 'stationWarningOverlay') dismissStationWarningPopup();
 });
 
+// What a headset scan will do, from this computer's record of the unit. null = ask the sheet and wait.
+function hsPredict(serial){
+  const c = stationSerialCache[serial];
+  if(!c || !c.latest || (openHolds || []).some(h => h.sn === serial)) return null;
+  const dt = typeof c.latest.dt === 'number' ? c.latest.dt : new Date(c.latest.dt).getTime();
+  if(!dt || Date.now() - dt < 4000) return null;   // scanned a few seconds ago: let the sheet decide
+  const st = Number(stationNumberFromLabel(c.latest.station) || 0);
+  if(c.latest.event === 'MoveIn' && st >= 1 && st <= 6) return {event: 'MoveOut', target: String(st), since: dt};
+  if(c.latest.event === 'MoveOut'){
+    const done = Array.from(c.completed || []).map(Number).filter(n => n >= 1 && n <= 6);
+    const next = (done.length ? Math.max.apply(null, done) : st) + 1;
+    if(next > 6 || next < 2) return null;   // finished, or a new unit: the sheet decides
+    return {event: 'MoveIn', target: String(next), since: dt};
+  }
+  return null;
+}
+function hsApplyInstant(serial, pr, person){
+  const msg = document.getElementById('stationScanMsg');
+  const event = pr.event, targetStation = pr.target, nowMs = Date.now();
+  const duration = event === 'MoveOut' ? formatDuration(nowMs - pr.since) : null;
+  stationSerialCache[serial].latest = {event: event, station: 'Station #' + targetStation, dt: nowMs};
+  if(event === 'MoveOut') stationSerialCache[serial].completed.add(targetStation);
+  saveStationLocalCache();
+  const entry = {time: new Date().toLocaleString(), serial: serial, station: targetStation, event: event, person: person, duration: duration};
+  stationRecentScans.unshift(entry); if(stationRecentScans.length > 200) stationRecentScans.pop();
+  renderStationRecent(); renderStationCurrentlyHere();
+  showStationToast(event, serial, duration, targetStation);
+  stationLastAttempt = serial; updateHoldButton();
+  msg.textContent = (event === 'MoveIn' ? 'Signed IN: ' : 'Signed OUT: ') + serial + ' at Station ' + targetStation + (duration ? ' \u2014 was at this station for ' + duration : '') + '.';
+  saveQueueAdd({kind: 'hs', serial: serial, payload: {action: 'stationScanAction', serial: serial, autoMode: true, selectedStation: selectedStation, person: person, opticalSerial: '',
+    expectEvent: event, expectStation: targetStation}}, entry);
+  const inputEl = document.getElementById('stationScanInput'); if(inputEl){ inputEl.disabled = false; inputEl.focus(); }
+}
 async function handleStationScan(serialRaw){
   const msg = document.getElementById('stationScanMsg');
   const serial = serialRaw.trim().toUpperCase();
@@ -2584,6 +2618,10 @@ async function handleStationScan(serialRaw){
   if(!cfg.url || !cfg.token){ msg.textContent = 'Connect the Google Sheet in Settings first.'; return; }
   const person = document.getElementById('stationPerson').value.trim() || '?';
   const autoMode = document.getElementById('stationAutoDetect').checked;
+  // Instant result when this computer knows where the unit is (auto mode, no optical module, not on hold)
+  const hsPr = autoMode && !opticalSerialRaw ? hsPredict(serial) : null;
+  if(hsPr){ hsApplyInstant(serial, hsPr, person); return; }
+  if(saveQueueHas(serial)){ msg.textContent = 'Saving the previous scan of ' + serial + ' first\u2026'; await saveQueueDrain(serial); }
   scanInFlight = true;
   const inputEl = document.getElementById('stationScanInput');
   inputEl.disabled = true;
@@ -6052,6 +6090,81 @@ async function connPing(){
 }
 function startConnPing(ms){ clearInterval(connPingTimer); connPingTimer = setInterval(connPing, ms); }
 // =====================================================================
+// INSTANT SCANS — BACKGROUND SAVE QUEUE (headset and gimbal station scans)
+// The screen shows a scan's result straight away, from this computer's own record of each unit;
+// the save goes to the sheet here, one at a time and in order. Every save says what the screen
+// showed (expectEvent / expectStation); if the sheet decides differently it writes NOTHING and the
+// operator gets a red pop-up to scan again. Kept in this browser until confirmed, so a dropped
+// connection or a reload never loses a scan; retried automatically.
+// =====================================================================
+const SAVE_QUEUE_KEY = 'scan-save-queue-v1';
+let saveQueue = [];
+try{ saveQueue = JSON.parse(localStorage.getItem(SAVE_QUEUE_KEY) || '[]') || []; }catch(e){ saveQueue = []; }
+let saveQueueBusy = false, saveQueueRetryMs = 3000, saveQueueTimer = null;
+const saveQueueEntries = {};   // id -> the on-screen "recent scans" row (not stored)
+function saveQueueStore(){ try{ localStorage.setItem(SAVE_QUEUE_KEY, JSON.stringify(saveQueue)); }catch(e){} saveQueueBadge(); }
+function saveQueueBadge(){
+  let b = document.getElementById('saveQueueBadge');
+  if(!b){ b = document.createElement('div'); b.id = 'saveQueueBadge'; b.style.cssText = 'position:fixed;left:14px;bottom:14px;z-index:9998;padding:7px 12px;border-radius:9px;font:600 12.5px/1.2 system-ui,sans-serif;box-shadow:0 3px 12px rgba(0,0,0,.18);display:none;'; document.body.appendChild(b); }
+  const n = saveQueue.length;
+  if(!n){ b.style.display = 'none'; return; }
+  const failing = saveQueueRetryMs > 3000;
+  b.style.display = ''; b.style.background = failing ? '#b42318' : '#2b1d57'; b.style.color = '#fff';
+  b.textContent = (failing ? '\u26a0 ' + n + ' scan(s) waiting to save \u2014 retrying' : '\u23f3 Saving ' + n + ' scan(s)\u2026');
+}
+function saveQueueAdd(item, entry){
+  item.id = 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  if(entry){ entry.save = 'saving'; saveQueueEntries[item.id] = entry; }
+  saveQueue.push(item); saveQueueStore(); saveQueueRun();
+}
+function saveQueueHas(serial){ return saveQueue.some(q => q.serial === serial || q.unit === serial); }
+async function saveQueueDrain(serial, maxMs){   // wait until no save of this unit is waiting
+  const until = Date.now() + (maxMs || 20000);
+  while(saveQueueHas(serial) && Date.now() < until){ saveQueueRun(); await new Promise(r => setTimeout(r, 250)); }
+}
+function saveQueueRerender(kind){ if(kind === 'gg'){ if(typeof ggRenderRecent === 'function') ggRenderRecent(); } else if(typeof renderStationRecent === 'function') renderStationRecent(); }
+async function saveQueueRun(){
+  if(saveQueueBusy || !saveQueue.length) return;
+  saveQueueBusy = true; clearTimeout(saveQueueTimer);
+  try{
+    while(saveQueue.length){
+      const q = saveQueue[0], entry = saveQueueEntries[q.id];
+      let r;
+      try{ r = await sheetPost(q.payload); }
+      catch(e){   // no connection: keep it, try again shortly
+        saveQueueRetryMs = Math.min(60000, saveQueueRetryMs * 2); saveQueueBadge();
+        if(typeof connectionProblem === 'function') connectionProblem(e.message);
+        saveQueueTimer = setTimeout(saveQueueRun, saveQueueRetryMs);
+        return;
+      }
+      if(r && r.status === 'busy'){ saveQueueTimer = setTimeout(saveQueueRun, 1500); return; }
+      saveQueueRetryMs = 3000;
+      saveQueue.shift(); delete saveQueueEntries[q.id]; saveQueueStore();
+      if(r && r.status === 'ok'){
+        if(entry){ entry.save = ''; if(q.kind === 'hs' && r.duration !== null && r.duration !== undefined) entry.duration = formatDuration(r.duration); }
+        saveQueueRerender(q.kind);
+        continue;
+      }
+      // the sheet did not save it: say so loudly and forget this computer's guess about the unit
+      if(entry) entry.save = 'failed';
+      saveQueueRerender(q.kind);
+      const why = (r && r.message) || (r && r.status === 'ignored' ? 'it was scanned again within a few seconds (ignored as a double scan)' : r && r.status === 'complete' ? 'it has already finished every station' : 'the sheet did not accept it');
+      const text = '<b>' + locEsc(q.serial) + ' was NOT saved.</b><br><br>' + locEsc(why) + '<br><br>Scan it again.';
+      if(q.kind === 'gg'){
+        if(typeof ggPopup === 'function') ggPopup(text);
+        if(typeof ggPullLocal === 'function') ggPullLocal();
+      }else{
+        if(stationSerialCache[q.serial]){ delete stationSerialCache[q.serial]; saveStationLocalCache(); }
+        if(typeof renderStationCurrentlyHere === 'function') renderStationCurrentlyHere();
+        if(typeof showStationWarningPopup === 'function') showStationWarningPopup(text);
+      }
+    }
+  }finally{ saveQueueBusy = false; saveQueueBadge(); }
+}
+setTimeout(() => { saveQueueBadge(); saveQueueRun(); }, 1500);   // anything left from before a reload
+setInterval(() => { if(saveQueue.length && !saveQueueBusy) saveQueueRun(); }, 15000);
+
+// =====================================================================
 // AUTOMATIC SYNC — every 2 hours, and a few seconds after the connection comes back:
 //  1) saves anything this computer made while offline (optical module / motor serials marked
 //     "Not saved", headset and optical-module batches) — the sheet skips anything already there,
@@ -6331,7 +6444,7 @@ function ggBuildLocal(logRows, linkRows){
     const sn = locCell(r[1]).toUpperCase(), n = Number(stationNumberFromLabel(locCell(r[4])) || 0), ev = locCell(r[2]);
     if(!sn || !n || !/^Move(In|Out)$/.test(ev)) return;
     const x = info[sn] = info[sn] || {last: null, maxDone: 0};
-    x.last = {event: ev, st: n};
+    x.last = {event: ev, st: n}; const t = locDate(r[5]); x.t = t ? t.getTime() : 0;
     if(ev === 'MoveOut' && n > x.maxDone) x.maxDone = n;
   });
   ggLocal = {info: info, parentOf: ggActiveLinks(linkRows).parentOf, at: Date.now()};
@@ -6347,7 +6460,39 @@ async function ggPullLocal(){   // full pull of GimbalLog + GimbalLinks
 function ggLocalNote(sn, event, st){   // this computer's own scans, applied straight away
   if(!ggLocal || !sn || !st) return;
   const x = ggLocal.info[sn] = ggLocal.info[sn] || {last: null, maxDone: 0};
-  x.last = {event: event, st: st}; if(event === 'MoveOut' && st > x.maxDone) x.maxDone = st;
+  x.last = {event: event, st: st}; x.t = Date.now(); if(event === 'MoveOut' && st > x.maxDone) x.maxDone = st;
+}
+// What a gimbal scan will do, from the local copy (auto mode only). null = ask the sheet and wait.
+function ggPredict(sn){
+  if(!ggLocal || Date.now() - ggLocal.at > 10 * 60000) return null;
+  let unit = sn, guard = 0; while(ggLocal.parentOf[unit] && guard++ < 6) unit = ggLocal.parentOf[unit];
+  if(!ggOurs(unit)) return null;
+  const st = ggStyleOf(unit), N = ggRoute(st).length, x = ggLocal.info[unit];
+  if(!N || !x || !x.last || Date.now() - (x.t || 0) < 4000) return null;   // unknown, or scanned seconds ago
+  const kit = ggKitFor(st);
+  if(x.last.event === 'MoveIn' && x.last.st >= 1 && x.last.st <= N) return {unit: unit, st: st, event: 'MoveOut', target: x.last.st, N: N};
+  if(x.last.event === 'MoveOut' || (x.last.event === 'MoveIn' && x.last.st > N)){
+    const target = x.maxDone + 1;
+    if(target > N) return null;                                  // finished: let the sheet say so
+    if(kit && target === kit.linkStation) return null;           // takes its parts here: parts form as usual
+    return {unit: unit, st: st, event: 'MoveIn', target: target, N: N};
+  }
+  return null;
+}
+function ggApplyInstant(sn, pr, person){
+  const msg = document.getElementById('ggMsg'), unit = pr.unit, st = pr.st, n = pr.target, via = unit !== sn;
+  const x = ggLocal.info[unit], dur = pr.event === 'MoveOut' && x && x.t ? formatDuration(Date.now() - x.t) : '';
+  const finished = pr.event === 'MoveOut' && n === pr.N;
+  msg.innerHTML = '<b style="color:#1d7a3f;">\u2713 ' + unit + ' (' + locEsc(ggCfg.names[st] || st) + ') ' + (pr.event === 'MoveIn' ? 'signed into ' : 'signed out of ') + locEsc(ggStationName(n, st)) + '</b>' +
+    (finished && st === ggCfg.parent ? ' \u2014 finished, ready for the warehouse.' : finished ? ' \u2014 done.' : '') + (dur ? ' (' + dur + ')' : '') + (via ? ' (scanned ' + locEsc(sn) + ', a part inside it)' : '');
+  const entry = {time: new Date().toLocaleTimeString(), sn: unit + (via ? ' (via ' + sn + ')' : ''), st: st, n: n, event: pr.event, person: person, dur: dur};
+  ggRecent.unshift(entry); ggRenderRecent();
+  if(ggData && ggData.at[st]){ ggData.at[st][n] = (ggData.at[st][n] || []).filter(y => y.sn !== unit); if(pr.event === 'MoveIn') ggData.at[st][n].push({sn: unit, t: new Date()}); }
+  ggPart = st; ggSelected = n; ggRenderChips();
+  ggLocalNote(unit, pr.event, n);
+  if(ggKitParent === unit && pr.event === 'MoveOut') ggHideKit();
+  saveQueueAdd({kind: 'gg', serial: sn, unit: unit, payload: {action: 'gimbalScanAction', serial: sn, autoMode: true, selectedStation: String(n), person: person,
+    expectEvent: pr.event, expectStation: n, expectSerial: unit}}, entry);
 }
 function ggLocalReady(sn){   // finished all its stations and not inside anything, by the local copy
   if(!ggLocal) return false;
@@ -6684,6 +6829,8 @@ async function ggScan(raw){
   // while a parent's link form is open, scanning a part puts it in the form (supplier serials included)
   if(ggKitParent && sn !== ggKitParent && ggStyleOf(sn) !== ggStyleOf(ggKitParent) && !(ggOurs(sn) && ggKitFor(ggStyleOf(sn)) && !ggKitNeeds[ggStyleOf(sn)])){ msg.textContent = ''; ggKitAdd(sn); return; }
   const auto = document.getElementById('ggAutoDetect').checked;
+  if(auto && !ggKitParent){ const pr = ggPredict(sn); if(pr){ ggApplyInstant(sn, pr, person); return; } }
+  if(saveQueueHas(sn)){ msg.textContent = 'Saving the previous scan of ' + sn + ' first\u2026'; await saveQueueDrain(sn); }
   msg.textContent = 'Checking ' + sn + '\u2026';
   const snKit = ggOurs(sn) ? ggKitFor(ggStyleOf(sn)) : null, isParent = !!snKit;
   const kitP = isParent ? sheetPost({action: 'gimbalKit', parent: sn}) : null;   // in parallel with the sign-in
@@ -6733,7 +6880,7 @@ async function ggScan(raw){
 }
 function ggRenderRecent(){
   document.getElementById('ggRecentCount').textContent = ggRecent.length;
-  document.getElementById('ggRecentBody').innerHTML = ggRecent.slice(0, 50).map(x => '<tr><td>' + x.time + '</td><td class="loc-mono">' + x.sn + '</td><td>' + locEsc(ggCfg.names[x.st] || x.st) + '</td><td>' + locEsc(ggStationName(x.n, x.st)) + '</td><td>' + x.event + '</td><td>' + locEsc(x.person) + '</td><td>' + (x.dur || '\u2014') + '</td></tr>').join('');
+  document.getElementById('ggRecentBody').innerHTML = ggRecent.slice(0, 50).map(x => '<tr' + (x.save === 'failed' ? ' style="background:#fdecea;"' : '') + '><td>' + x.time + '</td><td class="loc-mono">' + x.sn + '</td><td>' + locEsc(ggCfg.names[x.st] || x.st) + '</td><td>' + locEsc(ggStationName(x.n, x.st)) + '</td><td>' + x.event + (x.save === 'saving' ? ' <span title="Saving to the sheet" style="color:#8a7fa8;">\u23f3</span>' : x.save === 'failed' ? ' <b style="color:#b42318;">NOT SAVED</b>' : '') + '</td><td>' + locEsc(x.person) + '</td><td>' + (x.dur || '\u2014') + '</td></tr>').join('');
 }
 document.getElementById('ggScanInput').addEventListener('keydown', e => {
   if(e.key !== 'Enter') return;
